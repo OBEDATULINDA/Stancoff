@@ -1,5 +1,81 @@
-{% extends "base.html" %}{% block content %}<h2>Dashboard</h2><div class=cards>
-<div>Active Suppliers<br><b>{{stats.suppliers}}</b></div><div>Open Batches<br><b>{{stats.batches}}</b></div>
-<div>Active Purchases<br><b>{{stats.purchases}}</b></div><div>Active Casuals<br><b>{{stats.casuals}}</b></div></div>
-<h3>Recent Purchases</h3><table><tr><th>Receipt</th><th>Batch</th><th>Supplier</th><th>Total</th><th>By</th></tr>
-{% for r in recent %}<tr><td>{{r.receipt_no}}</td><td>{{r.batch.batch_no}}</td><td>{{r.supplier.name}}</td><td>{{"%.0f"|format(r.total_amount)}}</td><td>{{r.created_by}}</td></tr>{% endfor %}</table>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Dashboard · Stancoff{% endblock %}
+{% block page_title %}Performance dashboard{% endblock %}
+{% block page_subtitle %}Coffee sourcing and operational performance{% endblock %}
+{% block content %}
+<section class="metric-grid">
+  <article class="metric-card"><span>Good coffee received</span><strong>{{ "{:,.0f}".format(stats.good_weight) }} kg</strong><small>All active purchases</small></article>
+  <article class="metric-card"><span>Purchase value</span><strong>UGX {{ "{:,.0f}".format(stats.total_spend) }}</strong><small>Total active purchase value</small></article>
+  <article class="metric-card"><span>Active suppliers</span><strong>{{ stats.suppliers }}</strong><small>Registered and active</small></article>
+  <article class="metric-card"><span>Open batches</span><strong>{{ stats.batches }}</strong><small>Currently receiving coffee</small></article>
+</section>
+
+<section class="chart-grid">
+  <article class="panel chart-panel wide">
+    <div class="panel-heading"><div><span class="eyebrow">Trend</span><h2>Monthly coffee received</h2></div><span class="panel-note">Good cherry kilograms</span></div>
+    <div class="chart-wrap"><canvas id="monthlyChart"></canvas></div>
+  </article>
+  <article class="panel chart-panel">
+    <div class="panel-heading"><div><span class="eyebrow">Source areas</span><h2>Top coffee locations</h2></div></div>
+    <div class="chart-wrap"><canvas id="areaChart"></canvas></div>
+  </article>
+  <article class="panel chart-panel">
+    <div class="panel-heading"><div><span class="eyebrow">Supplier ranking</span><h2>Best-performing traders</h2></div></div>
+    <div class="chart-wrap"><canvas id="supplierChart"></canvas></div>
+  </article>
+  <article class="panel chart-panel wide">
+    <div class="panel-heading"><div><span class="eyebrow">Batch intake</span><h2>Largest batches</h2></div><span class="panel-note">Good cherry kilograms</span></div>
+    <div class="chart-wrap short"><canvas id="batchChart"></canvas></div>
+  </article>
+</section>
+
+<section class="data-grid">
+  <article class="panel">
+    <div class="panel-heading"><div><span class="eyebrow">Leaderboard</span><h2>Top suppliers</h2></div><a href="/suppliers">View suppliers</a></div>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Supplier</th><th>Deliveries</th><th>Good kg</th><th>Value</th></tr></thead>
+      <tbody>{% for r in top_suppliers %}
+      <tr><td><strong>{{ r.code }}</strong><br><small>{{ r.name }}</small></td><td>{{ r.deliveries }}</td><td>{{ "{:,.0f}".format(r.weight) }}</td><td>UGX {{ "{:,.0f}".format(r.value) }}</td></tr>
+      {% else %}<tr><td colspan="4" class="empty">No purchase data yet.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </article>
+  <article class="panel">
+    <div class="panel-heading"><div><span class="eyebrow">Latest activity</span><h2>Recent purchases</h2></div><a href="/purchases">View all</a></div>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Receipt</th><th>Supplier</th><th>Batch</th><th>Good kg</th></tr></thead>
+      <tbody>{% for r in recent %}
+      <tr><td>{{r.receipt_no}}</td><td>{{r.supplier.name}}</td><td>{{r.batch.batch_no}}</td><td>{{"{:,.0f}".format(r.good_weight)}}</td></tr>
+      {% else %}<tr><td colspan="4" class="empty">No purchases recorded.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </article>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const charts = {{ charts|tojson }};
+Chart.defaults.font.family = "Inter, system-ui, sans-serif";
+Chart.defaults.color = "#64746e";
+const grid = {color:"rgba(27,71,59,.08)"};
+new Chart(document.getElementById("monthlyChart"), {
+  type:"line",
+  data:{labels:charts.monthly.labels,datasets:[{label:"Good coffee (kg)",data:charts.monthly.weights,borderColor:"#1f6b57",backgroundColor:"rgba(31,107,87,.12)",fill:true,tension:.35,pointRadius:3}]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:grid}}}
+});
+new Chart(document.getElementById("areaChart"), {
+  type:"bar",
+  data:{labels:charts.areas.labels,datasets:[{label:"Good coffee (kg)",data:charts.areas.weights,backgroundColor:"#b87632",borderRadius:6}]},
+  options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,grid:grid},y:{grid:{display:false}}}}
+});
+new Chart(document.getElementById("supplierChart"), {
+  type:"bar",
+  data:{labels:charts.suppliers.labels,datasets:[{label:"Good coffee (kg)",data:charts.suppliers.weights,backgroundColor:"#2e7d67",borderRadius:6}]},
+  options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,grid:grid},y:{grid:{display:false}}}}
+});
+new Chart(document.getElementById("batchChart"), {
+  type:"bar",
+  data:{labels:charts.batches.labels,datasets:[{label:"Good coffee (kg)",data:charts.batches.weights,backgroundColor:"#d6a14d",borderRadius:7}]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:grid}}}
+});
+</script>
+{% endblock %}

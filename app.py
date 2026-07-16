@@ -5,13 +5,16 @@ from functools import wraps
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, abort
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func, desc
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-in-production")
 database_url = os.getenv("DATABASE_URL", "sqlite:///stancoff.db")
 if database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
+    database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
+elif database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
@@ -206,6 +209,10 @@ def ensure_db():
 def inject_helpers():
     return {"current_role": session.get("role"), "current_user": session.get("full_name")}
 
+@app.route("/health")
+def health():
+    return {"status": "ok", "service": "stancoff"}, 200
+
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
@@ -230,14 +237,99 @@ def logout():
 @app.route("/")
 @login_required
 def dashboard():
+    active_purchases = Purchase.query.filter_by(status="Active")
+    total_good = db.session.query(func.coalesce(func.sum(Purchase.good_weight), 0)).filter(
+        Purchase.status == "Active"
+    ).scalar()
+    total_spend = db.session.query(func.coalesce(func.sum(Purchase.total_amount), 0)).filter(
+        Purchase.status == "Active"
+    ).scalar()
+
     stats = {
         "suppliers": Supplier.query.filter_by(status="Active").count(),
         "batches": Batch.query.filter_by(status="Open").count(),
-        "purchases": Purchase.query.filter_by(status="Active").count(),
+        "purchases": active_purchases.count(),
         "casuals": Casual.query.filter_by(status="Active").count(),
+        "good_weight": float(total_good or 0),
+        "total_spend": float(total_spend or 0),
     }
-    recent = Purchase.query.order_by(Purchase.id.desc()).limit(10).all()
-    return render_template("dashboard.html", stats=stats, recent=recent)
+
+    recent = Purchase.query.order_by(Purchase.id.desc()).limit(8).all()
+
+    top_suppliers_rows = db.session.query(
+        Supplier.name,
+        Supplier.code,
+        func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
+        func.count(Purchase.id).label("deliveries"),
+        func.coalesce(func.sum(Purchase.total_amount), 0).label("value")
+    ).join(Purchase, Purchase.supplier_id == Supplier.id).filter(
+        Purchase.status == "Active"
+    ).group_by(Supplier.id, Supplier.name, Supplier.code).order_by(
+        desc("weight")
+    ).limit(10).all()
+
+    area_rows = db.session.query(
+        func.coalesce(func.nullif(func.trim(Supplier.location), ""), "Unspecified").label("area"),
+        func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
+        func.count(Purchase.id).label("deliveries")
+    ).join(Purchase, Purchase.supplier_id == Supplier.id).filter(
+        Purchase.status == "Active"
+    ).group_by("area").order_by(desc("weight")).limit(10).all()
+
+    monthly_rows = db.session.query(
+        func.to_char(Purchase.purchase_date, "YYYY-MM").label("month"),
+        func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
+        func.coalesce(func.sum(Purchase.total_amount), 0).label("value")
+    ).filter(Purchase.status == "Active").group_by("month").order_by("month").limit(12).all()
+
+    # SQLite fallback for local testing because to_char is PostgreSQL-specific.
+    if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
+        monthly_rows = db.session.query(
+            func.strftime("%Y-%m", Purchase.purchase_date).label("month"),
+            func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
+            func.coalesce(func.sum(Purchase.total_amount), 0).label("value")
+        ).filter(Purchase.status == "Active").group_by("month").order_by("month").limit(12).all()
+
+    batch_rows = db.session.query(
+        Batch.batch_no,
+        Batch.process_type,
+        func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
+        func.count(Purchase.id).label("deliveries")
+    ).join(Purchase, Purchase.batch_id == Batch.id).filter(
+        Purchase.status == "Active"
+    ).group_by(Batch.id, Batch.batch_no, Batch.process_type).order_by(
+        desc("weight")
+    ).limit(10).all()
+
+    charts = {
+        "suppliers": {
+            "labels": [f"{r.code} - {r.name}" for r in top_suppliers_rows],
+            "weights": [round(float(r.weight or 0), 2) for r in top_suppliers_rows],
+            "deliveries": [int(r.deliveries or 0) for r in top_suppliers_rows],
+        },
+        "areas": {
+            "labels": [r.area for r in area_rows],
+            "weights": [round(float(r.weight or 0), 2) for r in area_rows],
+        },
+        "monthly": {
+            "labels": [r.month for r in monthly_rows],
+            "weights": [round(float(r.weight or 0), 2) for r in monthly_rows],
+            "values": [round(float(r.value or 0), 2) for r in monthly_rows],
+        },
+        "batches": {
+            "labels": [r.batch_no for r in batch_rows],
+            "weights": [round(float(r.weight or 0), 2) for r in batch_rows],
+        },
+    }
+
+    return render_template(
+        "dashboard.html",
+        stats=stats,
+        recent=recent,
+        top_suppliers=top_suppliers_rows,
+        area_rows=area_rows,
+        charts=charts
+    )
 
 @app.route("/users", methods=["GET","POST"])
 @permission_required("users")

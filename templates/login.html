@@ -1,3 +1,21 @@
-{% extends "base.html" %}{% block content %}<div class=loginbox><h2>Sign in</h2><form method=post>
-<input name=username placeholder=Username required><input type=password name=password placeholder=Password required><button>Login</button></form>
-<p>Default first login: <b>admin</b> / <b>ChangeMe123!</b></p></div>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Sign in · Stancoff{% endblock %}
+{% block auth_content %}
+<div class="login-layout">
+  <section class="login-hero">
+    <div class="hero-logo">S</div>
+    <h1>Stancoff Company Limited</h1>
+    <p>Coffee operations, supplier performance, workforce and payment management in one place.</p>
+  </section>
+  <section class="login-card">
+    <span class="eyebrow">Secure access</span>
+    <h2>Welcome back</h2>
+    <p>Sign in to continue to the operations dashboard.</p>
+    <form method="post" class="stack-form">
+      <label>Username<input name="username" autocomplete="username" required></label>
+      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+      <button class="primary-button">Sign in</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

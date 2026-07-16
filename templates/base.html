@@ -1,13 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#173f35">
+  <title>{% block title %}Stancoff Operations{% endblock %}</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+{% if session.get('user_id') %}
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/">
+      <span class="brand-mark">S</span>
+      <span><strong>Stancoff</strong><small>Operations</small></span>
+    </a>
+    <nav class="side-nav">
+      <a href="/" class="{% if request.path=='/' %}active{% endif %}">Dashboard</a>
+      {% if current_role in ['Admin','Manager','Receiving Clerk'] %}
+      <div class="nav-label">Coffee operations</div>
+      <a href="/suppliers">Suppliers</a>
+      <a href="/batches">Batches</a>
+      <a href="/purchases">Purchases</a>
+      {% endif %}
+      {% if current_role in ['Admin','Manager'] %}
+      <a href="/prices">Price history</a>
+      {% endif %}
+      {% if current_role in ['Admin','Manager','Payroll Officer'] %}
+      <div class="nav-label">Workforce</div>
+      <a href="/casuals">Casual workers</a>
+      <a href="/casual-rates">Rate history</a>
+      <a href="/attendance">Attendance</a>
+      <a href="/payments">Payments</a>
+      {% endif %}
+      {% if current_role=='Admin' %}
+      <div class="nav-label">Administration</div>
+      <a href="/users">Users</a>
+      <a href="/audit">Audit log</a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-user">
+      <div class="avatar">{{ (current_user or 'U')[0] }}</div>
+      <div><strong>{{ current_user }}</strong><small>{{ current_role }}</small></div>
+      <a class="logout" href="/logout">Log out</a>
+    </div>
+  </aside>
 
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stancoff App</title><link rel="manifest" href="/static/manifest.json">
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body>
-<header><div><h1>Stancoff Company Limited</h1><small>{{current_user or ''}}{% if current_role %} · {{current_role}}{% endif %}</small></div>
-{% if session.get('user_id') %}<nav><a href="/">Dashboard</a>
-{% if current_role in ['Admin','Manager','Receiving Clerk'] %}<a href="/suppliers">Suppliers</a><a href="/batches">Batches</a><a href="/purchases">Purchases</a>{% endif %}
-{% if current_role in ['Admin','Manager'] %}<a href="/prices">Prices</a>{% endif %}
-{% if current_role in ['Admin','Manager','Payroll Officer'] %}<a href="/casuals">Casuals</a><a href="/casual-rates">Rates</a><a href="/attendance">Attendance</a><a href="/payments">Payments</a>{% endif %}
-{% if current_role=='Admin' %}<a href="/users">Users</a><a href="/audit">Audit</a>{% endif %}
-<a href="/logout">Logout</a></nav>{% endif %}</header>
-<main>{% with messages=get_flashed_messages() %}{% for m in messages %}<div class=flash>{{m}}</div>{% endfor %}{% endwith %}{% block content %}{% endblock %}</main>
-<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js')}</script></body></html>
+  <section class="main-panel">
+    <header class="topbar">
+      <button class="menu-button" type="button" onclick="document.body.classList.toggle('menu-open')">☰</button>
+      <div>
+        <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+        <p>{% block page_subtitle %}Stancoff Company Limited{% endblock %}</p>
+      </div>
+      <div class="topbar-date" id="today"></div>
+    </header>
+    <main>
+      {% with messages=get_flashed_messages() %}
+        {% for m in messages %}<div class="flash">{{m}}</div>{% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </section>
+</div>
+{% else %}
+<main class="auth-main">
+  {% with messages=get_flashed_messages() %}
+    {% for m in messages %}<div class="flash">{{m}}</div>{% endfor %}
+  {% endwith %}
+  {% block auth_content %}{% endblock %}
+</main>
+{% endif %}
+<script>
+document.getElementById('today')?.append(
+  new Intl.DateTimeFormat('en-GB',{dateStyle:'medium'}).format(new Date())
+);
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js')}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
