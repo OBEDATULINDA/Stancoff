@@ -237,88 +237,103 @@ def logout():
 @app.route("/")
 @login_required
 def dashboard():
-    active_purchases = Purchase.query.filter_by(status="Active")
-    total_good = db.session.query(func.coalesce(func.sum(Purchase.good_weight), 0)).filter(
-        Purchase.status == "Active"
-    ).scalar()
-    total_spend = db.session.query(func.coalesce(func.sum(Purchase.total_amount), 0)).filter(
-        Purchase.status == "Active"
-    ).scalar()
+    # Load active purchases once and aggregate in Python.
+    # This avoids database-specific GROUP BY/date functions and works on both
+    # PostgreSQL (Render) and SQLite (local testing).
+    active_rows = Purchase.query.filter_by(status="Active").order_by(Purchase.purchase_date.asc()).all()
+
+    total_good = sum(float(p.good_weight or 0) for p in active_rows)
+    total_spend = sum(float(p.total_amount or 0) for p in active_rows)
 
     stats = {
         "suppliers": Supplier.query.filter_by(status="Active").count(),
         "batches": Batch.query.filter_by(status="Open").count(),
-        "purchases": active_purchases.count(),
+        "purchases": len(active_rows),
         "casuals": Casual.query.filter_by(status="Active").count(),
-        "good_weight": float(total_good or 0),
-        "total_spend": float(total_spend or 0),
+        "good_weight": total_good,
+        "total_spend": total_spend,
     }
 
-    recent = Purchase.query.order_by(Purchase.id.desc()).limit(8).all()
+    recent = list(reversed(active_rows[-8:]))
 
-    top_suppliers_rows = db.session.query(
-        Supplier.name,
-        Supplier.code,
-        func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
-        func.count(Purchase.id).label("deliveries"),
-        func.coalesce(func.sum(Purchase.total_amount), 0).label("value")
-    ).join(Purchase, Purchase.supplier_id == Supplier.id).filter(
-        Purchase.status == "Active"
-    ).group_by(Supplier.id, Supplier.name, Supplier.code).order_by(
-        desc("weight")
-    ).limit(10).all()
+    supplier_totals = {}
+    area_totals = {}
+    monthly_totals = {}
+    batch_totals = {}
 
-    area_rows = db.session.query(
-        func.coalesce(func.nullif(func.trim(Supplier.location), ""), "Unspecified").label("area"),
-        func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
-        func.count(Purchase.id).label("deliveries")
-    ).join(Purchase, Purchase.supplier_id == Supplier.id).filter(
-        Purchase.status == "Active"
-    ).group_by("area").order_by(desc("weight")).limit(10).all()
+    for p in active_rows:
+        supplier = p.supplier
+        batch = p.batch
+        weight = float(p.good_weight or 0)
+        value = float(p.total_amount or 0)
 
-    monthly_rows = db.session.query(
-        func.to_char(Purchase.purchase_date, "YYYY-MM").label("month"),
-        func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
-        func.coalesce(func.sum(Purchase.total_amount), 0).label("value")
-    ).filter(Purchase.status == "Active").group_by("month").order_by("month").limit(12).all()
+        supplier_key = supplier.id
+        if supplier_key not in supplier_totals:
+            supplier_totals[supplier_key] = {
+                "name": supplier.name,
+                "code": supplier.code,
+                "weight": 0.0,
+                "deliveries": 0,
+                "value": 0.0,
+            }
+        supplier_totals[supplier_key]["weight"] += weight
+        supplier_totals[supplier_key]["deliveries"] += 1
+        supplier_totals[supplier_key]["value"] += value
 
-    # SQLite fallback for local testing because to_char is PostgreSQL-specific.
-    if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
-        monthly_rows = db.session.query(
-            func.strftime("%Y-%m", Purchase.purchase_date).label("month"),
-            func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
-            func.coalesce(func.sum(Purchase.total_amount), 0).label("value")
-        ).filter(Purchase.status == "Active").group_by("month").order_by("month").limit(12).all()
+        area = (supplier.location or "").strip() or "Unspecified"
+        if area not in area_totals:
+            area_totals[area] = {"area": area, "weight": 0.0, "deliveries": 0}
+        area_totals[area]["weight"] += weight
+        area_totals[area]["deliveries"] += 1
 
-    batch_rows = db.session.query(
-        Batch.batch_no,
-        Batch.process_type,
-        func.coalesce(func.sum(Purchase.good_weight), 0).label("weight"),
-        func.count(Purchase.id).label("deliveries")
-    ).join(Purchase, Purchase.batch_id == Batch.id).filter(
-        Purchase.status == "Active"
-    ).group_by(Batch.id, Batch.batch_no, Batch.process_type).order_by(
-        desc("weight")
-    ).limit(10).all()
+        month = p.purchase_date.strftime("%Y-%m")
+        if month not in monthly_totals:
+            monthly_totals[month] = {"month": month, "weight": 0.0, "value": 0.0}
+        monthly_totals[month]["weight"] += weight
+        monthly_totals[month]["value"] += value
+
+        batch_key = batch.id
+        if batch_key not in batch_totals:
+            batch_totals[batch_key] = {
+                "batch_no": batch.batch_no,
+                "process_type": batch.process_type,
+                "weight": 0.0,
+                "deliveries": 0,
+            }
+        batch_totals[batch_key]["weight"] += weight
+        batch_totals[batch_key]["deliveries"] += 1
+
+    top_suppliers = sorted(
+        supplier_totals.values(), key=lambda r: r["weight"], reverse=True
+    )[:10]
+    area_rows = sorted(
+        area_totals.values(), key=lambda r: r["weight"], reverse=True
+    )[:10]
+    monthly_rows = sorted(
+        monthly_totals.values(), key=lambda r: r["month"]
+    )[-12:]
+    batch_rows = sorted(
+        batch_totals.values(), key=lambda r: r["weight"], reverse=True
+    )[:10]
 
     charts = {
         "suppliers": {
-            "labels": [f"{r.code} - {r.name}" for r in top_suppliers_rows],
-            "weights": [round(float(r.weight or 0), 2) for r in top_suppliers_rows],
-            "deliveries": [int(r.deliveries or 0) for r in top_suppliers_rows],
+            "labels": [f'{r["code"]} - {r["name"]}' for r in top_suppliers],
+            "weights": [round(r["weight"], 2) for r in top_suppliers],
+            "deliveries": [r["deliveries"] for r in top_suppliers],
         },
         "areas": {
-            "labels": [r.area for r in area_rows],
-            "weights": [round(float(r.weight or 0), 2) for r in area_rows],
+            "labels": [r["area"] for r in area_rows],
+            "weights": [round(r["weight"], 2) for r in area_rows],
         },
         "monthly": {
-            "labels": [r.month for r in monthly_rows],
-            "weights": [round(float(r.weight or 0), 2) for r in monthly_rows],
-            "values": [round(float(r.value or 0), 2) for r in monthly_rows],
+            "labels": [r["month"] for r in monthly_rows],
+            "weights": [round(r["weight"], 2) for r in monthly_rows],
+            "values": [round(r["value"], 2) for r in monthly_rows],
         },
         "batches": {
-            "labels": [r.batch_no for r in batch_rows],
-            "weights": [round(float(r.weight or 0), 2) for r in batch_rows],
+            "labels": [r["batch_no"] for r in batch_rows],
+            "weights": [round(r["weight"], 2) for r in batch_rows],
         },
     }
 
@@ -326,9 +341,9 @@ def dashboard():
         "dashboard.html",
         stats=stats,
         recent=recent,
-        top_suppliers=top_suppliers_rows,
+        top_suppliers=top_suppliers,
         area_rows=area_rows,
-        charts=charts
+        charts=charts,
     )
 
 @app.route("/users", methods=["GET","POST"])
