@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block content %}<h2>User Management</h2><form method=post class=form>
+<input name=full_name placeholder="Full name" required><input name=username placeholder=Username required><input type=password name=password placeholder=Password required>
+<select name=role>{% for r in roles %}<option>{{r}}</option>{% endfor %}</select><select name=status><option>Active</option><option>Inactive</option></select><button>Create User</button></form>
+<table><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr>{% for r in rows %}<tr>
+<td>{{r.full_name}}</td><td>{{r.username}}</td><td>{{r.role}}</td><td>{{r.status}}</td><td>{{r.last_login or ''}}</td><td>
+<form class=inline method=post action="/users/{{r.id}}/toggle"><button>Toggle Status</button></form>
+<form class=inline method=post action="/users/{{r.id}}/reset-password"><input type=password name=password placeholder="New password" required><button>Reset</button></form>
+</td></tr>{% endfor %}</table>{% endblock %}

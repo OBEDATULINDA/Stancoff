@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block content %}<h2>Dashboard</h2><div class=cards>
+<div>Active Suppliers<br><b>{{stats.suppliers}}</b></div><div>Open Batches<br><b>{{stats.batches}}</b></div>
+<div>Active Purchases<br><b>{{stats.purchases}}</b></div><div>Active Casuals<br><b>{{stats.casuals}}</b></div></div>
+<h3>Recent Purchases</h3><table><tr><th>Receipt</th><th>Batch</th><th>Supplier</th><th>Total</th><th>By</th></tr>
+{% for r in recent %}<tr><td>{{r.receipt_no}}</td><td>{{r.batch.batch_no}}</td><td>{{r.supplier.name}}</td><td>{{"%.0f"|format(r.total_amount)}}</td><td>{{r.created_by}}</td></tr>{% endfor %}</table>{% endblock %}

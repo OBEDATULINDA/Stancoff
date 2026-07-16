@@ -1,0 +1,3 @@
+{% extends "base.html" %}{% block content %}<h2>Price History</h2><form method=post class=form><input type=date name=effective_date required><input type=number name=cherry_price placeholder="Cherry price" required>
+<input type=number name=floater_price placeholder="Floater price" required><input name=notes placeholder=Notes><button>Save</button></form><table><tr><th>Date</th><th>Cherry</th><th>Floaters</th><th>Notes</th></tr>
+{% for r in rows %}<tr><td>{{r.effective_date}}</td><td>{{r.cherry_price}}</td><td>{{r.floater_price}}</td><td>{{r.notes}}</td></tr>{% endfor %}</table>{% endblock %}

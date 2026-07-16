@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% block content %}<h2>Suppliers</h2><form method=post class=form><input name=code value="{{next_code}}" required>
+<input name=name placeholder="Supplier name" required><input name=phone placeholder=Phone><input name=location placeholder=Location><select name=status><option>Active</option><option>Inactive</option></select><button>Save</button></form>
+<table><tr><th>Code</th><th>Name</th><th>Phone</th><th>Location</th><th>Status</th><th>Action</th></tr>{% for r in rows %}<tr><td>{{r.code}}</td><td>{{r.name}}</td><td>{{r.phone}}</td><td>{{r.location}}</td><td>{{r.status}}</td><td>
+<form method=post action="/suppliers/{{r.id}}/delete" class=inline><button class=danger>Delete/Deactivate</button></form></td></tr>{% endfor %}</table>{% endblock %}
