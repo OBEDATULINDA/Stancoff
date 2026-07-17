@@ -1,5 +1,49 @@
-{% extends "base.html" %}{% block content %}<h2>Coffee Purchases</h2><form method=post class=form><input type=date name=purchase_date required>
-<select name=batch_id required>{% for b in batches %}<option value="{{b.id}}">{{b.batch_no}}</option>{% endfor %}</select><select name=supplier_id required>{% for s in suppliers %}<option value="{{s.id}}">{{s.code}} - {{s.name}}</option>{% endfor %}</select>
-<input type=number step=.01 name=gross_weight placeholder="Gross weight" required><input type=number step=.01 name=floaters_weight value=0 placeholder=Floaters>
-<select name=floaters_bought><option>Yes</option><option>No</option></select><button>Save</button></form><table><tr><th>Receipt</th><th>Date</th><th>Batch</th><th>Supplier</th><th>Total</th><th>By</th><th>Print</th></tr>
-{% for r in rows %}<tr><td>{{r.receipt_no}}</td><td>{{r.purchase_date}}</td><td>{{r.batch.batch_no}}</td><td>{{r.supplier.name}}</td><td>{{"%.0f"|format(r.total_amount)}}</td><td>{{r.created_by}}</td><td><a target=_blank href="/purchase-receipt/{{r.id}}">Print</a></td></tr>{% endfor %}</table>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Purchases · Stancoff{% endblock %}
+{% block page_title %}Coffee purchases{% endblock %}
+{% block page_subtitle %}Receive coffee from suppliers and manage purchase entries safely{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-heading"><div><span class="eyebrow">New purchase</span><h2>Record supplier delivery</h2></div></div>
+  <form method="post" class="form">
+    <input type="date" name="purchase_date" required>
+    <select name="batch_id" required><option value="">Select batch</option>{% for b in batches %}<option value="{{b.id}}">{{b.batch_no}}</option>{% endfor %}</select>
+    <select name="supplier_id" required><option value="">Select supplier</option>{% for s in suppliers %}<option value="{{s.id}}">{{s.code}} - {{s.name}}</option>{% endfor %}</select>
+    <input type="number" step=".01" min="0.01" name="gross_weight" placeholder="Gross weight" required>
+    <input type="number" step=".01" min="0" name="floaters_weight" value="0" placeholder="Floaters">
+    <select name="floaters_bought"><option>Yes</option><option>No</option></select>
+    <button>Save purchase</button>
+  </form>
+</section>
+
+<section class="panel" style="margin-top:18px">
+  <div class="panel-heading"><div><span class="eyebrow">History</span><h2>Purchase entries</h2></div></div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Receipt</th><th>Date</th><th>Batch</th><th>Supplier</th><th>Good kg</th><th>Total</th><th>Status</th><th>By</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr class="{% if r.status == 'Voided' %}voided-row{% endif %}">
+        <td><strong>{{r.receipt_no}}</strong></td><td>{{r.purchase_date}}</td><td>{{r.batch.batch_no}}</td><td>{{r.supplier.name}}</td>
+        <td>{{"{:,.2f}".format(r.good_weight)}}</td><td>{{"{:,.0f}".format(r.total_amount)}}</td><td>{{r.status}}</td><td>{{r.created_by}}</td>
+        <td>
+          <a class="small-button" target="_blank" href="{{ url_for('purchase_receipt', id=r.id) }}">Print</a>
+          {% if r.status != 'Voided' %}
+          <a class="small-button" href="{{ url_for('purchase_edit', id=r.id) }}">Edit</a>
+          <form method="post" action="{{ url_for('purchase_void', id=r.id) }}" class="inline-void" onsubmit="return confirm('Void this purchase? It will stop counting in totals.');">
+            <input name="void_reason" placeholder="Reason" required><button class="small-button danger">Void</button>
+          </form>
+          {% else %}<small>Reason: {{r.void_reason}}</small>{% endif %}
+          {% if current_role == 'Admin' %}
+          <form method="post" action="{{ url_for('purchase_delete', id=r.id) }}" class="inline-void" onsubmit="return confirm('Permanently delete {{r.receipt_no}}? This cannot be undone.');">
+            <button class="small-button danger">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="9" class="empty">No purchases recorded yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

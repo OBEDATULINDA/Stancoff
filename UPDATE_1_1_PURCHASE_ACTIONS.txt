@@ -1,0 +1,19 @@
+STANCOFF UPDATE 1.1 — PURCHASE ACTIONS
+
+This update keeps all existing database information.
+It does not delete or recreate any database tables.
+
+ADDED:
+1. Edit purchase
+2. Void purchase with a required reason
+3. Permanent delete for Admin only
+4. Protection: purchases cannot be edited, voided or deleted after their batch has an active processing record
+5. Voided purchases remain visible for audit but stop counting in totals and processing
+
+INSTALLATION:
+1. Upload the updated files to the same GitHub repository.
+2. Do not delete the PostgreSQL database.
+3. Do not change DATABASE_URL.
+4. Commit the changes.
+5. Render should deploy automatically. If it does not, use Manual Deploy.
+6. Log in and open Purchases.

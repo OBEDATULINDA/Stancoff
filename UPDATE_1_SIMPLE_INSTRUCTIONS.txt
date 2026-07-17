@@ -1,0 +1,48 @@
+STANCOFF UPDATE 1 — PROCESSING AND SORTING
+
+WHAT THIS UPDATE ADDS
+- A new Processing menu
+- Select an existing batch
+- Shows the good coffee purchased for that batch
+- Records weight entering sorting
+- Records Grade A (Red)
+- Records Grade B (Yellow)
+- Records Grade C (Green)
+- Automatically calculates total sorted weight
+- Automatically calculates processing loss
+- Automatically calculates outturn percentage
+- Allows editing a processing record
+- Allows voiding a wrong record without deleting its history
+- Changes an Open batch to Processing when a processing record is saved
+
+YOUR EXISTING DATA IS SAFE
+This update uses db.create_all(), which only creates the new Processing table.
+It does not delete or recreate existing tables.
+Do not delete your PostgreSQL database and do not change DATABASE_URL.
+
+VERY SIMPLE UPDATE STEPS
+1. Extract this ZIP on your computer.
+2. Open the extracted Stancoff-main folder.
+3. Upload/replace these items in your GitHub repository:
+   - app.py
+   - templates folder
+   - static folder
+4. Also upload UPDATE_1_SIMPLE_INSTRUCTIONS.txt if you want to keep the instructions.
+5. Commit the GitHub changes.
+6. Open Render.
+7. Open the stancoff Web Service.
+8. Click Manual Deploy.
+9. Click Clear build cache & deploy.
+10. Wait until Render says Your service is live.
+11. Log into the app.
+12. Open Processing from the left menu.
+
+IMPORTANT
+- Keep your PostgreSQL database service.
+- Keep the DATABASE_URL environment variable.
+- Do not upload or use a local stancoff.db file for your live app.
+
+WHO CAN USE PROCESSING
+- Admin
+- Manager
+- Processing Supervisor

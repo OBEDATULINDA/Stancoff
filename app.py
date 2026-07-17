@@ -493,6 +493,100 @@ def purchases():
 def purchase_receipt(id):
     return render_template("purchase_receipt.html", row=Purchase.query.get_or_404(id))
 
+@app.route("/purchases/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("purchases")
+def purchase_edit(id):
+    purchase = Purchase.query.get_or_404(id)
+    if purchase.status == "Voided":
+        flash("A voided purchase cannot be edited.")
+        return redirect(url_for("purchases"))
+
+    active_processing = Processing.query.filter_by(batch_id=purchase.batch_id, status="Active").first()
+    if active_processing:
+        flash("This purchase cannot be edited because its batch has already been processed. Void the processing record first.")
+        return redirect(url_for("purchases"))
+
+    if request.method == "POST":
+        d = datetime.strptime(request.form["purchase_date"], "%Y-%m-%d").date()
+        price = get_price(d)
+        if not price:
+            flash("Add price history for the selected date first.")
+            return redirect(url_for("purchase_edit", id=id))
+
+        gross = float(request.form["gross_weight"])
+        floaters = float(request.form.get("floaters_weight") or 0)
+        if gross <= 0 or floaters < 0 or floaters > gross:
+            flash("Check the weights. Floaters cannot be more than the gross weight.")
+            return redirect(url_for("purchase_edit", id=id))
+
+        bought = request.form["floaters_bought"]
+        good = gross - floaters
+        purchase.purchase_date = d
+        purchase.batch_id = int(request.form["batch_id"])
+        purchase.supplier_id = int(request.form["supplier_id"])
+        purchase.gross_weight = gross
+        purchase.floaters_weight = floaters
+        purchase.good_weight = good
+        purchase.floaters_bought = bought
+        purchase.cherry_price = price.cherry_price
+        purchase.floater_price = price.floater_price if bought == "Yes" else 0
+        purchase.total_amount = good * purchase.cherry_price + floaters * purchase.floater_price
+        db.session.commit()
+        log_action("UPDATE", "Purchases", purchase.id, purchase.receipt_no)
+        flash("Purchase updated successfully.")
+        return redirect(url_for("purchases"))
+
+    return render_template(
+        "purchase_edit.html",
+        row=purchase,
+        suppliers=Supplier.query.order_by(Supplier.name).all(),
+        batches=Batch.query.order_by(Batch.batch_date.desc()).all(),
+    )
+
+@app.route("/purchases/<int:id>/void", methods=["POST"])
+@permission_required("purchases")
+def purchase_void(id):
+    purchase = Purchase.query.get_or_404(id)
+    if purchase.status == "Voided":
+        flash("This purchase is already voided.")
+        return redirect(url_for("purchases"))
+
+    active_processing = Processing.query.filter_by(batch_id=purchase.batch_id, status="Active").first()
+    if active_processing:
+        flash("This purchase cannot be voided because its batch has already been processed. Void the processing record first.")
+        return redirect(url_for("purchases"))
+
+    reason = (request.form.get("void_reason") or "").strip()
+    if not reason:
+        flash("Enter a reason for voiding the purchase.")
+        return redirect(url_for("purchases"))
+
+    purchase.status = "Voided"
+    purchase.void_reason = reason
+    db.session.commit()
+    log_action("VOID", "Purchases", purchase.id, f"{purchase.receipt_no}: {reason}")
+    flash("Purchase voided. It will no longer count in totals or processing.")
+    return redirect(url_for("purchases"))
+
+@app.route("/purchases/<int:id>/delete", methods=["POST"])
+@permission_required("purchases")
+def purchase_delete(id):
+    if session.get("role") != "Admin":
+        abort(403)
+
+    purchase = Purchase.query.get_or_404(id)
+    active_processing = Processing.query.filter_by(batch_id=purchase.batch_id, status="Active").first()
+    if active_processing:
+        flash("This purchase cannot be permanently deleted because its batch has already been processed.")
+        return redirect(url_for("purchases"))
+
+    receipt_no = purchase.receipt_no
+    db.session.delete(purchase)
+    db.session.commit()
+    log_action("DELETE", "Purchases", id, receipt_no)
+    flash("Purchase permanently deleted.")
+    return redirect(url_for("purchases"))
+
 @app.route("/processing", methods=["GET", "POST"])
 @permission_required("processing")
 def processing():
