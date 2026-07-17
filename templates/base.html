@@ -25,6 +25,9 @@
       <a href="/batches">Batches</a>
       <a href="/purchases">Purchases</a>
       {% endif %}
+      {% if current_role in ['Admin','Manager','Processing Supervisor'] %}
+      <a href="/processing" class="{% if request.path.startswith('/processing') %}active{% endif %}">Processing</a>
+      {% endif %}
       {% if current_role in ['Admin','Manager'] %}
       <a href="/prices">Price history</a>
       {% endif %}

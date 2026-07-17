@@ -21,9 +21,9 @@ db = SQLAlchemy(app)
 
 ROLE_PERMISSIONS = {
     "Admin": {"*"},
-    "Manager": {"dashboard","suppliers","prices","batches","purchases","casuals","rates","attendance","payments","reports"},
+    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","casuals","rates","attendance","payments","reports"},
     "Receiving Clerk": {"dashboard","suppliers","batches","purchases"},
-    "Processing Supervisor": {"dashboard","batches","reports"},
+    "Processing Supervisor": {"dashboard","batches","processing","reports"},
     "Payroll Officer": {"dashboard","casuals","rates","attendance","payments"},
     "Viewer": {"dashboard","reports"},
 }
@@ -90,6 +90,28 @@ class Purchase(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     batch = db.relationship("Batch")
     supplier = db.relationship("Supplier")
+
+class Processing(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    processing_no = db.Column(db.String(30), unique=True, nullable=False)
+    processing_date = db.Column(db.Date, nullable=False)
+    batch_id = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False, unique=True)
+    input_weight = db.Column(db.Float, nullable=False)
+    grade_a_weight = db.Column(db.Float, nullable=False, default=0)
+    grade_b_weight = db.Column(db.Float, nullable=False, default=0)
+    grade_c_weight = db.Column(db.Float, nullable=False, default=0)
+    total_sorted_weight = db.Column(db.Float, nullable=False, default=0)
+    processing_loss = db.Column(db.Float, nullable=False, default=0)
+    outturn_percent = db.Column(db.Float, nullable=False, default=0)
+    moisture = db.Column(db.Float)
+    processed_by = db.Column(db.String(120))
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    void_reason = db.Column(db.Text)
+    created_by = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    batch = db.relationship("Batch")
 
 class Casual(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -470,6 +492,131 @@ def purchases():
 @permission_required("purchases")
 def purchase_receipt(id):
     return render_template("purchase_receipt.html", row=Purchase.query.get_or_404(id))
+
+@app.route("/processing", methods=["GET", "POST"])
+@permission_required("processing")
+def processing():
+    if request.method == "POST":
+        batch_id = int(request.form["batch_id"])
+        if Processing.query.filter_by(batch_id=batch_id).first():
+            flash("This batch already has a processing record. Open it and use Edit.")
+            return redirect(url_for("processing"))
+
+        input_weight = float(request.form["input_weight"] or 0)
+        grade_a = float(request.form.get("grade_a_weight") or 0)
+        grade_b = float(request.form.get("grade_b_weight") or 0)
+        grade_c = float(request.form.get("grade_c_weight") or 0)
+        total_sorted = grade_a + grade_b + grade_c
+
+        if input_weight <= 0:
+            flash("Weight entering processing must be greater than zero.")
+            return redirect(url_for("processing"))
+        if min(grade_a, grade_b, grade_c) < 0:
+            flash("Grade weights cannot be negative.")
+            return redirect(url_for("processing"))
+        if total_sorted > input_weight:
+            flash("The total of Grade A, B and C cannot exceed the weight entering processing.")
+            return redirect(url_for("processing"))
+
+        loss = input_weight - total_sorted
+        outturn = (total_sorted / input_weight * 100) if input_weight else 0
+        record = Processing(
+            processing_no=next_code(Processing, "processing_no", "PRO", 6),
+            processing_date=datetime.strptime(request.form["processing_date"], "%Y-%m-%d").date(),
+            batch_id=batch_id,
+            input_weight=input_weight,
+            grade_a_weight=grade_a,
+            grade_b_weight=grade_b,
+            grade_c_weight=grade_c,
+            total_sorted_weight=total_sorted,
+            processing_loss=loss,
+            outturn_percent=outturn,
+            moisture=float(request.form["moisture"]) if request.form.get("moisture") else None,
+            processed_by=request.form.get("processed_by"),
+            notes=request.form.get("notes"),
+            created_by=session.get("username")
+        )
+        db.session.add(record)
+        batch = db.session.get(Batch, batch_id)
+        if batch and batch.status == "Open":
+            batch.status = "Processing"
+        db.session.commit()
+        log_action("CREATE", "Processing", record.id, record.processing_no)
+        flash("Processing record saved successfully.")
+        return redirect(url_for("processing"))
+
+    batches = Batch.query.order_by(Batch.batch_date.desc(), Batch.id.desc()).all()
+    purchase_totals = {}
+    for batch in batches:
+        total = db.session.query(func.coalesce(func.sum(Purchase.good_weight), 0)).filter(
+            Purchase.batch_id == batch.id, Purchase.status == "Active"
+        ).scalar()
+        purchase_totals[batch.id] = float(total or 0)
+
+    return render_template(
+        "processing.html",
+        rows=Processing.query.order_by(Processing.id.desc()).all(),
+        batches=batches,
+        purchase_totals=purchase_totals,
+        next_processing=next_code(Processing, "processing_no", "PRO", 6)
+    )
+
+@app.route("/processing/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("processing")
+def processing_edit(id):
+    record = Processing.query.get_or_404(id)
+    if record.status == "Voided":
+        flash("A voided processing record cannot be edited.")
+        return redirect(url_for("processing"))
+
+    if request.method == "POST":
+        input_weight = float(request.form["input_weight"] or 0)
+        grade_a = float(request.form.get("grade_a_weight") or 0)
+        grade_b = float(request.form.get("grade_b_weight") or 0)
+        grade_c = float(request.form.get("grade_c_weight") or 0)
+        total_sorted = grade_a + grade_b + grade_c
+
+        if input_weight <= 0 or min(grade_a, grade_b, grade_c) < 0 or total_sorted > input_weight:
+            flash("Check the weights. Grade totals cannot exceed the input weight.")
+            return redirect(url_for("processing_edit", id=id))
+
+        record.processing_date = datetime.strptime(request.form["processing_date"], "%Y-%m-%d").date()
+        record.input_weight = input_weight
+        record.grade_a_weight = grade_a
+        record.grade_b_weight = grade_b
+        record.grade_c_weight = grade_c
+        record.total_sorted_weight = total_sorted
+        record.processing_loss = input_weight - total_sorted
+        record.outturn_percent = total_sorted / input_weight * 100
+        record.moisture = float(request.form["moisture"]) if request.form.get("moisture") else None
+        record.processed_by = request.form.get("processed_by")
+        record.notes = request.form.get("notes")
+        db.session.commit()
+        log_action("UPDATE", "Processing", record.id, record.processing_no)
+        flash("Processing record updated.")
+        return redirect(url_for("processing"))
+
+    return render_template("processing_edit.html", row=record)
+
+@app.route("/processing/<int:id>/void", methods=["POST"])
+@permission_required("processing")
+def processing_void(id):
+    record = Processing.query.get_or_404(id)
+    reason = (request.form.get("void_reason") or "").strip()
+    if not reason:
+        flash("Enter a reason before voiding the record.")
+        return redirect(url_for("processing"))
+    record.status = "Voided"
+    record.void_reason = reason
+    db.session.commit()
+    log_action("VOID", "Processing", record.id, reason)
+    flash("Processing record voided. It remains in the audit history.")
+    return redirect(url_for("processing"))
+
+@app.route("/processing/<int:id>")
+@permission_required("processing")
+def processing_detail(id):
+    return render_template("processing_detail.html", row=Processing.query.get_or_404(id))
 
 @app.route("/casuals", methods=["GET","POST"])
 @permission_required("casuals")

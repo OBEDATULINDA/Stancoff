@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ row.processing_no }} · Stancoff{% endblock %}
+{% block page_title %}Processing record{% endblock %}
+{% block page_subtitle %}{{ row.processing_no }} · Batch {{ row.batch.batch_no }}{% endblock %}
+{% block content %}
+<section class="metric-grid">
+ <article class="metric-card"><span>Weight entering sorting</span><strong>{{ "{:,.2f}".format(row.input_weight) }} kg</strong><small>{{ row.processing_date }}</small></article>
+ <article class="metric-card"><span>Total sorted</span><strong>{{ "{:,.2f}".format(row.total_sorted_weight) }} kg</strong><small>Grades A + B + C</small></article>
+ <article class="metric-card"><span>Processing loss</span><strong>{{ "{:,.2f}".format(row.processing_loss) }} kg</strong><small>Input less sorted output</small></article>
+ <article class="metric-card"><span>Outturn</span><strong>{{ "{:.2f}".format(row.outturn_percent) }}%</strong><small>{{ row.status }}</small></article>
+</section>
+<section class="grade-summary">
+ <article class="panel grade-a-box"><span class="eyebrow">Grade A</span><h2>Red</h2><strong>{{ "{:,.2f}".format(row.grade_a_weight) }} kg</strong></article>
+ <article class="panel grade-b-box"><span class="eyebrow">Grade B</span><h2>Yellow</h2><strong>{{ "{:,.2f}".format(row.grade_b_weight) }} kg</strong></article>
+ <article class="panel grade-c-box"><span class="eyebrow">Grade C</span><h2>Green</h2><strong>{{ "{:,.2f}".format(row.grade_c_weight) }} kg</strong></article>
+</section>
+<section class="panel" style="margin-top:18px"><h2>Additional information</h2><div class="detail-grid"><div><span>Batch</span><strong>{{ row.batch.batch_no }}</strong></div><div><span>Process</span><strong>{{ row.batch.process_type }}</strong></div><div><span>Moisture</span><strong>{{ row.moisture if row.moisture is not none else 'Not recorded' }}{% if row.moisture is not none %}%{% endif %}</strong></div><div><span>Processed by</span><strong>{{ row.processed_by or 'Not recorded' }}</strong></div><div class="form-wide"><span>Notes</span><p>{{ row.notes or 'No notes' }}</p></div></div></section>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Edit processing · Stancoff{% endblock %}
+{% block page_title %}Edit processing record{% endblock %}
+{% block page_subtitle %}{{ row.processing_no }} · {{ row.batch.batch_no }}{% endblock %}
+{% block content %}
+<section class="panel">
+<form method="post" class="processing-form" id="processingForm">
+  <label>Processing date<input type="date" name="processing_date" value="{{ row.processing_date }}" required></label>
+  <label>Batch<input value="{{ row.batch.batch_no }}" readonly></label>
+  <label>Weight entering sorting (kg)<input type="number" step="0.01" min="0.01" name="input_weight" id="inputWeight" value="{{ row.input_weight }}" required></label>
+  <div class="grade-input grade-a-box"><label>Grade A — Red (kg)<input type="number" step="0.01" min="0" name="grade_a_weight" id="gradeA" value="{{ row.grade_a_weight }}" required></label></div>
+  <div class="grade-input grade-b-box"><label>Grade B — Yellow (kg)<input type="number" step="0.01" min="0" name="grade_b_weight" id="gradeB" value="{{ row.grade_b_weight }}" required></label></div>
+  <div class="grade-input grade-c-box"><label>Grade C — Green (kg)<input type="number" step="0.01" min="0" name="grade_c_weight" id="gradeC" value="{{ row.grade_c_weight }}" required></label></div>
+  <label>Moisture %<input type="number" step="0.01" min="0" max="100" name="moisture" value="{{ row.moisture if row.moisture is not none else '' }}"></label>
+  <label>Processed by<input name="processed_by" value="{{ row.processed_by or '' }}"></label>
+  <label class="form-wide">Notes<textarea name="notes" rows="3">{{ row.notes or '' }}</textarea></label>
+  <div class="calculation-box form-wide"><div><span>Total sorted</span><strong id="totalSorted"></strong></div><div><span>Loss</span><strong id="processingLoss"></strong></div><div><span>Outturn</span><strong id="outturn"></strong></div></div>
+  <div class="form-wide"><button>Save changes</button> <a class="secondary-button" href="{{ url_for('processing') }}">Cancel</a></div>
+</form>
+</section>
+{% endblock %}
+{% block scripts %}<script>
+const ids=['gradeA','gradeB','gradeC'];function n(id){return parseFloat(document.getElementById(id).value)||0}function calc(){const i=n('inputWeight'),t=ids.reduce((s,x)=>s+n(x),0),l=i-t;totalSorted.textContent=t.toFixed(2)+' kg';processingLoss.textContent=l.toFixed(2)+' kg';outturn.textContent=(i?t/i*100:0).toFixed(2)+'%'}[document.getElementById('inputWeight'),...ids.map(x=>document.getElementById(x))].forEach(x=>x.addEventListener('input',calc));calc();
+</script>{% endblock %}

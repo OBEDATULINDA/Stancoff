@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Processing · Stancoff{% endblock %}
+{% block page_title %}Coffee processing{% endblock %}
+{% block page_subtitle %}Sort processed coffee into Grade A, Grade B and Grade C{% endblock %}
+{% block content %}
+<section class="panel processing-intro">
+  <div>
+    <span class="eyebrow">Update 1</span>
+    <h2>Record sorting results</h2>
+    <p>Select a batch, enter the weight that entered sorting, then record each colour grade separately.</p>
+  </div>
+  <div class="grade-key">
+    <span class="grade-pill grade-a">Grade A · Red</span>
+    <span class="grade-pill grade-b">Grade B · Yellow</span>
+    <span class="grade-pill grade-c">Grade C · Green</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><div><span class="eyebrow">New record</span><h2>{{ next_processing }}</h2></div></div>
+  <form method="post" class="processing-form" id="processingForm">
+    <label>Processing date<input type="date" name="processing_date" required></label>
+    <label>Batch
+      <select name="batch_id" id="batchSelect" required>
+        <option value="">Select a batch</option>
+        {% for b in batches %}
+        <option value="{{ b.id }}" data-purchased="{{ purchase_totals[b.id] }}">{{ b.batch_no }} · {{ b.process_type }} · {{ b.status }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Purchased good coffee for batch<input id="purchasedWeight" readonly placeholder="Select a batch"></label>
+    <label>Weight entering sorting (kg)<input type="number" step="0.01" min="0.01" name="input_weight" id="inputWeight" required></label>
+
+    <div class="grade-input grade-a-box"><label>Grade A — Red (kg)<input type="number" step="0.01" min="0" name="grade_a_weight" id="gradeA" value="0" required></label></div>
+    <div class="grade-input grade-b-box"><label>Grade B — Yellow (kg)<input type="number" step="0.01" min="0" name="grade_b_weight" id="gradeB" value="0" required></label></div>
+    <div class="grade-input grade-c-box"><label>Grade C — Green (kg)<input type="number" step="0.01" min="0" name="grade_c_weight" id="gradeC" value="0" required></label></div>
+
+    <label>Moisture % (optional)<input type="number" step="0.01" min="0" max="100" name="moisture"></label>
+    <label>Processed by<input name="processed_by" placeholder="Name of supervisor"></label>
+    <label class="form-wide">Notes<textarea name="notes" rows="3" placeholder="Fermentation, sorting or quality observations"></textarea></label>
+
+    <div class="calculation-box form-wide">
+      <div><span>Total sorted</span><strong id="totalSorted">0.00 kg</strong></div>
+      <div><span>Processing loss</span><strong id="processingLoss">0.00 kg</strong></div>
+      <div><span>Outturn</span><strong id="outturn">0.00%</strong></div>
+    </div>
+    <div class="form-wide"><button class="primary-button">Save processing record</button></div>
+  </form>
+</section>
+
+<section class="panel" style="margin-top:18px">
+  <div class="panel-heading"><div><span class="eyebrow">History</span><h2>Processing records</h2></div></div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Input kg</th><th>A · Red</th><th>B · Yellow</th><th>C · Green</th><th>Loss</th><th>Outturn</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr class="{% if r.status == 'Voided' %}voided-row{% endif %}">
+        <td><a href="{{ url_for('processing_detail', id=r.id) }}"><strong>{{ r.processing_no }}</strong></a></td>
+        <td>{{ r.processing_date }}</td><td>{{ r.batch.batch_no }}</td>
+        <td>{{ "{:,.2f}".format(r.input_weight) }}</td>
+        <td>{{ "{:,.2f}".format(r.grade_a_weight) }}</td><td>{{ "{:,.2f}".format(r.grade_b_weight) }}</td><td>{{ "{:,.2f}".format(r.grade_c_weight) }}</td>
+        <td>{{ "{:,.2f}".format(r.processing_loss) }}</td><td>{{ "{:.1f}".format(r.outturn_percent) }}%</td><td>{{ r.status }}</td>
+        <td>
+          {% if r.status != 'Voided' %}
+          <a class="small-button" href="{{ url_for('processing_edit', id=r.id) }}">Edit</a>
+          <form method="post" action="{{ url_for('processing_void', id=r.id) }}" class="inline-void" onsubmit="return confirm('Void this processing record?')">
+            <input name="void_reason" placeholder="Reason" required><button class="small-button danger">Void</button>
+          </form>
+          {% else %}<small>{{ r.void_reason }}</small>{% endif %}
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="11" class="empty">No processing records yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+const batchSelect=document.getElementById('batchSelect');
+const purchased=document.getElementById('purchasedWeight');
+const input=document.getElementById('inputWeight');
+const gradeIds=['gradeA','gradeB','gradeC'];
+function number(id){return parseFloat(document.getElementById(id).value)||0}
+function calculate(){
+  const entered=parseFloat(input.value)||0;
+  const total=gradeIds.reduce((sum,id)=>sum+number(id),0);
+  const loss=entered-total;
+  document.getElementById('totalSorted').textContent=total.toFixed(2)+' kg';
+  document.getElementById('processingLoss').textContent=loss.toFixed(2)+' kg';
+  document.getElementById('outturn').textContent=(entered>0 ? total/entered*100 : 0).toFixed(2)+'%';
+  document.getElementById('processingLoss').classList.toggle('negative-value',loss<0);
+}
+batchSelect.addEventListener('change',()=>{
+  const option=batchSelect.options[batchSelect.selectedIndex];
+  const kg=parseFloat(option.dataset.purchased||0);
+  purchased.value=kg ? kg.toLocaleString(undefined,{maximumFractionDigits:2})+' kg' : 'No purchases recorded';
+  if(kg && !input.value) input.value=kg;
+  calculate();
+});
+[input,...gradeIds.map(id=>document.getElementById(id))].forEach(el=>el.addEventListener('input',calculate));
+document.getElementById('processingForm').addEventListener('submit',e=>{
+  const entered=parseFloat(input.value)||0;
+  const total=gradeIds.reduce((sum,id)=>sum+number(id),0);
+  if(total>entered){e.preventDefault();alert('Grade A + Grade B + Grade C cannot exceed the weight entering sorting.');}
+});
+</script>
+{% endblock %}
