@@ -1496,14 +1496,22 @@ def attendance():
         query = query.filter(Attendance.work_date <= datetime.strptime(date_to, "%Y-%m-%d").date())
     rows = query.order_by(Attendance.work_date.desc(), Attendance.id.desc()).all()
 
-    # Weekly cards are calculated from all attendance, not only the filtered history rows.
-    # This keeps the cards complete even when the history table is filtered.
+    # Seven-day cards are calculated from each worker's own attendance cycle.
+    # The first non-voided attendance date becomes that worker's cycle start,
+    # so workers are not forced into a Monday-to-Sunday calendar week.
     weekly = {}
     card_rows = Attendance.query.filter(Attendance.status != "Voided").order_by(
-        Attendance.work_date.desc(), Attendance.id.desc()
+        Attendance.work_date.asc(), Attendance.id.asc()
     ).all()
+    cycle_starts = {}
     for row in card_rows:
-        week_start = row.work_date - timedelta(days=row.work_date.weekday())
+        cycle_starts.setdefault(row.casual_id, row.work_date)
+
+    for row in card_rows:
+        anchor = cycle_starts[row.casual_id]
+        cycle_number = (row.work_date - anchor).days // 7
+        week_start = anchor + timedelta(days=cycle_number * 7)
+        day_index = (row.work_date - week_start).days
         key = (row.casual_id, week_start)
         item = weekly.setdefault(key, {
             "casual": row.casual,
@@ -1515,11 +1523,17 @@ def attendance():
             "paid": 0,
             "unpaid": 0,
             "day_entries": {i: [] for i in range(7)},
+            "day_labels": [
+                (week_start + timedelta(days=i)).strftime("%a") for i in range(7)
+            ],
+            "day_dates": [
+                (week_start + timedelta(days=i)).strftime("%d %b") for i in range(7)
+            ],
         })
         day_value = 1 if row.work_type == "Full Day" else 0.5
         item["days"] += day_value
         item["amount"] += float(row.amount or 0)
-        item["day_entries"][row.work_date.weekday()].append(row)
+        item["day_entries"][day_index].append(row)
         if row.status == "Paid":
             item["paid"] += 1
         else:

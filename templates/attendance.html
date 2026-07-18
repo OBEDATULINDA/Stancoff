@@ -29,7 +29,7 @@
 {% if weekly_cards %}
 <div class="section-card">
   <h2>Weekly attendance cards</h2>
-  <p class="help-text">Each card runs from Monday to Sunday. Use Prepare Payment to send the worker and exact week directly to Casual Payments.</p>
+  <p class="help-text">Each card follows that worker’s own 7-day attendance cycle, beginning from their first attendance date. Use Prepare Payment to send the exact period directly to Casual Payments.</p>
   <div class="weekly-card-grid">
     {% for w in weekly_cards %}
     <div class="weekly-card">
@@ -39,10 +39,12 @@
       </div>
       <div class="week-period">{{w.start.strftime('%d %b %Y')}} – {{w.end.strftime('%d %b %Y')}}</div>
       <div class="week-days">
-        {% for day_name in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
-          {% set day_rows = w.day_entries[loop.index0] %}
+        {% for day_name in w.day_labels %}
+          {% set day_index = loop.index0 %}
+          {% set day_rows = w.day_entries[day_index] %}
           <div class="week-day {% if day_rows %}worked{% endif %}">
             <span>{{day_name}}</span>
+            <small>{{w.day_dates[day_index]}}</small>
             {% if day_rows %}
               <strong>{% for entry in day_rows %}{{'1' if entry.work_type=='Full Day' else '½'}}{% if not loop.last %}+{% endif %}{% endfor %}</strong>
               <small>{% if day_rows|selectattr('status','equalto','Unpaid')|list %}Unpaid{% else %}Paid{% endif %}</small>
