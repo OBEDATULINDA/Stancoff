@@ -29,13 +29,33 @@
 {% if weekly_cards %}
 <div class="section-card">
   <h2>Weekly attendance cards</h2>
-  <div class="metric-grid">
+  <p class="help-text">Each card runs from Monday to Sunday. Use Prepare Payment to send the worker and exact week directly to Casual Payments.</p>
+  <div class="weekly-card-grid">
     {% for w in weekly_cards %}
-    <div class="metric-card">
-      <small>{{w.start}} to {{w.end}}</small>
-      <strong>{{w.casual.name}}</strong>
-      <span>{{w.days}} day(s) · UGX {{"{:,.0f}".format(w.amount)}}</span>
-      <small>{% if w.unpaid %}{{w.unpaid}} unpaid entr{{'y' if w.unpaid==1 else 'ies'}}{% else %}Fully paid{% endif %}</small>
+    <div class="weekly-card">
+      <div class="weekly-card-head">
+        <div><strong>{{w.casual.name}}</strong><small>{{w.casual.code}}</small></div>
+        <span class="status-pill">{% if w.unpaid %}Partly/Not paid{% else %}Fully paid{% endif %}</span>
+      </div>
+      <div class="week-period">{{w.start.strftime('%d %b %Y')}} – {{w.end.strftime('%d %b %Y')}}</div>
+      <div class="week-days">
+        {% for day_name in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+          {% set day_rows = w.day_entries[loop.index0] %}
+          <div class="week-day {% if day_rows %}worked{% endif %}">
+            <span>{{day_name}}</span>
+            {% if day_rows %}
+              <strong>{% for entry in day_rows %}{{'1' if entry.work_type=='Full Day' else '½'}}{% if not loop.last %}+{% endif %}{% endfor %}</strong>
+              <small>{% if day_rows|selectattr('status','equalto','Unpaid')|list %}Unpaid{% else %}Paid{% endif %}</small>
+            {% else %}<strong>—</strong><small>No entry</small>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="weekly-totals">
+        <span><small>Days</small><strong>{{w.days}}</strong></span>
+        <span><small>Total earned</small><strong>UGX {{"{:,.0f}".format(w.amount)}}</strong></span>
+        <span><small>Unpaid</small><strong>UGX {{"{:,.0f}".format(w.unpaid_amount)}}</strong></span>
+      </div>
+      {% if w.unpaid %}<a class="button" href="/payments?casual_id={{w.casual.id}}&period_start={{w.start}}&period_end={{w.end}}">Prepare Payment</a>{% endif %}
     </div>
     {% endfor %}
   </div>

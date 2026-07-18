@@ -1496,10 +1496,13 @@ def attendance():
         query = query.filter(Attendance.work_date <= datetime.strptime(date_to, "%Y-%m-%d").date())
     rows = query.order_by(Attendance.work_date.desc(), Attendance.id.desc()).all()
 
+    # Weekly cards are calculated from all attendance, not only the filtered history rows.
+    # This keeps the cards complete even when the history table is filtered.
     weekly = {}
-    for row in rows:
-        if row.status == "Voided":
-            continue
+    card_rows = Attendance.query.filter(Attendance.status != "Voided").order_by(
+        Attendance.work_date.desc(), Attendance.id.desc()
+    ).all()
+    for row in card_rows:
         week_start = row.work_date - timedelta(days=row.work_date.weekday())
         key = (row.casual_id, week_start)
         item = weekly.setdefault(key, {
@@ -1508,16 +1511,24 @@ def attendance():
             "end": week_start + timedelta(days=6),
             "days": 0.0,
             "amount": 0.0,
+            "unpaid_amount": 0.0,
             "paid": 0,
             "unpaid": 0,
+            "day_entries": {i: [] for i in range(7)},
         })
-        item["days"] += 1 if row.work_type == "Full Day" else 0.5
-        item["amount"] += row.amount
+        day_value = 1 if row.work_type == "Full Day" else 0.5
+        item["days"] += day_value
+        item["amount"] += float(row.amount or 0)
+        item["day_entries"][row.work_date.weekday()].append(row)
         if row.status == "Paid":
             item["paid"] += 1
         else:
             item["unpaid"] += 1
-    weekly_cards = sorted(weekly.values(), key=lambda x: (x["start"], x["casual"].name), reverse=True)[:30]
+            item["unpaid_amount"] += float(row.amount or 0)
+
+    weekly_cards = sorted(
+        weekly.values(), key=lambda x: (x["start"], x["casual"].name), reverse=True
+    )[:40]
 
     return render_template(
         "attendance.html",
@@ -1638,6 +1649,50 @@ def casual_status(id):
     return redirect(url_for("casual_profile", id=id))
 
 
+@app.route("/payments/calculate")
+@permission_required("payments")
+def payment_calculate():
+    """Return an automatic preview of unpaid attendance for a selected period."""
+    cid = request.args.get("casual_id", type=int)
+    start_text = request.args.get("period_start", "")
+    end_text = request.args.get("period_end", "")
+    if not cid or not start_text or not end_text:
+        return {"ok": False, "message": "Select a worker and both period dates."}, 400
+    try:
+        start = datetime.strptime(start_text, "%Y-%m-%d").date()
+        end = datetime.strptime(end_text, "%Y-%m-%d").date()
+    except ValueError:
+        return {"ok": False, "message": "Enter valid dates."}, 400
+    if end < start:
+        return {"ok": False, "message": "The period end cannot be before the start."}, 400
+
+    entries = Attendance.query.filter(
+        Attendance.casual_id == cid,
+        Attendance.work_date >= start,
+        Attendance.work_date <= end,
+        Attendance.status == "Unpaid",
+    ).order_by(Attendance.work_date).all()
+    gross = sum(float(x.amount or 0) for x in entries)
+    full_days = sum(1 for x in entries if x.work_type == "Full Day")
+    half_days = sum(1 for x in entries if x.work_type == "Half Day")
+    return {
+        "ok": True,
+        "entry_count": len(entries),
+        "full_days": full_days,
+        "half_days": half_days,
+        "days_equivalent": full_days + (half_days * 0.5),
+        "gross_pay": gross,
+        "entries": [
+            {
+                "date": x.work_date.isoformat(),
+                "work_type": x.work_type,
+                "work_done": x.work_done or "-",
+                "amount": float(x.amount or 0),
+            } for x in entries
+        ],
+    }
+
+
 @app.route("/payments", methods=["GET","POST"])
 @permission_required("payments")
 def payments():
@@ -1679,9 +1734,16 @@ def payments():
                    f"{p.payment_ref}; {p.casual.name}; UGX {p.net_paid:,.0f}")
         flash("Payment saved. You can now print the receipt.")
         return redirect(url_for("payments"))
-    return render_template("payments.html",
-                           rows=Payment.query.order_by(Payment.id.desc()).all(),
-                           casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all())
+    return render_template(
+        "payments.html",
+        rows=Payment.query.order_by(Payment.id.desc()).all(),
+        casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all(),
+        prefill={
+            "casual_id": request.args.get("casual_id", type=int),
+            "period_start": request.args.get("period_start", ""),
+            "period_end": request.args.get("period_end", ""),
+        },
+    )
 
 
 @app.route("/payment/<int:id>/edit", methods=["GET", "POST"])

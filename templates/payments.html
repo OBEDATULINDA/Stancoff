@@ -1,13 +1,88 @@
 {% extends "base.html" %}
 {% block page_title %}Casual Payments{% endblock %}
-{% block page_subtitle %}Pay unpaid attendance and keep a clear payment history{% endblock %}
+{% block page_subtitle %}The amount is calculated automatically from unpaid attendance{% endblock %}
 {% block content %}
-<div class="section-card"><h2>Make payment</h2><form method="post" class="form">
-<select name="casual_id">{% for c in casuals %}<option value="{{c.id}}">{{c.code}} - {{c.name}}</option>{% endfor %}</select>
-<input type="date" name="period_start" required><input type="date" name="period_end" required><input type="number" step="0.01" name="deduction" value="0" placeholder="Deduction"><input type="date" name="payment_date" required>
-<select name="method"><option>Cash</option><option>Mobile Money</option><option>Bank</option></select><button>Pay unpaid attendance</button></form></div>
+<div class="section-card">
+  <h2>Prepare payment</h2>
+  <p class="help-text">Select the worker and attendance period. The system will immediately show the unpaid days and amount due.</p>
+  <form method="post" class="form" id="payment-form">
+    <select name="casual_id" id="payment-casual" required>
+      <option value="">Select worker</option>
+      {% for c in casuals %}<option value="{{c.id}}" {% if prefill.casual_id==c.id %}selected{% endif %}>{{c.code}} - {{c.name}}</option>{% endfor %}
+    </select>
+    <label>Period start<input type="date" name="period_start" id="period-start" value="{{prefill.period_start}}" required></label>
+    <label>Period end<input type="date" name="period_end" id="period-end" value="{{prefill.period_end}}" required></label>
+
+    <div class="payment-preview" id="payment-preview">
+      <div><small>Attendance</small><strong id="preview-days">—</strong></div>
+      <div><small>Gross amount</small><strong id="preview-gross">UGX 0</strong></div>
+      <div><small>Deduction</small><strong id="preview-deduction">UGX 0</strong></div>
+      <div><small>Net payment</small><strong id="preview-net">UGX 0</strong></div>
+    </div>
+    <div id="preview-message" class="help-text">Choose a worker and period to calculate the payment.</div>
+    <div id="preview-entries" class="preview-entries"></div>
+
+    <label>Deduction<input type="number" step="0.01" min="0" name="deduction" id="deduction" value="0"></label>
+    <label>Payment date<input type="date" name="payment_date" required></label>
+    <label>Payment method<select name="method"><option>Cash</option><option>Mobile Money</option><option>Bank</option></select></label>
+    <button id="pay-button" disabled>Pay calculated attendance</button>
+  </form>
+</div>
+
 <div class="section-card"><h2>Payment history</h2><div class="table-wrap"><table><tr><th>Ref</th><th>Worker</th><th>Period</th><th>Gross</th><th>Deduction</th><th>Net</th><th>Date</th><th>Status</th><th>Actions</th></tr>
 {% for r in rows %}<tr class="{% if r.status=='Voided' %}muted-row{% endif %}"><td>{{r.payment_ref}}</td><td><a href="/casual/{{r.casual.id}}">{{r.casual.code}} - {{r.casual.name}}</a></td><td>{{r.period_start}} to {{r.period_end}}</td><td>{{"{:,.0f}".format(r.gross_pay)}}</td><td>{{"{:,.0f}".format(r.deduction or 0)}}</td><td>{{"{:,.0f}".format(r.net_paid)}}</td><td>{{r.payment_date}}</td><td>{{r.status}}</td><td>
 <a class="button small" target="_blank" href="/payment-receipt/{{r.id}}">Print</a>{% if r.status!='Voided' %} <a class="button small" href="/payment/{{r.id}}/edit">Edit</a>
 <form method="post" action="/payment/{{r.id}}/void" class="inline-form" onsubmit="return confirm('Void this payment? Its attendance entries will become unpaid again.')"><input name="reason" placeholder="Void reason" required><button class="danger small">Void</button></form>{% endif %}</td></tr>{% endfor %}</table></div></div>
+
+<script>
+(() => {
+  const worker = document.getElementById('payment-casual');
+  const start = document.getElementById('period-start');
+  const end = document.getElementById('period-end');
+  const deduction = document.getElementById('deduction');
+  const button = document.getElementById('pay-button');
+  let gross = 0;
+  const money = value => 'UGX ' + Number(value || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+
+  function updateNet() {
+    const d = Math.max(0, Number(deduction.value || 0));
+    document.getElementById('preview-deduction').textContent = money(d);
+    document.getElementById('preview-net').textContent = money(Math.max(0, gross - d));
+  }
+
+  async function calculate() {
+    const entriesBox = document.getElementById('preview-entries');
+    if (!worker.value || !start.value || !end.value) {
+      gross = 0; button.disabled = true; entriesBox.innerHTML = '';
+      document.getElementById('preview-days').textContent = '—';
+      document.getElementById('preview-gross').textContent = money(0);
+      document.getElementById('preview-message').textContent = 'Choose a worker and period to calculate the payment.';
+      updateNet(); return;
+    }
+    document.getElementById('preview-message').textContent = 'Calculating attendance…';
+    try {
+      const params = new URLSearchParams({casual_id: worker.value, period_start: start.value, period_end: end.value});
+      const response = await fetch('/payments/calculate?' + params.toString());
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Unable to calculate payment.');
+      gross = data.gross_pay;
+      document.getElementById('preview-days').textContent = `${data.days_equivalent} day(s) (${data.entry_count} entries)`;
+      document.getElementById('preview-gross').textContent = money(gross);
+      document.getElementById('preview-message').textContent = data.entry_count ? 'This amount comes from the unpaid attendance listed below.' : 'No unpaid attendance was found in this period.';
+      entriesBox.innerHTML = data.entries.map(e => `<div><span>${e.date} · ${e.work_type} · ${e.work_done}</span><strong>${money(e.amount)}</strong></div>`).join('');
+      button.disabled = data.entry_count === 0;
+      updateNet();
+    } catch (error) {
+      gross = 0; button.disabled = true; entriesBox.innerHTML = '';
+      document.getElementById('preview-days').textContent = '—';
+      document.getElementById('preview-gross').textContent = money(0);
+      document.getElementById('preview-message').textContent = error.message;
+      updateNet();
+    }
+  }
+  [worker, start, end].forEach(el => el.addEventListener('change', calculate));
+  deduction.addEventListener('input', updateNet);
+  calculate();
+})();
+</script>
 {% endblock %}
