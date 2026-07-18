@@ -21,9 +21,10 @@ db = SQLAlchemy(app)
 
 ROLE_PERMISSIONS = {
     "Admin": {"*"},
-    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","drying","casuals","rates","attendance","payments","reports"},
+    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","drying","inventory","locations","casuals","rates","attendance","payments","reports"},
     "Receiving Clerk": {"dashboard","suppliers","batches","purchases"},
-    "Processing Supervisor": {"dashboard","batches","processing","drying","reports"},
+    "Processing Supervisor": {"dashboard","batches","processing","drying","inventory","locations","reports"},
+    "Storekeeper": {"dashboard","batches","drying","inventory","locations","reports"},
     "Payroll Officer": {"dashboard","casuals","rates","attendance","payments"},
     "Viewer": {"dashboard","reports"},
 }
@@ -137,6 +138,52 @@ class Drying(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     processing = db.relationship("Processing")
     batch = db.relationship("Batch")
+
+class Location(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), unique=True, nullable=False)
+    location_type = db.Column(db.String(40), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class CoffeeStock(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    drying_id = db.Column(db.Integer, db.ForeignKey("drying.id"), nullable=False)
+    batch_id = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False)
+    grade = db.Column(db.String(20), nullable=False)
+    location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=False)
+    weight = db.Column(db.Float, nullable=False, default=0)
+    moisture = db.Column(db.Float)
+    stock_status = db.Column(db.String(30), nullable=False, default="Drying")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    drying = db.relationship("Drying")
+    batch = db.relationship("Batch")
+    location = db.relationship("Location")
+    __table_args__ = (db.UniqueConstraint("drying_id", "location_id", name="uq_stock_drying_location"),)
+
+class CoffeeMovement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    movement_no = db.Column(db.String(30), unique=True, nullable=False)
+    drying_id = db.Column(db.Integer, db.ForeignKey("drying.id"), nullable=False)
+    batch_id = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False)
+    grade = db.Column(db.String(20), nullable=False)
+    from_location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=False)
+    to_location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=False)
+    movement_date = db.Column(db.Date, nullable=False)
+    weight = db.Column(db.Float, nullable=False)
+    moisture = db.Column(db.Float)
+    movement_type = db.Column(db.String(40), nullable=False)
+    reason = db.Column(db.Text)
+    moved_by = db.Column(db.String(120))
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    void_reason = db.Column(db.Text)
+    created_by = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    drying = db.relationship("Drying")
+    batch = db.relationship("Batch")
+    from_location = db.relationship("Location", foreign_keys=[from_location_id])
+    to_location = db.relationship("Location", foreign_keys=[to_location_id])
 
 class Casual(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -902,6 +949,229 @@ def drying_void(id):
 @permission_required("drying")
 def drying_detail(id):
     return render_template("drying_detail.html", row=Drying.query.get_or_404(id))
+
+
+def stock_status_for_location(location_type):
+    return {
+        "Drying Area": "Drying",
+        "Temporary Storage": "Temporary Storage",
+        "Final Warehouse": "Final Storage",
+    }.get(location_type, "In Transit")
+
+
+def ensure_initial_stock():
+    """Create a starting inventory balance for existing active drying records.
+    This adds records only and never changes purchase, processing or drying data.
+    """
+    changed = False
+    active_drying = Drying.query.filter_by(status="Active").all()
+    for row in active_drying:
+        existing = CoffeeStock.query.filter_by(drying_id=row.id).first()
+        movement = CoffeeMovement.query.filter_by(drying_id=row.id, status="Active").first()
+        if existing or movement:
+            continue
+        location_name = (row.drying_location or "Unspecified Drying Area").strip()
+        location = Location.query.filter(func.lower(Location.name) == location_name.lower()).first()
+        if not location:
+            location = Location(name=location_name, location_type="Drying Area", status="Active")
+            db.session.add(location)
+            db.session.flush()
+        starting_weight = float(row.dry_weight if row.drying_status == "Completed" and row.dry_weight is not None else row.input_weight or 0)
+        if starting_weight <= 0:
+            continue
+        stock = CoffeeStock(
+            drying_id=row.id,
+            batch_id=row.batch_id,
+            grade=row.grade,
+            location_id=location.id,
+            weight=starting_weight,
+            moisture=row.moisture,
+            stock_status="Drying" if row.drying_status != "Completed" else "Fully Dry",
+        )
+        db.session.add(stock)
+        changed = True
+    if changed:
+        db.session.commit()
+
+
+@app.route("/locations", methods=["GET", "POST"])
+@permission_required("locations")
+def locations():
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        location_type = request.form.get("location_type")
+        if not name or location_type not in {"Drying Area", "Temporary Storage", "Final Warehouse"}:
+            flash("Enter a location name and select a valid location type.")
+            return redirect(url_for("locations"))
+        if Location.query.filter(func.lower(Location.name) == name.lower()).first():
+            flash("A location with this name already exists.")
+            return redirect(url_for("locations"))
+        row = Location(name=name, location_type=location_type, notes=request.form.get("notes"))
+        db.session.add(row)
+        db.session.commit()
+        log_action("CREATE", "Locations", row.id, f"{row.name} - {row.location_type}")
+        flash("Location added successfully.")
+        return redirect(url_for("locations"))
+    return render_template("locations.html", rows=Location.query.order_by(Location.location_type, Location.name).all())
+
+
+@app.route("/locations/<int:id>/toggle", methods=["POST"])
+@permission_required("locations")
+def location_toggle(id):
+    row = Location.query.get_or_404(id)
+    row.status = "Inactive" if row.status == "Active" else "Active"
+    db.session.commit()
+    log_action("UPDATE", "Locations", row.id, f"Status changed to {row.status}")
+    flash("Location status updated.")
+    return redirect(url_for("locations"))
+
+
+@app.route("/inventory", methods=["GET", "POST"])
+@permission_required("inventory")
+def inventory():
+    ensure_initial_stock()
+    if request.method == "POST":
+        source_id = int(request.form["source_stock_id"])
+        destination_id = int(request.form["to_location_id"])
+        source = CoffeeStock.query.get_or_404(source_id)
+        destination = Location.query.get_or_404(destination_id)
+        weight = float(request.form.get("weight") or 0)
+        if source.weight <= 0:
+            flash("The selected source has no available coffee.")
+            return redirect(url_for("inventory"))
+        if source.location_id == destination.id:
+            flash("Choose a different destination.")
+            return redirect(url_for("inventory"))
+        if weight <= 0 or weight > source.weight + 0.0001:
+            flash(f"Movement weight must be greater than zero and cannot exceed {source.weight:,.2f} kg.")
+            return redirect(url_for("inventory"))
+
+        moisture = float(request.form["moisture"]) if request.form.get("moisture") else source.moisture
+        destination_stock = CoffeeStock.query.filter_by(
+            drying_id=source.drying_id, location_id=destination.id
+        ).first()
+        old_destination_weight = float(destination_stock.weight or 0) if destination_stock else 0
+        if not destination_stock:
+            destination_stock = CoffeeStock(
+                drying_id=source.drying_id,
+                batch_id=source.batch_id,
+                grade=source.grade,
+                location_id=destination.id,
+                weight=0,
+                moisture=moisture,
+            )
+            db.session.add(destination_stock)
+        new_total = old_destination_weight + weight
+        if moisture is not None:
+            old_m = float(destination_stock.moisture or moisture)
+            destination_stock.moisture = ((old_destination_weight * old_m) + (weight * moisture)) / new_total if new_total else moisture
+        destination_stock.weight = new_total
+        destination_stock.stock_status = stock_status_for_location(destination.location_type)
+
+        source.weight = max(0, float(source.weight or 0) - weight)
+        source.stock_status = stock_status_for_location(source.location.location_type)
+
+        movement_type = {
+            "Drying Area": "Return to Drying",
+            "Temporary Storage": "Temporary Storage",
+            "Final Warehouse": "Final Storage",
+        }.get(destination.location_type, "Transfer")
+        movement = CoffeeMovement(
+            movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6),
+            drying_id=source.drying_id,
+            batch_id=source.batch_id,
+            grade=source.grade,
+            from_location_id=source.location_id,
+            to_location_id=destination.id,
+            movement_date=datetime.strptime(request.form["movement_date"], "%Y-%m-%d").date(),
+            weight=weight,
+            moisture=moisture,
+            movement_type=movement_type,
+            reason=request.form.get("reason"),
+            moved_by=request.form.get("moved_by"),
+            created_by=session.get("username"),
+        )
+        db.session.add(movement)
+        batch = db.session.get(Batch, source.batch_id)
+        if batch:
+            batch.status = movement_type
+        db.session.commit()
+        log_action("CREATE", "Inventory Movement", movement.id, movement.movement_no)
+        flash(f"Movement saved. {weight:,.2f} kg moved to {destination.name}.")
+        return redirect(url_for("inventory"))
+
+    stocks = CoffeeStock.query.filter(CoffeeStock.weight > 0.0001).order_by(CoffeeStock.updated_at.desc()).all()
+    locations_list = Location.query.filter_by(status="Active").order_by(Location.location_type, Location.name).all()
+    movements = CoffeeMovement.query.order_by(CoffeeMovement.id.desc()).limit(200).all()
+    grade_totals = {"Grade A": 0.0, "Grade B": 0.0, "Grade C": 0.0}
+    location_totals = {}
+    for stock in stocks:
+        grade_totals[stock.grade] = grade_totals.get(stock.grade, 0) + float(stock.weight or 0)
+        location_totals.setdefault(stock.location.name, 0.0)
+        location_totals[stock.location.name] += float(stock.weight or 0)
+    return render_template(
+        "inventory.html",
+        stocks=stocks,
+        locations=locations_list,
+        movements=movements,
+        grade_totals=grade_totals,
+        total_stock=sum(grade_totals.values()),
+        location_totals=location_totals,
+        next_movement=next_code(CoffeeMovement, "movement_no", "MOV", 6),
+    )
+
+
+@app.route("/inventory/movement/<int:id>/void", methods=["POST"])
+@permission_required("inventory")
+def inventory_movement_void(id):
+    movement = CoffeeMovement.query.get_or_404(id)
+    if movement.status == "Voided":
+        flash("This movement is already voided.")
+        return redirect(url_for("inventory"))
+    reason = (request.form.get("void_reason") or "").strip()
+    if not reason:
+        flash("Enter a reason before voiding the movement.")
+        return redirect(url_for("inventory"))
+    destination_stock = CoffeeStock.query.filter_by(
+        drying_id=movement.drying_id, location_id=movement.to_location_id
+    ).first()
+    source_stock = CoffeeStock.query.filter_by(
+        drying_id=movement.drying_id, location_id=movement.from_location_id
+    ).first()
+    if not destination_stock or destination_stock.weight + 0.0001 < movement.weight:
+        flash("This movement cannot be reversed because some of that coffee has already moved onward.")
+        return redirect(url_for("inventory"))
+    if not source_stock:
+        source_stock = CoffeeStock(
+            drying_id=movement.drying_id, batch_id=movement.batch_id, grade=movement.grade,
+            location_id=movement.from_location_id, weight=0,
+            stock_status=stock_status_for_location(movement.from_location.location_type)
+        )
+        db.session.add(source_stock)
+    destination_stock.weight = max(0, destination_stock.weight - movement.weight)
+    source_stock.weight += movement.weight
+    source_stock.moisture = movement.moisture
+    movement.status = "Voided"
+    movement.void_reason = reason
+    db.session.commit()
+    log_action("VOID", "Inventory Movement", movement.id, f"{movement.movement_no}: {reason}")
+    flash("Movement reversed and marked as voided.")
+    return redirect(url_for("inventory"))
+
+
+@app.route("/inventory/batch/<int:batch_id>")
+@permission_required("inventory")
+def inventory_batch_history(batch_id):
+    ensure_initial_stock()
+    batch = Batch.query.get_or_404(batch_id)
+    purchases = Purchase.query.filter_by(batch_id=batch_id).order_by(Purchase.purchase_date).all()
+    process = Processing.query.filter_by(batch_id=batch_id).first()
+    drying_rows = Drying.query.filter_by(batch_id=batch_id).order_by(Drying.start_date).all()
+    stocks = CoffeeStock.query.filter_by(batch_id=batch_id).filter(CoffeeStock.weight > 0.0001).all()
+    movements = CoffeeMovement.query.filter_by(batch_id=batch_id).order_by(CoffeeMovement.movement_date, CoffeeMovement.id).all()
+    return render_template("batch_history.html", batch=batch, purchases=purchases, process=process,
+                           drying_rows=drying_rows, stocks=stocks, movements=movements)
+
 
 @app.route("/casuals", methods=["GET","POST"])
 @permission_required("casuals")

@@ -1,0 +1,38 @@
+STANCOFF UPDATE 3 — STORAGE, INVENTORY & MOVEMENT LEDGER
+
+WHAT THIS UPDATE ADDS
+- Locations: Drying Areas, Temporary Storage and Final Warehouses
+- Storage & Inventory page
+- Partial or full coffee movements
+- Temporary storage while coffee is still wet
+- Return coffee to drying as many times as necessary
+- Final storage when drying is complete
+- Live stock by Grade A, Grade B and Grade C
+- Complete movement history
+- Batch traceability page
+- Void/reverse a wrong movement when the coffee has not already moved onward
+
+IMPORTANT DATA SAFETY
+This update adds new PostgreSQL tables only:
+- location
+- coffee_stock
+- coffee_movement
+
+It does not delete or recreate purchases, suppliers, batches, users, processing, drying or passwords.
+Do not delete the PostgreSQL service and do not change DATABASE_URL.
+
+HOW TO INSTALL
+1. Extract this ZIP.
+2. Open the Stancoff-main folder.
+3. Upload all files INSIDE Stancoff-main to the same GitHub repository.
+4. Allow GitHub to replace matching files.
+5. Commit with: Added storage inventory and movement ledger
+6. Wait for Render to redeploy, or use Manual Deploy > Clear build cache & deploy.
+7. Log in.
+8. Open Locations and create your real drying areas and stores.
+9. Open Storage & Inventory to move coffee.
+
+FIRST USE
+- Existing active drying records are automatically added to inventory at their recorded drying location.
+- Create destinations such as Temporary Store, Drying Yard 2 and Main Warehouse.
+- Select coffee, destination and weight, then save the movement.

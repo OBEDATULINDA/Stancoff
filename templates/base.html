@@ -25,9 +25,11 @@
       <a href="/batches">Batches</a>
       <a href="/purchases">Purchases</a>
       {% endif %}
-      {% if current_role in ['Admin','Manager','Processing Supervisor'] %}
+      {% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
       <a href="/processing" class="{% if request.path.startswith('/processing') %}active{% endif %}">Processing</a>
       <a href="/drying" class="{% if request.path.startswith('/drying') %}active{% endif %}">Drying</a>
+      <a href="/inventory" class="{% if request.path.startswith('/inventory') %}active{% endif %}">Storage & Inventory</a>
+      <a href="/locations" class="{% if request.path.startswith('/locations') %}active{% endif %}">Locations</a>
       {% endif %}
       {% if current_role in ['Admin','Manager'] %}
       <a href="/prices">Price history</a>
