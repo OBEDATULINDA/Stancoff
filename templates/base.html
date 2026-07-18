@@ -27,6 +27,7 @@
       {% endif %}
       {% if current_role in ['Admin','Manager','Processing Supervisor'] %}
       <a href="/processing" class="{% if request.path.startswith('/processing') %}active{% endif %}">Processing</a>
+      <a href="/drying" class="{% if request.path.startswith('/drying') %}active{% endif %}">Drying</a>
       {% endif %}
       {% if current_role in ['Admin','Manager'] %}
       <a href="/prices">Price history</a>

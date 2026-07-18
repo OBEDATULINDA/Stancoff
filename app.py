@@ -21,9 +21,9 @@ db = SQLAlchemy(app)
 
 ROLE_PERMISSIONS = {
     "Admin": {"*"},
-    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","casuals","rates","attendance","payments","reports"},
+    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","drying","casuals","rates","attendance","payments","reports"},
     "Receiving Clerk": {"dashboard","suppliers","batches","purchases"},
-    "Processing Supervisor": {"dashboard","batches","processing","reports"},
+    "Processing Supervisor": {"dashboard","batches","processing","drying","reports"},
     "Payroll Officer": {"dashboard","casuals","rates","attendance","payments"},
     "Viewer": {"dashboard","reports"},
 }
@@ -111,6 +111,31 @@ class Processing(db.Model):
     created_by = db.Column(db.String(80))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    batch = db.relationship("Batch")
+
+class Drying(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    drying_no = db.Column(db.String(30), unique=True, nullable=False)
+    processing_id = db.Column(db.Integer, db.ForeignKey("processing.id"), nullable=False)
+    batch_id = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False)
+    grade = db.Column(db.String(20), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date)
+    input_weight = db.Column(db.Float, nullable=False)
+    dry_weight = db.Column(db.Float)
+    drying_loss = db.Column(db.Float, nullable=False, default=0)
+    outturn_percent = db.Column(db.Float, nullable=False, default=0)
+    moisture = db.Column(db.Float)
+    drying_location = db.Column(db.String(150))
+    dried_by = db.Column(db.String(120))
+    drying_status = db.Column(db.String(20), nullable=False, default="Drying")
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    void_reason = db.Column(db.Text)
+    created_by = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    processing = db.relationship("Processing")
     batch = db.relationship("Batch")
 
 class Casual(db.Model):
@@ -662,6 +687,9 @@ def processing_edit(id):
     if record.status == "Voided":
         flash("A voided processing record cannot be edited.")
         return redirect(url_for("processing"))
+    if Drying.query.filter_by(processing_id=record.id, status="Active").first():
+        flash("This processing record cannot be edited because drying has already started. Void the drying record first.")
+        return redirect(url_for("processing"))
 
     if request.method == "POST":
         input_weight = float(request.form["input_weight"] or 0)
@@ -696,6 +724,9 @@ def processing_edit(id):
 @permission_required("processing")
 def processing_void(id):
     record = Processing.query.get_or_404(id)
+    if Drying.query.filter_by(processing_id=record.id, status="Active").first():
+        flash("This processing record cannot be voided because drying has already started. Void the drying record first.")
+        return redirect(url_for("processing"))
     reason = (request.form.get("void_reason") or "").strip()
     if not reason:
         flash("Enter a reason before voiding the record.")
@@ -711,6 +742,166 @@ def processing_void(id):
 @permission_required("processing")
 def processing_detail(id):
     return render_template("processing_detail.html", row=Processing.query.get_or_404(id))
+
+
+def grade_source_weight(processing_record, grade):
+    return {
+        "Grade A": processing_record.grade_a_weight,
+        "Grade B": processing_record.grade_b_weight,
+        "Grade C": processing_record.grade_c_weight,
+    }.get(grade, 0)
+
+@app.route("/drying", methods=["GET", "POST"])
+@permission_required("drying")
+def drying():
+    active_processes = Processing.query.filter_by(status="Active").order_by(
+        Processing.processing_date.desc(), Processing.id.desc()
+    ).all()
+
+    if request.method == "POST":
+        processing_id = int(request.form["processing_id"])
+        process = Processing.query.get_or_404(processing_id)
+        grade = request.form["grade"]
+        if grade not in {"Grade A", "Grade B", "Grade C"}:
+            flash("Select a valid grade.")
+            return redirect(url_for("drying"))
+
+        source_weight = float(grade_source_weight(process, grade) or 0)
+        if source_weight <= 0:
+            flash(f"{grade} has no weight in this processing record.")
+            return redirect(url_for("drying"))
+
+        existing = Drying.query.filter_by(
+            processing_id=processing_id, grade=grade, status="Active"
+        ).first()
+        if existing:
+            flash(f"An active drying record already exists for {grade} in this batch. Open it and use Edit.")
+            return redirect(url_for("drying"))
+
+        input_weight = float(request.form.get("input_weight") or 0)
+        dry_weight_text = request.form.get("dry_weight")
+        dry_weight = float(dry_weight_text) if dry_weight_text else None
+        if input_weight <= 0 or input_weight > source_weight:
+            flash(f"Input weight must be greater than zero and cannot exceed the sorted {grade} weight of {source_weight:,.2f} kg.")
+            return redirect(url_for("drying"))
+        if dry_weight is not None and (dry_weight < 0 or dry_weight > input_weight):
+            flash("Dry weight cannot be negative or greater than the input weight.")
+            return redirect(url_for("drying"))
+
+        start_date = datetime.strptime(request.form["start_date"], "%Y-%m-%d").date()
+        end_text = request.form.get("end_date")
+        end_date = datetime.strptime(end_text, "%Y-%m-%d").date() if end_text else None
+        if end_date and end_date < start_date:
+            flash("End date cannot be earlier than the start date.")
+            return redirect(url_for("drying"))
+
+        drying_status = "Completed" if dry_weight is not None and end_date else "Drying"
+        loss = input_weight - dry_weight if dry_weight is not None else 0
+        outturn = dry_weight / input_weight * 100 if dry_weight is not None and input_weight else 0
+        row = Drying(
+            drying_no=next_code(Drying, "drying_no", "DRY", 6),
+            processing_id=process.id,
+            batch_id=process.batch_id,
+            grade=grade,
+            start_date=start_date,
+            end_date=end_date,
+            input_weight=input_weight,
+            dry_weight=dry_weight,
+            drying_loss=loss,
+            outturn_percent=outturn,
+            moisture=float(request.form["moisture"]) if request.form.get("moisture") else None,
+            drying_location=request.form.get("drying_location"),
+            dried_by=request.form.get("dried_by"),
+            drying_status=drying_status,
+            notes=request.form.get("notes"),
+            created_by=session.get("username")
+        )
+        db.session.add(row)
+        process.batch.status = "Drying"
+        db.session.commit()
+        log_action("CREATE", "Drying", row.id, row.drying_no)
+        flash("Drying record saved successfully.")
+        return redirect(url_for("drying"))
+
+    grade_weights = {
+        p.id: {
+            "Grade A": float(p.grade_a_weight or 0),
+            "Grade B": float(p.grade_b_weight or 0),
+            "Grade C": float(p.grade_c_weight or 0),
+        } for p in active_processes
+    }
+    return render_template(
+        "drying.html",
+        rows=Drying.query.order_by(Drying.id.desc()).all(),
+        processes=active_processes,
+        grade_weights=grade_weights,
+        next_drying=next_code(Drying, "drying_no", "DRY", 6)
+    )
+
+@app.route("/drying/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("drying")
+def drying_edit(id):
+    row = Drying.query.get_or_404(id)
+    if row.status == "Voided":
+        flash("A voided drying record cannot be edited.")
+        return redirect(url_for("drying"))
+
+    source_weight = float(grade_source_weight(row.processing, row.grade) or 0)
+    if request.method == "POST":
+        input_weight = float(request.form.get("input_weight") or 0)
+        dry_text = request.form.get("dry_weight")
+        dry_weight = float(dry_text) if dry_text else None
+        if input_weight <= 0 or input_weight > source_weight:
+            flash(f"Input weight cannot exceed the sorted {row.grade} weight of {source_weight:,.2f} kg.")
+            return redirect(url_for("drying_edit", id=id))
+        if dry_weight is not None and (dry_weight < 0 or dry_weight > input_weight):
+            flash("Dry weight cannot be negative or greater than input weight.")
+            return redirect(url_for("drying_edit", id=id))
+
+        start_date = datetime.strptime(request.form["start_date"], "%Y-%m-%d").date()
+        end_text = request.form.get("end_date")
+        end_date = datetime.strptime(end_text, "%Y-%m-%d").date() if end_text else None
+        if end_date and end_date < start_date:
+            flash("End date cannot be earlier than start date.")
+            return redirect(url_for("drying_edit", id=id))
+
+        row.start_date = start_date
+        row.end_date = end_date
+        row.input_weight = input_weight
+        row.dry_weight = dry_weight
+        row.drying_loss = input_weight - dry_weight if dry_weight is not None else 0
+        row.outturn_percent = dry_weight / input_weight * 100 if dry_weight is not None else 0
+        row.moisture = float(request.form["moisture"]) if request.form.get("moisture") else None
+        row.drying_location = request.form.get("drying_location")
+        row.dried_by = request.form.get("dried_by")
+        row.drying_status = "Completed" if dry_weight is not None and end_date else "Drying"
+        row.notes = request.form.get("notes")
+        db.session.commit()
+        log_action("UPDATE", "Drying", row.id, row.drying_no)
+        flash("Drying record updated successfully.")
+        return redirect(url_for("drying"))
+
+    return render_template("drying_edit.html", row=row, source_weight=source_weight)
+
+@app.route("/drying/<int:id>/void", methods=["POST"])
+@permission_required("drying")
+def drying_void(id):
+    row = Drying.query.get_or_404(id)
+    reason = (request.form.get("void_reason") or "").strip()
+    if not reason:
+        flash("Enter a reason before voiding the drying record.")
+        return redirect(url_for("drying"))
+    row.status = "Voided"
+    row.void_reason = reason
+    db.session.commit()
+    log_action("VOID", "Drying", row.id, f"{row.drying_no}: {reason}")
+    flash("Drying record voided. It remains in the audit history.")
+    return redirect(url_for("drying"))
+
+@app.route("/drying/<int:id>")
+@permission_required("drying")
+def drying_detail(id):
+    return render_template("drying_detail.html", row=Drying.query.get_or_404(id))
 
 @app.route("/casuals", methods=["GET","POST"])
 @permission_required("casuals")

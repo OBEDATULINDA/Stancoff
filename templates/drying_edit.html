@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Edit drying · Stancoff{% endblock %}
+{% block page_title %}Edit drying record{% endblock %}
+{% block page_subtitle %}{{ row.drying_no }} · {{ row.batch.batch_no }} · {{ row.grade }}{% endblock %}
+{% block content %}
+<section class="panel">
+<form method="post" class="processing-form" id="dryingForm">
+  <label>Batch<input value="{{ row.batch.batch_no }}" readonly></label>
+  <label>Grade<input value="{{ row.grade }}" readonly></label>
+  <label>Sorted grade weight available<input value="{{ '{:,.2f}'.format(source_weight) }} kg" readonly></label>
+  <label>Drying start date<input type="date" name="start_date" value="{{ row.start_date }}" required></label>
+  <label>Drying end date<input type="date" name="end_date" id="endDate" value="{{ row.end_date or '' }}"></label>
+  <label>Weight entering drying (kg)<input type="number" step="0.01" min="0.01" max="{{ source_weight }}" name="input_weight" id="inputWeight" value="{{ row.input_weight }}" required></label>
+  <label>Dry weight (kg)<input type="number" step="0.01" min="0" name="dry_weight" id="dryWeight" value="{{ row.dry_weight if row.dry_weight is not none else '' }}"></label>
+  <label>Final moisture %<input type="number" step="0.01" min="0" max="100" name="moisture" value="{{ row.moisture if row.moisture is not none else '' }}"></label>
+  <label>Drying location<input name="drying_location" value="{{ row.drying_location or '' }}"></label>
+  <label>Dried by<input name="dried_by" value="{{ row.dried_by or '' }}"></label>
+  <label class="form-wide">Notes<textarea name="notes" rows="3">{{ row.notes or '' }}</textarea></label>
+  <div class="calculation-box form-wide"><div><span>Status</span><strong id="dryingStatus"></strong></div><div><span>Loss</span><strong id="dryingLoss"></strong></div><div><span>Outturn</span><strong id="dryingOutturn"></strong></div></div>
+  <div class="form-wide"><button>Save changes</button> <a class="secondary-button" href="{{ url_for('drying') }}">Cancel</a></div>
+</form>
+</section>
+{% endblock %}
+{% block scripts %}<script>
+const input=document.getElementById('inputWeight'),dry=document.getElementById('dryWeight'),end=document.getElementById('endDate');function calc(){const wet=parseFloat(input.value)||0,d=dry.value===''?null:(parseFloat(dry.value)||0);dryingLoss.textContent=(d===null?0:wet-d).toFixed(2)+' kg';dryingOutturn.textContent=(d!==null&&wet?d/wet*100:0).toFixed(2)+'%';dryingStatus.textContent=(d!==null&&end.value)?'Completed':'Drying'}[input,dry,end].forEach(x=>x.addEventListener('input',calc));calc();
+</script>{% endblock %}

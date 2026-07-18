@@ -1,0 +1,25 @@
+STANCOFF UPDATE 2 - DRYING MODULE
+
+This update keeps all earlier work and adds a new Drying table.
+It does not delete purchases, processing records, suppliers, users or passwords.
+
+NEW FEATURES
+- Dry Grade A, Grade B and Grade C separately.
+- Select an existing processing record and grade.
+- Automatically shows the sorted weight available for that grade.
+- Records start date, end date, drying location and responsible person.
+- Enter dry weight and final moisture when drying is complete.
+- Automatically calculates drying loss and drying outturn.
+- Edit or void drying records.
+- Prevents processing records from being edited or voided after active drying starts.
+
+UPLOAD
+1. Extract this ZIP.
+2. Open the Stancoff-main folder.
+3. Upload all contents to the same GitHub repository, replacing matching files.
+4. Commit the changes.
+5. Render should deploy automatically. If not, use Manual Deploy.
+6. Do not delete the PostgreSQL database and do not change DATABASE_URL.
+
+FIRST USE
+Open Drying from the menu. Select a processed batch, select a grade and save the drying record.

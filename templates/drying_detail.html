@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ row.drying_no }} · Stancoff{% endblock %}
+{% block page_title %}Drying record{% endblock %}
+{% block page_subtitle %}{{ row.drying_no }} · {{ row.batch.batch_no }}{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-heading"><div><span class="eyebrow">{{ row.grade }}</span><h2>{{ row.drying_status }}</h2></div><span class="panel-note">Record: {{ row.status }}</span></div>
+  <div class="detail-grid">
+    <div><span>Processing record</span><strong>{{ row.processing.processing_no }}</strong></div>
+    <div><span>Batch</span><strong>{{ row.batch.batch_no }}</strong></div>
+    <div><span>Start date</span><strong>{{ row.start_date }}</strong></div>
+    <div><span>End date</span><strong>{{ row.end_date or 'Still drying' }}</strong></div>
+    <div><span>Weight entering drying</span><strong>{{ '{:,.2f}'.format(row.input_weight) }} kg</strong></div>
+    <div><span>Dry weight</span><strong>{{ '{:,.2f}'.format(row.dry_weight) + ' kg' if row.dry_weight is not none else 'Not entered' }}</strong></div>
+    <div><span>Drying loss</span><strong>{{ '{:,.2f}'.format(row.drying_loss) }} kg</strong></div>
+    <div><span>Outturn</span><strong>{{ '{:.2f}'.format(row.outturn_percent) }}%</strong></div>
+    <div><span>Final moisture</span><strong>{{ '{:.2f}'.format(row.moisture) + '%' if row.moisture is not none else '—' }}</strong></div>
+    <div><span>Drying location</span><strong>{{ row.drying_location or '—' }}</strong></div>
+    <div><span>Dried by</span><strong>{{ row.dried_by or '—' }}</strong></div>
+    <div><span>Created by</span><strong>{{ row.created_by or '—' }}</strong></div>
+  </div>
+  {% if row.notes %}<hr><p>{{ row.notes }}</p>{% endif %}
+  {% if row.status == 'Voided' %}<div class="flash"><strong>Void reason:</strong> {{ row.void_reason }}</div>{% endif %}
+  <p><a class="secondary-button" href="{{ url_for('drying') }}">Back to drying</a></p>
+</section>
+{% endblock %}
