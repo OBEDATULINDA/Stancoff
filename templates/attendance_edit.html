@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block page_title %}Edit Attendance{% endblock %}
+{% block page_subtitle %}Correct an attendance error{% endblock %}
+{% block content %}
+<div class="section-card narrow-card">
+  {% if row.status=='Paid' %}<div class="flash">This attendance has already been paid. Saving changes will recalculate the linked payment automatically.</div>{% endif %}
+  <form method="post" class="form stacked-form">
+    <label>Work date<input type="date" name="work_date" value="{{row.work_date}}" required></label>
+    <label>Worker<select name="casual_id">{% for c in casuals %}<option value="{{c.id}}" {% if c.id==row.casual_id %}selected{% endif %}>{{c.code}} - {{c.name}}</option>{% endfor %}</select></label>
+    <label>Work done<input name="work_done" value="{{row.work_done or ''}}"></label>
+    <label>Work type<select name="work_type"><option {% if row.work_type=='Full Day' %}selected{% endif %}>Full Day</option><option {% if row.work_type=='Half Day' %}selected{% endif %}>Half Day</option></select></label>
+    <div><button>Save correction</button> <a class="button secondary" href="/attendance">Cancel</a></div>
+  </form>
+</div>
+{% endblock %}

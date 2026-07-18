@@ -1,3 +1,61 @@
-{% extends "base.html" %}{% block content %}<h2>Attendance</h2><form method=post class=form><input type=date name=work_date required><select name=casual_id>{% for c in casuals %}<option value="{{c.id}}">{{c.code}} - {{c.name}}</option>{% endfor %}</select>
-<input name=work_done placeholder="Work done"><select name=work_type><option>Full Day</option><option>Half Day</option></select><button>Save</button></form><table><tr><th>Date</th><th>Worker</th><th>Work</th><th>Type</th><th>Rate</th><th>Amount</th><th>Status</th></tr>
-{% for r in rows %}<tr><td>{{r.work_date}}</td><td>{{r.casual.code}} - {{r.casual.name}}</td><td>{{r.work_done}}</td><td>{{r.work_type}}</td><td>{{r.rate}}</td><td>{{r.amount}}</td><td>{{r.status}}</td></tr>{% endfor %}</table>{% endblock %}
+{% extends "base.html" %}
+{% block page_title %}Casual Attendance{% endblock %}
+{% block page_subtitle %}Record, review and correct daily attendance{% endblock %}
+{% block content %}
+<div class="section-card">
+  <h2>Record attendance</h2>
+  <form method="post" class="form">
+    <input type="date" name="work_date" required>
+    <select name="casual_id" required>
+      {% for c in casuals %}<option value="{{c.id}}">{{c.code}} - {{c.name}}</option>{% endfor %}
+    </select>
+    <input name="work_done" placeholder="Work done, for example sorting">
+    <select name="work_type"><option>Full Day</option><option>Half Day</option></select>
+    <button>Save attendance</button>
+  </form>
+</div>
+
+<div class="section-card">
+  <h2>Search attendance history</h2>
+  <form method="get" class="form">
+    <select name="worker_id"><option value="">All workers</option>{% for c in all_casuals %}<option value="{{c.id}}" {% if filters.worker_id==c.id %}selected{% endif %}>{{c.code}} - {{c.name}}</option>{% endfor %}</select>
+    <select name="status"><option value="">All statuses</option>{% for s in ['Unpaid','Paid','Voided'] %}<option {% if filters.status==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select>
+    <input type="date" name="date_from" value="{{filters.date_from}}">
+    <input type="date" name="date_to" value="{{filters.date_to}}">
+    <button>Filter</button><a class="button secondary" href="/attendance">Clear</a>
+  </form>
+</div>
+
+{% if weekly_cards %}
+<div class="section-card">
+  <h2>Weekly attendance cards</h2>
+  <div class="metric-grid">
+    {% for w in weekly_cards %}
+    <div class="metric-card">
+      <small>{{w.start}} to {{w.end}}</small>
+      <strong>{{w.casual.name}}</strong>
+      <span>{{w.days}} day(s) · UGX {{"{:,.0f}".format(w.amount)}}</span>
+      <small>{% if w.unpaid %}{{w.unpaid}} unpaid entr{{'y' if w.unpaid==1 else 'ies'}}{% else %}Fully paid{% endif %}</small>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="section-card">
+  <h2>Attendance history</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Date</th><th>Worker</th><th>Work</th><th>Type</th><th>Rate</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+    {% for r in rows %}
+    <tr class="{% if r.status=='Voided' %}muted-row{% endif %}">
+      <td>{{r.work_date}}</td><td><a href="/casual/{{r.casual.id}}">{{r.casual.code}} - {{r.casual.name}}</a></td><td>{{r.work_done or '-'}}</td><td>{{r.work_type}}</td>
+      <td>{{"{:,.0f}".format(r.rate)}}</td><td>{{"{:,.0f}".format(r.amount)}}</td><td><span class="status-pill">{{r.status}}</span></td>
+      <td>
+        {% if r.status!='Voided' %}<a class="button small" href="/attendance/{{r.id}}/edit">Edit</a>
+        <form method="post" action="/attendance/{{r.id}}/void" class="inline-form" onsubmit="return confirm('Void this attendance entry? It will stop counting in payroll.')"><input name="reason" placeholder="Void reason" required><button class="danger small">Void</button></form>{% endif %}
+        {% if current_role=='Admin' and r.status=='Unpaid' and not r.payment_ref %}<form method="post" action="/attendance/{{r.id}}/delete" class="inline-form" onsubmit="return confirm('Permanently delete this unpaid entry?')"><button class="danger small">Delete</button></form>{% endif %}
+      </td>
+    </tr>{% endfor %}
+  </table></div>
+</div>
+{% endblock %}

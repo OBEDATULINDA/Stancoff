@@ -1,3 +1,13 @@
-{% extends "base.html" %}{% block content %}<h2>Payments</h2><form method=post class=form><select name=casual_id>{% for c in casuals %}<option value="{{c.id}}">{{c.code}} - {{c.name}}</option>{% endfor %}</select>
-<input type=date name=period_start required><input type=date name=period_end required><input type=number name=deduction value=0><input type=date name=payment_date required><select name=method><option>Cash</option><option>Mobile Money</option><option>Bank</option></select><button>Pay</button></form>
-<table><tr><th>Ref</th><th>Worker</th><th>Period</th><th>Gross</th><th>Net</th><th>Date</th><th>Print</th></tr>{% for r in rows %}<tr><td>{{r.payment_ref}}</td><td>{{r.casual.code}} - {{r.casual.name}}</td><td>{{r.period_start}} to {{r.period_end}}</td><td>{{r.gross_pay}}</td><td>{{r.net_paid}}</td><td>{{r.payment_date}}</td><td><a target=_blank href="/payment-receipt/{{r.id}}">Print</a></td></tr>{% endfor %}</table>{% endblock %}
+{% extends "base.html" %}
+{% block page_title %}Casual Payments{% endblock %}
+{% block page_subtitle %}Pay unpaid attendance and keep a clear payment history{% endblock %}
+{% block content %}
+<div class="section-card"><h2>Make payment</h2><form method="post" class="form">
+<select name="casual_id">{% for c in casuals %}<option value="{{c.id}}">{{c.code}} - {{c.name}}</option>{% endfor %}</select>
+<input type="date" name="period_start" required><input type="date" name="period_end" required><input type="number" step="0.01" name="deduction" value="0" placeholder="Deduction"><input type="date" name="payment_date" required>
+<select name="method"><option>Cash</option><option>Mobile Money</option><option>Bank</option></select><button>Pay unpaid attendance</button></form></div>
+<div class="section-card"><h2>Payment history</h2><div class="table-wrap"><table><tr><th>Ref</th><th>Worker</th><th>Period</th><th>Gross</th><th>Deduction</th><th>Net</th><th>Date</th><th>Status</th><th>Actions</th></tr>
+{% for r in rows %}<tr class="{% if r.status=='Voided' %}muted-row{% endif %}"><td>{{r.payment_ref}}</td><td><a href="/casual/{{r.casual.id}}">{{r.casual.code}} - {{r.casual.name}}</a></td><td>{{r.period_start}} to {{r.period_end}}</td><td>{{"{:,.0f}".format(r.gross_pay)}}</td><td>{{"{:,.0f}".format(r.deduction or 0)}}</td><td>{{"{:,.0f}".format(r.net_paid)}}</td><td>{{r.payment_date}}</td><td>{{r.status}}</td><td>
+<a class="button small" target="_blank" href="/payment-receipt/{{r.id}}">Print</a>{% if r.status!='Voided' %} <a class="button small" href="/payment/{{r.id}}/edit">Edit</a>
+<form method="post" action="/payment/{{r.id}}/void" class="inline-form" onsubmit="return confirm('Void this payment? Its attendance entries will become unpaid again.')"><input name="reason" placeholder="Void reason" required><button class="danger small">Void</button></form>{% endif %}</td></tr>{% endfor %}</table></div></div>
+{% endblock %}

@@ -1,0 +1,22 @@
+STANCOFF UPDATE 6 - CASUAL LABOUR ENHANCEMENT
+
+This version is built on top of Update 5 and keeps all previous modules.
+
+ADDED
+- Edit casual attendance entries.
+- Void incorrect attendance with a required reason.
+- Admin-only permanent deletion of unpaid attendance.
+- Paid attendance corrections automatically recalculate the linked payment.
+- Attendance search by worker, status and date.
+- Weekly attendance summary cards.
+- Edit payment date, method and deduction.
+- Void a payment and automatically return its attendance to Unpaid.
+- Casual worker profile with attendance, payments and balances.
+- Activate or deactivate workers.
+- Improved user activity log with filters.
+
+DATABASE SAFETY
+No existing database table is deleted or recreated. This update uses the existing Attendance, Payment, Casual and AuditLog tables. Your existing records remain in PostgreSQL.
+
+UPLOAD
+Upload all files inside Stancoff-main to the same GitHub repository and replace matching files. Redeploy the same Render web service. Do not delete PostgreSQL and do not change DATABASE_URL.

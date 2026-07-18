@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block page_title %}{{casual.name}}{% endblock %}
+{% block page_subtitle %}Casual worker profile and account summary{% endblock %}
+{% block content %}
+<div class="section-card"><div class="split-heading"><div><h2>{{casual.code}} · {{casual.name}}</h2><p>{{casual.sex or '-'}} · {{casual.phone or 'No phone'}} · {{casual.status}}</p></div><form method="post" action="/casual/{{casual.id}}/status"><button class="secondary">Mark {{'Inactive' if casual.status=='Active' else 'Active'}}</button></form></div></div>
+<div class="metric-grid"><div class="metric-card"><small>Total days worked</small><strong>{{total_days}}</strong></div><div class="metric-card"><small>Total earned</small><strong>UGX {{"{:,.0f}".format(total_earned)}}</strong></div><div class="metric-card"><small>Total paid</small><strong>UGX {{"{:,.0f}".format(total_paid)}}</strong></div><div class="metric-card"><small>Outstanding attendance</small><strong>UGX {{"{:,.0f}".format(unpaid)}}</strong></div></div>
+<div class="section-card"><h2>Attendance history</h2><div class="table-wrap"><table><tr><th>Date</th><th>Work</th><th>Type</th><th>Amount</th><th>Status</th><th>Action</th></tr>{% for r in attendance_rows %}<tr><td>{{r.work_date}}</td><td>{{r.work_done}}</td><td>{{r.work_type}}</td><td>{{"{:,.0f}".format(r.amount)}}</td><td>{{r.status}}</td><td>{% if r.status!='Voided' %}<a class="button small" href="/attendance/{{r.id}}/edit">Edit</a>{% endif %}</td></tr>{% endfor %}</table></div></div>
+<div class="section-card"><h2>Payment history</h2><div class="table-wrap"><table><tr><th>Reference</th><th>Period</th><th>Net paid</th><th>Date</th><th>Status</th></tr>{% for r in payment_rows %}<tr><td>{{r.payment_ref}}</td><td>{{r.period_start}} to {{r.period_end}}</td><td>{{"{:,.0f}".format(r.net_paid)}}</td><td>{{r.payment_date}}</td><td>{{r.status}}</td></tr>{% endfor %}</table></div></div>
+{% endblock %}

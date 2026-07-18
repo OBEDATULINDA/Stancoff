@@ -1459,16 +1459,184 @@ def casual_rates():
 def attendance():
     if request.method == "POST":
         d = datetime.strptime(request.form["work_date"], "%Y-%m-%d").date()
-        cid = int(request.form["casual_id"]); rr = get_rate(cid, d)
+        cid = int(request.form["casual_id"])
+        rr = get_rate(cid, d)
         if not rr:
-            flash("Add a rate first."); return redirect(url_for("attendance"))
-        amount = rr.daily_rate if request.form["work_type"] == "Full Day" else rr.daily_rate/2
-        a = Attendance(work_date=d, casual_id=cid, work_done=request.form.get("work_done"),
-                       work_type=request.form["work_type"], rate=rr.daily_rate, amount=amount)
-        db.session.add(a); db.session.commit(); log_action("CREATE","Attendance",a.id)
+            flash("Add a rate for this worker before recording attendance.")
+            return redirect(url_for("attendance"))
+        work_type = request.form["work_type"]
+        amount = rr.daily_rate if work_type == "Full Day" else rr.daily_rate / 2
+        a = Attendance(
+            work_date=d,
+            casual_id=cid,
+            work_done=request.form.get("work_done"),
+            work_type=work_type,
+            rate=rr.daily_rate,
+            amount=amount,
+        )
+        db.session.add(a)
+        db.session.commit()
+        log_action("CREATE", "Attendance", a.id,
+                   f"{a.casual.name}; {a.work_date}; {a.work_type}; UGX {a.amount:,.0f}")
+        flash("Attendance saved.")
         return redirect(url_for("attendance"))
-    return render_template("attendance.html", rows=Attendance.query.order_by(Attendance.id.desc()).all(),
-                           casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all())
+
+    query = Attendance.query
+    worker_id = request.args.get("worker_id", type=int)
+    status = request.args.get("status", "")
+    date_from = request.args.get("date_from", "")
+    date_to = request.args.get("date_to", "")
+    if worker_id:
+        query = query.filter(Attendance.casual_id == worker_id)
+    if status:
+        query = query.filter(Attendance.status == status)
+    if date_from:
+        query = query.filter(Attendance.work_date >= datetime.strptime(date_from, "%Y-%m-%d").date())
+    if date_to:
+        query = query.filter(Attendance.work_date <= datetime.strptime(date_to, "%Y-%m-%d").date())
+    rows = query.order_by(Attendance.work_date.desc(), Attendance.id.desc()).all()
+
+    weekly = {}
+    for row in rows:
+        if row.status == "Voided":
+            continue
+        week_start = row.work_date - timedelta(days=row.work_date.weekday())
+        key = (row.casual_id, week_start)
+        item = weekly.setdefault(key, {
+            "casual": row.casual,
+            "start": week_start,
+            "end": week_start + timedelta(days=6),
+            "days": 0.0,
+            "amount": 0.0,
+            "paid": 0,
+            "unpaid": 0,
+        })
+        item["days"] += 1 if row.work_type == "Full Day" else 0.5
+        item["amount"] += row.amount
+        if row.status == "Paid":
+            item["paid"] += 1
+        else:
+            item["unpaid"] += 1
+    weekly_cards = sorted(weekly.values(), key=lambda x: (x["start"], x["casual"].name), reverse=True)[:30]
+
+    return render_template(
+        "attendance.html",
+        rows=rows,
+        weekly_cards=weekly_cards,
+        casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all(),
+        all_casuals=Casual.query.order_by(Casual.name).all(),
+        filters={"worker_id": worker_id, "status": status, "date_from": date_from, "date_to": date_to},
+    )
+
+
+def recalculate_payment(payment_ref):
+    if not payment_ref:
+        return
+    payment = Payment.query.filter_by(payment_ref=payment_ref).first()
+    if not payment or payment.status == "Voided":
+        return
+    paid_entries = Attendance.query.filter_by(payment_ref=payment_ref, status="Paid").all()
+    payment.gross_pay = sum(x.amount for x in paid_entries)
+    payment.net_paid = max(0, payment.gross_pay - (payment.deduction or 0))
+
+
+@app.route("/attendance/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("attendance")
+def attendance_edit(id):
+    row = Attendance.query.get_or_404(id)
+    if row.status == "Voided":
+        flash("A voided attendance entry cannot be edited.")
+        return redirect(url_for("attendance"))
+    if request.method == "POST":
+        old = f"{row.work_date}; {row.casual.name}; {row.work_type}; UGX {row.amount:,.0f}; {row.work_done or ''}"
+        old_payment_ref = row.payment_ref
+        work_date = datetime.strptime(request.form["work_date"], "%Y-%m-%d").date()
+        casual_id = int(request.form["casual_id"])
+        rr = get_rate(casual_id, work_date)
+        if not rr:
+            flash("Add a rate for this worker before saving the correction.")
+            return redirect(url_for("attendance_edit", id=id))
+        row.work_date = work_date
+        row.casual_id = casual_id
+        row.work_done = request.form.get("work_done")
+        row.work_type = request.form["work_type"]
+        row.rate = rr.daily_rate
+        row.amount = rr.daily_rate if row.work_type == "Full Day" else rr.daily_rate / 2
+        recalculate_payment(old_payment_ref)
+        db.session.commit()
+        new = f"{row.work_date}; {row.casual.name}; {row.work_type}; UGX {row.amount:,.0f}; {row.work_done or ''}"
+        log_action("EDIT", "Attendance", row.id, f"Before: {old} | After: {new}")
+        flash("Attendance corrected. Any linked payment total was recalculated.")
+        return redirect(url_for("attendance"))
+    return render_template("attendance_edit.html", row=row,
+                           casuals=Casual.query.order_by(Casual.name).all())
+
+
+@app.route("/attendance/<int:id>/void", methods=["POST"])
+@permission_required("attendance")
+def attendance_void(id):
+    row = Attendance.query.get_or_404(id)
+    if row.status == "Voided":
+        flash("This attendance entry is already voided.")
+        return redirect(url_for("attendance"))
+    reason = request.form.get("reason", "").strip()
+    if not reason:
+        flash("Enter a reason for voiding the attendance entry.")
+        return redirect(url_for("attendance"))
+    payment_ref = row.payment_ref
+    row.status = "Voided"
+    row.work_done = f"{row.work_done or ''} [VOID REASON: {reason}]".strip()
+    recalculate_payment(payment_ref)
+    db.session.commit()
+    log_action("VOID", "Attendance", row.id, f"{row.casual.name}; {row.work_date}; {reason}")
+    flash("Attendance entry voided and excluded from payroll totals.")
+    return redirect(url_for("attendance"))
+
+
+@app.route("/attendance/<int:id>/delete", methods=["POST"])
+@permission_required("attendance")
+def attendance_delete(id):
+    if session.get("role") != "Admin":
+        abort(403)
+    row = Attendance.query.get_or_404(id)
+    if row.status == "Paid" or row.payment_ref:
+        flash("Paid attendance cannot be permanently deleted. Void it instead.")
+        return redirect(url_for("attendance"))
+    details = f"{row.casual.name}; {row.work_date}; {row.work_type}; UGX {row.amount:,.0f}"
+    db.session.delete(row)
+    db.session.commit()
+    log_action("DELETE", "Attendance", id, details)
+    flash("Unpaid attendance entry permanently deleted.")
+    return redirect(url_for("attendance"))
+
+
+@app.route("/casual/<int:id>")
+@permission_required("casuals")
+def casual_profile(id):
+    casual = Casual.query.get_or_404(id)
+    attendance_rows = Attendance.query.filter_by(casual_id=id).order_by(Attendance.work_date.desc()).all()
+    payment_rows = Payment.query.filter_by(casual_id=id).order_by(Payment.payment_date.desc()).all()
+    active_attendance = [x for x in attendance_rows if x.status != "Voided"]
+    total_days = sum(1 if x.work_type == "Full Day" else 0.5 for x in active_attendance)
+    total_earned = sum(x.amount for x in active_attendance)
+    total_paid = sum(x.net_paid for x in payment_rows if x.status == "Paid")
+    unpaid = sum(x.amount for x in active_attendance if x.status == "Unpaid")
+    return render_template("casual_profile.html", casual=casual, attendance_rows=attendance_rows,
+                           payment_rows=payment_rows, total_days=total_days,
+                           total_earned=total_earned, total_paid=total_paid, unpaid=unpaid)
+
+
+@app.route("/casual/<int:id>/status", methods=["POST"])
+@permission_required("casuals")
+def casual_status(id):
+    casual = Casual.query.get_or_404(id)
+    old = casual.status
+    casual.status = "Inactive" if casual.status == "Active" else "Active"
+    db.session.commit()
+    log_action("EDIT", "Casuals", casual.id, f"Status: {old} → {casual.status}")
+    flash(f"{casual.name} is now {casual.status}.")
+    return redirect(url_for("casual_profile", id=id))
+
 
 @app.route("/payments", methods=["GET","POST"])
 @permission_required("payments")
@@ -1477,28 +1645,115 @@ def payments():
         cid = int(request.form["casual_id"])
         start = datetime.strptime(request.form["period_start"], "%Y-%m-%d").date()
         end = datetime.strptime(request.form["period_end"], "%Y-%m-%d").date()
+        if end < start:
+            flash("The period end cannot be before the period start.")
+            return redirect(url_for("payments"))
         entries = Attendance.query.filter(
-            Attendance.casual_id==cid, Attendance.work_date>=start,
-            Attendance.work_date<=end, Attendance.status=="Unpaid").all()
+            Attendance.casual_id == cid,
+            Attendance.work_date >= start,
+            Attendance.work_date <= end,
+            Attendance.status == "Unpaid",
+        ).all()
+        if not entries:
+            flash("There is no unpaid attendance for this worker in the selected period.")
+            return redirect(url_for("payments"))
         gross = sum(x.amount for x in entries)
         deduction = float(request.form.get("deduction") or 0)
-        p = Payment(payment_ref=next_code(Payment,"payment_ref","PAY",6), casual_id=cid,
-                    period_start=start, period_end=end, gross_pay=gross, deduction=deduction,
-                    net_paid=max(0,gross-deduction),
-                    payment_date=datetime.strptime(request.form["payment_date"], "%Y-%m-%d").date(),
-                    method=request.form["method"])
+        p = Payment(
+            payment_ref=next_code(Payment, "payment_ref", "PAY", 6),
+            casual_id=cid,
+            period_start=start,
+            period_end=end,
+            gross_pay=gross,
+            deduction=deduction,
+            net_paid=max(0, gross-deduction),
+            payment_date=datetime.strptime(request.form["payment_date"], "%Y-%m-%d").date(),
+            method=request.form["method"],
+        )
         db.session.add(p)
         for x in entries:
-            x.status="Paid"; x.payment_ref=p.payment_ref
-        db.session.commit(); log_action("CREATE","Payments",p.id,p.payment_ref)
+            x.status = "Paid"
+            x.payment_ref = p.payment_ref
+        db.session.commit()
+        log_action("CREATE", "Payments", p.id,
+                   f"{p.payment_ref}; {p.casual.name}; UGX {p.net_paid:,.0f}")
+        flash("Payment saved. You can now print the receipt.")
         return redirect(url_for("payments"))
-    return render_template("payments.html", rows=Payment.query.order_by(Payment.id.desc()).all(),
+    return render_template("payments.html",
+                           rows=Payment.query.order_by(Payment.id.desc()).all(),
                            casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all())
+
+
+@app.route("/payment/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("payments")
+def payment_edit(id):
+    row = Payment.query.get_or_404(id)
+    if row.status == "Voided":
+        flash("A voided payment cannot be edited.")
+        return redirect(url_for("payments"))
+    if request.method == "POST":
+        old = f"Date {row.payment_date}; Method {row.method}; Deduction {row.deduction}; Net {row.net_paid}"
+        row.payment_date = datetime.strptime(request.form["payment_date"], "%Y-%m-%d").date()
+        row.method = request.form["method"]
+        row.deduction = float(request.form.get("deduction") or 0)
+        recalculate_payment(row.payment_ref)
+        db.session.commit()
+        new = f"Date {row.payment_date}; Method {row.method}; Deduction {row.deduction}; Net {row.net_paid}"
+        log_action("EDIT", "Payments", row.id, f"{row.payment_ref} | Before: {old} | After: {new}")
+        flash("Payment details updated.")
+        return redirect(url_for("payments"))
+    return render_template("payment_edit.html", row=row)
+
+
+@app.route("/payment/<int:id>/void", methods=["POST"])
+@permission_required("payments")
+def payment_void(id):
+    row = Payment.query.get_or_404(id)
+    if row.status == "Voided":
+        flash("This payment is already voided.")
+        return redirect(url_for("payments"))
+    reason = request.form.get("reason", "").strip()
+    if not reason:
+        flash("Enter a reason for voiding the payment.")
+        return redirect(url_for("payments"))
+    linked = Attendance.query.filter_by(payment_ref=row.payment_ref, status="Paid").all()
+    for entry in linked:
+        entry.status = "Unpaid"
+        entry.payment_ref = None
+    row.status = "Voided"
+    row.void_reason = reason
+    db.session.commit()
+    log_action("VOID", "Payments", row.id,
+               f"{row.payment_ref}; {row.casual.name}; {reason}; {len(linked)} attendance entries released")
+    flash("Payment voided. Its attendance entries are unpaid again.")
+    return redirect(url_for("payments"))
+
 
 @app.route("/payment-receipt/<int:id>")
 @permission_required("payments")
 def payment_receipt(id):
     return render_template("payment_receipt.html", row=Payment.query.get_or_404(id))
+
+
+@app.route("/audit")
+@login_required
+def audit_enhanced():
+    if session.get("role") != "Admin":
+        abort(403)
+    query = AuditLog.query
+    module = request.args.get("module", "").strip()
+    action = request.args.get("action", "").strip()
+    username = request.args.get("username", "").strip()
+    if module:
+        query = query.filter(AuditLog.module.ilike(f"%{module}%"))
+    if action:
+        query = query.filter(AuditLog.action == action)
+    if username:
+        query = query.filter(AuditLog.username.ilike(f"%{username}%"))
+    rows = query.order_by(AuditLog.id.desc()).limit(1000).all()
+    return render_template("audit.html", rows=rows,
+                           filters={"module": module, "action": action, "username": username})
+
 
 @app.errorhandler(403)
 def forbidden(_):
