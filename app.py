@@ -1,6 +1,6 @@
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, abort
@@ -331,112 +331,165 @@ def logout():
 @app.route("/")
 @login_required
 def dashboard():
-    # Load active purchases once and aggregate in Python.
-    # This avoids database-specific GROUP BY/date functions and works on both
-    # PostgreSQL (Render) and SQLite (local testing).
-    active_rows = Purchase.query.filter_by(status="Active").order_by(Purchase.purchase_date.asc()).all()
+    """Operations dashboard using Python aggregation for PostgreSQL/SQLite compatibility."""
+    period = request.args.get("period", "90")
+    period_days = {"30": 30, "90": 90, "365": 365}
+    start_date = None
+    if period in period_days:
+        start_date = datetime.utcnow().date() - timedelta(days=period_days[period] - 1)
+    elif period != "all":
+        period = "90"
+        start_date = datetime.utcnow().date() - timedelta(days=89)
 
-    total_good = sum(float(p.good_weight or 0) for p in active_rows)
-    total_spend = sum(float(p.total_amount or 0) for p in active_rows)
+    all_active_purchases = Purchase.query.filter_by(status="Active").order_by(Purchase.purchase_date.asc()).all()
+    active_purchases = [p for p in all_active_purchases if not start_date or p.purchase_date >= start_date]
+    all_processing = Processing.query.filter_by(status="Active").order_by(Processing.processing_date.asc()).all()
+    processing_rows = [r for r in all_processing if not start_date or r.processing_date >= start_date]
+    all_drying = Drying.query.filter_by(status="Active").order_by(Drying.start_date.asc()).all()
+    drying_rows = [r for r in all_drying if not start_date or r.start_date >= start_date]
+    stock_rows = CoffeeStock.query.filter(CoffeeStock.weight > 0).all()
+    movement_rows = CoffeeMovement.query.filter_by(status="Active").order_by(CoffeeMovement.movement_date.asc()).all()
+    period_movements = [m for m in movement_rows if not start_date or m.movement_date >= start_date]
+
+    total_good = sum(float(p.good_weight or 0) for p in active_purchases)
+    total_spend = sum(float(p.total_amount or 0) for p in active_purchases)
+    current_stock = sum(float(s.weight or 0) for s in stock_rows)
+    completed_drying = [r for r in drying_rows if r.drying_status == "Completed" and r.dry_weight is not None]
+    processing_outturns = [float(r.outturn_percent or 0) for r in processing_rows if float(r.input_weight or 0) > 0]
+    drying_outturns = [float(r.outturn_percent or 0) for r in completed_drying if float(r.input_weight or 0) > 0]
+
+    stock_by_type = {"Drying Area": 0.0, "Temporary Storage": 0.0, "Final Warehouse": 0.0}
+    grade_inventory = {"Grade A": 0.0, "Grade B": 0.0, "Grade C": 0.0}
+    location_inventory = {}
+    status_inventory = {}
+    for stock in stock_rows:
+        weight = float(stock.weight or 0)
+        grade_inventory[stock.grade] = grade_inventory.get(stock.grade, 0.0) + weight
+        location_name = stock.location.name if stock.location else "Unknown"
+        location_inventory[location_name] = location_inventory.get(location_name, 0.0) + weight
+        location_type = stock.location.location_type if stock.location else "Unknown"
+        stock_by_type[location_type] = stock_by_type.get(location_type, 0.0) + weight
+        status_inventory[stock.stock_status] = status_inventory.get(stock.stock_status, 0.0) + weight
 
     stats = {
         "suppliers": Supplier.query.filter_by(status="Active").count(),
-        "batches": Batch.query.filter_by(status="Open").count(),
-        "purchases": len(active_rows),
-        "casuals": Casual.query.filter_by(status="Active").count(),
+        "open_batches": Batch.query.filter(Batch.status.in_(["Open", "Processing", "Drying"])).count(),
+        "purchases": len(active_purchases),
         "good_weight": total_good,
         "total_spend": total_spend,
+        "current_stock": current_stock,
+        "temporary_stock": stock_by_type.get("Temporary Storage", 0.0),
+        "final_stock": stock_by_type.get("Final Warehouse", 0.0),
+        "drying_stock": stock_by_type.get("Drying Area", 0.0),
+        "processing_outturn": sum(processing_outturns) / len(processing_outturns) if processing_outturns else 0,
+        "drying_outturn": sum(drying_outturns) / len(drying_outturns) if drying_outturns else 0,
+        "movements": len(period_movements),
     }
-
-    recent = list(reversed(active_rows[-8:]))
 
     supplier_totals = {}
     area_totals = {}
     monthly_totals = {}
-    batch_totals = {}
-
-    for p in active_rows:
-        supplier = p.supplier
-        batch = p.batch
+    process_totals = {}
+    for p in active_purchases:
         weight = float(p.good_weight or 0)
         value = float(p.total_amount or 0)
+        supplier = p.supplier
+        batch = p.batch
 
         supplier_key = supplier.id
-        if supplier_key not in supplier_totals:
-            supplier_totals[supplier_key] = {
-                "name": supplier.name,
-                "code": supplier.code,
-                "weight": 0.0,
-                "deliveries": 0,
-                "value": 0.0,
-            }
-        supplier_totals[supplier_key]["weight"] += weight
-        supplier_totals[supplier_key]["deliveries"] += 1
-        supplier_totals[supplier_key]["value"] += value
+        row = supplier_totals.setdefault(supplier_key, {
+            "name": supplier.name, "code": supplier.code, "weight": 0.0,
+            "deliveries": 0, "value": 0.0,
+        })
+        row["weight"] += weight
+        row["deliveries"] += 1
+        row["value"] += value
 
         area = (supplier.location or "").strip() or "Unspecified"
-        if area not in area_totals:
-            area_totals[area] = {"area": area, "weight": 0.0, "deliveries": 0}
-        area_totals[area]["weight"] += weight
-        area_totals[area]["deliveries"] += 1
+        area_row = area_totals.setdefault(area, {"area": area, "weight": 0.0, "deliveries": 0})
+        area_row["weight"] += weight
+        area_row["deliveries"] += 1
 
         month = p.purchase_date.strftime("%Y-%m")
-        if month not in monthly_totals:
-            monthly_totals[month] = {"month": month, "weight": 0.0, "value": 0.0}
-        monthly_totals[month]["weight"] += weight
-        monthly_totals[month]["value"] += value
+        month_row = monthly_totals.setdefault(month, {"month": month, "weight": 0.0, "value": 0.0})
+        month_row["weight"] += weight
+        month_row["value"] += value
 
-        batch_key = batch.id
-        if batch_key not in batch_totals:
-            batch_totals[batch_key] = {
-                "batch_no": batch.batch_no,
-                "process_type": batch.process_type,
-                "weight": 0.0,
-                "deliveries": 0,
-            }
-        batch_totals[batch_key]["weight"] += weight
-        batch_totals[batch_key]["deliveries"] += 1
+        process_name = batch.process_type or "Unspecified"
+        process_totals[process_name] = process_totals.get(process_name, 0.0) + weight
 
-    top_suppliers = sorted(
-        supplier_totals.values(), key=lambda r: r["weight"], reverse=True
-    )[:10]
-    area_rows = sorted(
-        area_totals.values(), key=lambda r: r["weight"], reverse=True
-    )[:10]
-    monthly_rows = sorted(
-        monthly_totals.values(), key=lambda r: r["month"]
-    )[-12:]
-    batch_rows = sorted(
-        batch_totals.values(), key=lambda r: r["weight"], reverse=True
-    )[:10]
+    top_suppliers = sorted(supplier_totals.values(), key=lambda r: r["weight"], reverse=True)[:8]
+    area_rows = sorted(area_totals.values(), key=lambda r: r["weight"], reverse=True)[:8]
+    monthly_rows = sorted(monthly_totals.values(), key=lambda r: r["month"])[-12:]
+    location_rows = sorted(location_inventory.items(), key=lambda r: r[1], reverse=True)[:10]
+
+    recent_purchases = list(reversed(active_purchases[-6:]))
+    recent_movements = list(reversed(period_movements[-8:]))
+
+    alerts = []
+    for stock in stock_rows:
+        location_type = stock.location.location_type if stock.location else ""
+        if location_type == "Final Warehouse" and stock.moisture is not None and float(stock.moisture) > 13:
+            alerts.append({
+                "level": "warning",
+                "title": "High moisture in final warehouse",
+                "detail": f"{stock.batch.batch_no} · {stock.grade} · {float(stock.moisture):.1f}% moisture",
+            })
+    today = datetime.utcnow().date()
+    for drying in all_drying:
+        if drying.drying_status != "Completed" and drying.start_date and (today - drying.start_date).days > 14:
+            alerts.append({
+                "level": "info",
+                "title": "Long-running drying record",
+                "detail": f"{drying.batch.batch_no} · {drying.grade} · started {drying.start_date.strftime('%d %b %Y')}",
+            })
+    alerts = alerts[:8]
+
+    processing_batch_rows = sorted(
+        [{"batch": r.batch.batch_no, "outturn": float(r.outturn_percent or 0)} for r in processing_rows],
+        key=lambda r: r["batch"],
+    )[-10:]
 
     charts = {
-        "suppliers": {
-            "labels": [f'{r["code"]} - {r["name"]}' for r in top_suppliers],
-            "weights": [round(r["weight"], 2) for r in top_suppliers],
-            "deliveries": [r["deliveries"] for r in top_suppliers],
-        },
-        "areas": {
-            "labels": [r["area"] for r in area_rows],
-            "weights": [round(r["weight"], 2) for r in area_rows],
-        },
         "monthly": {
             "labels": [r["month"] for r in monthly_rows],
             "weights": [round(r["weight"], 2) for r in monthly_rows],
             "values": [round(r["value"], 2) for r in monthly_rows],
         },
-        "batches": {
-            "labels": [r["batch_no"] for r in batch_rows],
-            "weights": [round(r["weight"], 2) for r in batch_rows],
+        "areas": {
+            "labels": [r["area"] for r in area_rows],
+            "weights": [round(r["weight"], 2) for r in area_rows],
+        },
+        "processes": {
+            "labels": list(process_totals.keys()),
+            "weights": [round(v, 2) for v in process_totals.values()],
+        },
+        "grades": {
+            "labels": list(grade_inventory.keys()),
+            "weights": [round(v, 2) for v in grade_inventory.values()],
+        },
+        "locations": {
+            "labels": [r[0] for r in location_rows],
+            "weights": [round(r[1], 2) for r in location_rows],
+        },
+        "stock_status": {
+            "labels": list(status_inventory.keys()),
+            "weights": [round(v, 2) for v in status_inventory.values()],
+        },
+        "outturn": {
+            "labels": [r["batch"] for r in processing_batch_rows],
+            "values": [round(r["outturn"], 2) for r in processing_batch_rows],
         },
     }
 
     return render_template(
         "dashboard.html",
+        period=period,
         stats=stats,
-        recent=recent,
+        recent=recent_purchases,
+        recent_movements=recent_movements,
         top_suppliers=top_suppliers,
-        area_rows=area_rows,
+        alerts=alerts,
         charts=charts,
     )
 

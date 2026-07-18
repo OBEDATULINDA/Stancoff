@@ -1,0 +1,29 @@
+STANCOFF UPDATE 4 - DASHBOARD AND ANALYTICS
+
+WHAT THIS UPDATE ADDS
+- Reporting period buttons: 30 days, 90 days, 1 year and all time.
+- Coffee purchase totals and purchase value.
+- Current stock across drying areas, temporary stores and final warehouses.
+- Average processing and drying outturn.
+- Current inventory by Grade A, Grade B and Grade C.
+- Current inventory by location.
+- Coffee received by process type.
+- Top coffee-producing areas and suppliers.
+- Processing outturn by batch.
+- Recent purchases and coffee movements.
+- High-moisture and long-running drying alerts.
+- Quick links to common operational pages.
+
+DATA SAFETY
+This update does not create, delete or change any database tables.
+It reads the records already stored in PostgreSQL and displays calculations and charts.
+Do not delete the PostgreSQL database and do not change DATABASE_URL.
+
+HOW TO INSTALL
+1. Extract this ZIP file.
+2. Open the Stancoff-main folder.
+3. Upload all files and folders inside it to the same GitHub repository.
+4. Allow matching files to be replaced.
+5. Commit with: Added dashboard and analytics
+6. Wait for Render to deploy automatically, or use Manual Deploy.
+7. Log in and open Dashboard.
