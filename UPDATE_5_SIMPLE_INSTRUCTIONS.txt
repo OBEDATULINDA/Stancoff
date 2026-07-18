@@ -1,0 +1,35 @@
+STANCOFF UPDATE 5 - SALES, DISPATCH AND MOVING FORMS
+
+WHAT THIS UPDATE ADDS
+1. Sales register.
+2. One or several dispatches against each sale.
+3. Stock automatically reduces when coffee is dispatched.
+4. Voiding a dispatch returns the coffee to its original location.
+5. Printable moving form for every external dispatch.
+6. Printable moving form for every internal movement, including:
+   - drying area to temporary storage;
+   - temporary storage back to drying;
+   - drying area to final warehouse;
+   - transfers between locations.
+7. Dispatches appear in the batch history.
+
+SAFE UPDATE
+This update adds the new Sale and Dispatch tables. It does not delete or recreate your existing database tables or records.
+Do not delete the PostgreSQL database and do not change DATABASE_URL.
+
+UPLOAD STEPS
+1. Extract this ZIP.
+2. Open the Stancoff-main folder.
+3. Upload all files and folders inside it to the same GitHub repository.
+4. Allow GitHub to replace files with matching names.
+5. Commit with: Added sales dispatch and moving forms
+6. Wait for Render to deploy, or use Manual Deploy -> Clear build cache & deploy.
+7. Log in and open Sales & Dispatch.
+
+HOW TO USE
+1. Create a sale with buyer, destination, contracted weight and price.
+2. Open the sale.
+3. Select coffee from the live inventory.
+4. Enter the load details and save.
+5. The printable moving form opens automatically.
+6. For internal movements, go to Storage & Inventory and use the Print button beside the movement.

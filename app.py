@@ -21,10 +21,10 @@ db = SQLAlchemy(app)
 
 ROLE_PERMISSIONS = {
     "Admin": {"*"},
-    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","drying","inventory","locations","casuals","rates","attendance","payments","reports"},
+    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","drying","inventory","locations","sales","dispatch","casuals","rates","attendance","payments","reports"},
     "Receiving Clerk": {"dashboard","suppliers","batches","purchases"},
     "Processing Supervisor": {"dashboard","batches","processing","drying","inventory","locations","reports"},
-    "Storekeeper": {"dashboard","batches","drying","inventory","locations","reports"},
+    "Storekeeper": {"dashboard","batches","drying","inventory","locations","sales","dispatch","reports"},
     "Payroll Officer": {"dashboard","casuals","rates","attendance","payments"},
     "Viewer": {"dashboard","reports"},
 }
@@ -184,6 +184,51 @@ class CoffeeMovement(db.Model):
     batch = db.relationship("Batch")
     from_location = db.relationship("Location", foreign_keys=[from_location_id])
     to_location = db.relationship("Location", foreign_keys=[to_location_id])
+
+class Sale(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sale_no = db.Column(db.String(30), unique=True, nullable=False)
+    sale_date = db.Column(db.Date, nullable=False)
+    buyer_name = db.Column(db.String(180), nullable=False)
+    buyer_phone = db.Column(db.String(60))
+    destination = db.Column(db.String(220), nullable=False)
+    contract_ref = db.Column(db.String(80))
+    contracted_weight = db.Column(db.Float, nullable=False, default=0)
+    price_per_kg = db.Column(db.Float, nullable=False, default=0)
+    total_value = db.Column(db.Float, nullable=False, default=0)
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(20), nullable=False, default="Open")
+    void_reason = db.Column(db.Text)
+    created_by = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Dispatch(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    dispatch_no = db.Column(db.String(30), unique=True, nullable=False)
+    sale_id = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=False)
+    stock_id = db.Column(db.Integer, db.ForeignKey("coffee_stock.id"), nullable=False)
+    batch_id = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False)
+    grade = db.Column(db.String(20), nullable=False)
+    from_location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=False)
+    dispatch_date = db.Column(db.Date, nullable=False)
+    weight = db.Column(db.Float, nullable=False)
+    number_of_bags = db.Column(db.Integer)
+    bag_size = db.Column(db.Float)
+    moisture = db.Column(db.Float)
+    vehicle_no = db.Column(db.String(80))
+    driver_name = db.Column(db.String(150))
+    driver_phone = db.Column(db.String(60))
+    destination = db.Column(db.String(220), nullable=False)
+    reason = db.Column(db.Text)
+    dispatched_by = db.Column(db.String(120))
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    void_reason = db.Column(db.Text)
+    created_by = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sale = db.relationship("Sale")
+    stock = db.relationship("CoffeeStock")
+    batch = db.relationship("Batch")
+    from_location = db.relationship("Location")
 
 class Casual(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -1174,6 +1219,13 @@ def inventory():
     )
 
 
+@app.route("/inventory/movement/<int:id>/print")
+@permission_required("inventory")
+def inventory_movement_print(id):
+    movement = CoffeeMovement.query.get_or_404(id)
+    return render_template("moving_form.html", movement=movement, dispatch=None)
+
+
 @app.route("/inventory/movement/<int:id>/void", methods=["POST"])
 @permission_required("inventory")
 def inventory_movement_void(id):
@@ -1222,8 +1274,158 @@ def inventory_batch_history(batch_id):
     drying_rows = Drying.query.filter_by(batch_id=batch_id).order_by(Drying.start_date).all()
     stocks = CoffeeStock.query.filter_by(batch_id=batch_id).filter(CoffeeStock.weight > 0.0001).all()
     movements = CoffeeMovement.query.filter_by(batch_id=batch_id).order_by(CoffeeMovement.movement_date, CoffeeMovement.id).all()
+    dispatches = Dispatch.query.filter_by(batch_id=batch_id).order_by(Dispatch.dispatch_date, Dispatch.id).all()
     return render_template("batch_history.html", batch=batch, purchases=purchases, process=process,
-                           drying_rows=drying_rows, stocks=stocks, movements=movements)
+                           drying_rows=drying_rows, stocks=stocks, movements=movements, dispatches=dispatches)
+
+
+def update_sale_status(sale):
+    active_dispatched = db.session.query(func.coalesce(func.sum(Dispatch.weight), 0)).filter(
+        Dispatch.sale_id == sale.id, Dispatch.status == "Active"
+    ).scalar() or 0
+    if sale.status == "Voided":
+        return
+    if sale.contracted_weight > 0 and active_dispatched + 0.0001 >= sale.contracted_weight:
+        sale.status = "Completed"
+    else:
+        sale.status = "Open"
+
+
+@app.route("/sales", methods=["GET", "POST"])
+@permission_required("sales")
+def sales():
+    if request.method == "POST":
+        contracted_weight = float(request.form.get("contracted_weight") or 0)
+        price_per_kg = float(request.form.get("price_per_kg") or 0)
+        if contracted_weight < 0 or price_per_kg < 0:
+            flash("Weight and price cannot be negative.")
+            return redirect(url_for("sales"))
+        row = Sale(
+            sale_no=next_code(Sale, "sale_no", "SAL", 6),
+            sale_date=datetime.strptime(request.form["sale_date"], "%Y-%m-%d").date(),
+            buyer_name=(request.form.get("buyer_name") or "").strip(),
+            buyer_phone=request.form.get("buyer_phone"),
+            destination=(request.form.get("destination") or "").strip(),
+            contract_ref=request.form.get("contract_ref"),
+            contracted_weight=contracted_weight,
+            price_per_kg=price_per_kg,
+            total_value=contracted_weight * price_per_kg,
+            notes=request.form.get("notes"),
+            created_by=session.get("username"),
+        )
+        if not row.buyer_name or not row.destination:
+            flash("Enter the buyer and destination.")
+            return redirect(url_for("sales"))
+        db.session.add(row)
+        db.session.commit()
+        log_action("CREATE", "Sales", row.id, row.sale_no)
+        flash("Sale created successfully. You can now record dispatches against it.")
+        return redirect(url_for("sale_detail", id=row.id))
+    rows = Sale.query.order_by(Sale.id.desc()).all()
+    dispatched = dict(db.session.query(Dispatch.sale_id, func.coalesce(func.sum(Dispatch.weight), 0)).filter(
+        Dispatch.status == "Active"
+    ).group_by(Dispatch.sale_id).all())
+    return render_template("sales.html", rows=rows, dispatched=dispatched, next_sale=next_code(Sale, "sale_no", "SAL", 6))
+
+
+@app.route("/sales/<int:id>")
+@permission_required("sales")
+def sale_detail(id):
+    ensure_initial_stock()
+    sale = Sale.query.get_or_404(id)
+    stocks = CoffeeStock.query.filter(CoffeeStock.weight > 0.0001).order_by(CoffeeStock.updated_at.desc()).all()
+    dispatches = Dispatch.query.filter_by(sale_id=id).order_by(Dispatch.id.desc()).all()
+    dispatched_weight = sum(float(d.weight or 0) for d in dispatches if d.status == "Active")
+    remaining_weight = max(0, float(sale.contracted_weight or 0) - dispatched_weight)
+    return render_template("sale_detail.html", sale=sale, stocks=stocks, dispatches=dispatches,
+                           dispatched_weight=dispatched_weight, remaining_weight=remaining_weight,
+                           next_dispatch=next_code(Dispatch, "dispatch_no", "DSP", 6))
+
+
+@app.route("/sales/<int:id>/dispatch", methods=["POST"])
+@permission_required("dispatch")
+def sale_dispatch(id):
+    sale = Sale.query.get_or_404(id)
+    if sale.status == "Voided":
+        flash("A voided sale cannot receive a dispatch.")
+        return redirect(url_for("sales"))
+    stock = CoffeeStock.query.get_or_404(int(request.form["stock_id"]))
+    weight = float(request.form.get("weight") or 0)
+    if weight <= 0 or weight > float(stock.weight or 0) + 0.0001:
+        flash(f"Dispatch weight must be greater than zero and cannot exceed {stock.weight:,.2f} kg.")
+        return redirect(url_for("sale_detail", id=id))
+    dispatch = Dispatch(
+        dispatch_no=next_code(Dispatch, "dispatch_no", "DSP", 6),
+        sale_id=sale.id, stock_id=stock.id, batch_id=stock.batch_id, grade=stock.grade,
+        from_location_id=stock.location_id,
+        dispatch_date=datetime.strptime(request.form["dispatch_date"], "%Y-%m-%d").date(),
+        weight=weight,
+        number_of_bags=int(request.form["number_of_bags"]) if request.form.get("number_of_bags") else None,
+        bag_size=float(request.form["bag_size"]) if request.form.get("bag_size") else None,
+        moisture=float(request.form["moisture"]) if request.form.get("moisture") else stock.moisture,
+        vehicle_no=request.form.get("vehicle_no"), driver_name=request.form.get("driver_name"),
+        driver_phone=request.form.get("driver_phone"),
+        destination=(request.form.get("destination") or sale.destination).strip(),
+        reason=request.form.get("reason"), dispatched_by=request.form.get("dispatched_by"),
+        created_by=session.get("username"),
+    )
+    stock.weight = max(0, float(stock.weight or 0) - weight)
+    db.session.add(dispatch)
+    update_sale_status(sale)
+    if stock.batch:
+        stock.batch.status = "Dispatched"
+    db.session.commit()
+    log_action("CREATE", "Dispatch", dispatch.id, dispatch.dispatch_no)
+    flash("Dispatch saved. The moving form is ready to print.")
+    return redirect(url_for("dispatch_print", id=dispatch.id))
+
+
+@app.route("/dispatch/<int:id>/print")
+@permission_required("dispatch")
+def dispatch_print(id):
+    dispatch = Dispatch.query.get_or_404(id)
+    return render_template("moving_form.html", movement=None, dispatch=dispatch)
+
+
+@app.route("/dispatch/<int:id>/void", methods=["POST"])
+@permission_required("dispatch")
+def dispatch_void(id):
+    dispatch = Dispatch.query.get_or_404(id)
+    if dispatch.status == "Voided":
+        flash("This dispatch is already voided.")
+        return redirect(url_for("sale_detail", id=dispatch.sale_id))
+    reason = (request.form.get("void_reason") or "").strip()
+    if not reason:
+        flash("Enter a reason before voiding the dispatch.")
+        return redirect(url_for("sale_detail", id=dispatch.sale_id))
+    dispatch.stock.weight = float(dispatch.stock.weight or 0) + float(dispatch.weight or 0)
+    dispatch.status = "Voided"
+    dispatch.void_reason = reason
+    update_sale_status(dispatch.sale)
+    db.session.commit()
+    log_action("VOID", "Dispatch", dispatch.id, f"{dispatch.dispatch_no}: {reason}")
+    flash("Dispatch reversed and marked as voided. The stock has been returned to its source location.")
+    return redirect(url_for("sale_detail", id=dispatch.sale_id))
+
+
+@app.route("/sales/<int:id>/void", methods=["POST"])
+@permission_required("sales")
+def sale_void(id):
+    sale = Sale.query.get_or_404(id)
+    active_dispatch = Dispatch.query.filter_by(sale_id=id, status="Active").first()
+    if active_dispatch:
+        flash("Void the active dispatches before voiding this sale.")
+        return redirect(url_for("sale_detail", id=id))
+    reason = (request.form.get("void_reason") or "").strip()
+    if not reason:
+        flash("Enter a reason before voiding the sale.")
+        return redirect(url_for("sale_detail", id=id))
+    sale.status = "Voided"
+    sale.void_reason = reason
+    db.session.commit()
+    log_action("VOID", "Sales", sale.id, f"{sale.sale_no}: {reason}")
+    flash("Sale marked as voided.")
+    return redirect(url_for("sales"))
 
 
 @app.route("/casuals", methods=["GET","POST"])

@@ -30,6 +30,9 @@
       <a href="/drying" class="{% if request.path.startswith('/drying') %}active{% endif %}">Drying</a>
       <a href="/inventory" class="{% if request.path.startswith('/inventory') %}active{% endif %}">Storage & Inventory</a>
       <a href="/locations" class="{% if request.path.startswith('/locations') %}active{% endif %}">Locations</a>
+      {% if current_role in ['Admin','Manager','Storekeeper'] %}
+      <a href="/sales" class="{% if request.path.startswith('/sales') or request.path.startswith('/dispatch') %}active{% endif %}">Sales & Dispatch</a>
+      {% endif %}
       {% endif %}
       {% if current_role in ['Admin','Manager'] %}
       <a href="/prices">Price history</a>

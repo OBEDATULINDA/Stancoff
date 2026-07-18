@@ -1,5 +1,13 @@
 {% extends "base.html" %}
-{% block title %}{{ batch.batch_no }} History · Stancoff{% endblock %}
+{% block title %}{{ batch.batch_no }} History · Stancoff
+<section class="panel" style="margin-top:18px">
+  <div class="panel-heading"><div><span class="eyebrow">Outbound</span><h2>Dispatch history</h2></div></div>
+  <div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Grade</th><th>From</th><th>Weight</th><th>Buyer</th><th>Destination</th><th>Status</th><th>Form</th></tr></thead><tbody>
+  {% for d in dispatches %}<tr class="{% if d.status=='Voided' %}voided-row{% endif %}"><td>{{ d.dispatch_no }}</td><td>{{ d.dispatch_date }}</td><td>{{ d.grade }}</td><td>{{ d.from_location.name }}</td><td>{{ '{:,.2f}'.format(d.weight) }} kg</td><td>{{ d.sale.buyer_name }}</td><td>{{ d.destination }}</td><td>{{ d.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('dispatch_print', id=d.id) }}">Print</a></td></tr>
+  {% else %}<tr><td colspan="9" class="empty">No dispatches recorded for this batch.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}
 {% block page_title %}{{ batch.batch_no }} traceability{% endblock %}
 {% block page_subtitle %}Complete purchase, processing, drying and movement history{% endblock %}
 {% block content %}

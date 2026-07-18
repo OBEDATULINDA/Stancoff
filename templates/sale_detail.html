@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ sale.sale_no }} · Stancoff{% endblock %}
+{% block page_title %}{{ sale.sale_no }}{% endblock %}
+{% block page_subtitle %}{{ sale.buyer_name }} · {{ sale.destination }}{% endblock %}
+{% block content %}
+<div class="metric-grid">
+ <div class="metric-card"><span>Contracted</span><strong>{{ '{:,.2f}'.format(sale.contracted_weight) }} kg</strong></div>
+ <div class="metric-card"><span>Dispatched</span><strong>{{ '{:,.2f}'.format(dispatched_weight) }} kg</strong></div>
+ <div class="metric-card"><span>Remaining</span><strong>{{ '{:,.2f}'.format(remaining_weight) }} kg</strong></div>
+ <div class="metric-card"><span>Sale value</span><strong>UGX {{ '{:,.0f}'.format(sale.total_value) }}</strong></div>
+</div>
+{% if sale.status!='Voided' %}
+<section class="panel" style="margin-top:18px">
+<div class="panel-heading"><div><span class="eyebrow">New dispatch</span><h2>{{ next_dispatch }}</h2></div></div>
+<form method="post" action="{{ url_for('sale_dispatch', id=sale.id) }}" class="processing-form" id="dispatchForm">
+<label>Coffee to dispatch<select name="stock_id" id="stockSelect" required><option value="">Select available coffee</option>{% for s in stocks %}<option value="{{ s.id }}" data-weight="{{ s.weight }}" data-moisture="{{ s.moisture or '' }}">{{ s.batch.batch_no }} · {{ s.grade }} · {{ s.location.name }} · {{ '{:,.2f}'.format(s.weight) }} kg</option>{% endfor %}</select></label>
+<label>Dispatch date<input type="date" name="dispatch_date" id="dispatchDate" required></label>
+<label>Weight (kg)<input type="number" min="0.01" step="0.01" name="weight" id="dispatchWeight" required></label>
+<label>Moisture %<input type="number" min="0" max="100" step="0.01" name="moisture" id="dispatchMoisture"></label>
+<label>Number of bags<input type="number" min="0" step="1" name="number_of_bags"></label>
+<label>Bag size (kg)<input type="number" min="0" step="0.01" name="bag_size"></label>
+<label>Vehicle number<input name="vehicle_no"></label>
+<label>Driver name<input name="driver_name"></label>
+<label>Driver phone<input name="driver_phone"></label>
+<label>Destination<input name="destination" value="{{ sale.destination }}" required></label>
+<label>Dispatched by<input name="dispatched_by" placeholder="Storekeeper / responsible person"></label>
+<label class="form-wide">Reason / notes<textarea name="reason" rows="2" placeholder="Sale delivery, sample, transfer instruction, etc."></textarea></label>
+<div class="form-wide"><button class="primary-button">Save dispatch & print moving form</button></div>
+</form></section>
+{% endif %}
+<section class="panel" style="margin-top:18px"><div class="panel-heading"><div><span class="eyebrow">Loads</span><h2>Dispatch history</h2></div></div>
+<div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Grade</th><th>From</th><th>Weight</th><th>Vehicle</th><th>Driver</th><th>Status</th><th>Moving form</th><th>Action</th></tr></thead><tbody>
+{% for d in dispatches %}<tr class="{% if d.status=='Voided' %}voided-row{% endif %}"><td><strong>{{ d.dispatch_no }}</strong></td><td>{{ d.dispatch_date }}</td><td>{{ d.batch.batch_no }}</td><td>{{ d.grade }}</td><td>{{ d.from_location.name }}</td><td>{{ '{:,.2f}'.format(d.weight) }} kg</td><td>{{ d.vehicle_no or '—' }}</td><td>{{ d.driver_name or '—' }}</td><td>{{ d.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('dispatch_print', id=d.id) }}">Print</a></td><td>{% if d.status!='Voided' %}<form method="post" action="{{ url_for('dispatch_void', id=d.id) }}" class="inline-void" onsubmit="return confirm('Reverse and void this dispatch? The stock will return to the source location.')"><input name="void_reason" required placeholder="Reason"><button class="small-button danger">Void</button></form>{% else %}<small>{{ d.void_reason }}</small>{% endif %}</td></tr>
+{% else %}<tr><td colspan="11" class="empty">No dispatches recorded for this sale.</td></tr>{% endfor %}</tbody></table></div></section>
+{% if sale.status!='Voided' %}<section class="panel" style="margin-top:18px"><form method="post" action="{{ url_for('sale_void', id=sale.id) }}" class="inline-void" onsubmit="return confirm('Void this sale?')"><input name="void_reason" required placeholder="Reason for voiding sale"><button class="small-button danger">Void sale</button></form></section>{% endif %}
+{% endblock %}
+{% block scripts %}<script>
+const ds=document.getElementById('dispatchDate'); if(ds) ds.valueAsDate=new Date();
+const ss=document.getElementById('stockSelect'), w=document.getElementById('dispatchWeight'), m=document.getElementById('dispatchMoisture');
+ss?.addEventListener('change',()=>{const o=ss.selectedOptions[0]; if(o?.dataset.weight) w.value=o.dataset.weight; if(o?.dataset.moisture) m.value=o.dataset.moisture;});
+document.getElementById('dispatchForm')?.addEventListener('submit',e=>{const o=ss.selectedOptions[0]; if(o&&Number(w.value)>Number(o.dataset.weight)){e.preventDefault();alert('You cannot dispatch more than the available stock.');}});
+</script>{% endblock %}

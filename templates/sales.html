@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Sales & Dispatch · Stancoff{% endblock %}
+{% block page_title %}Sales & dispatch{% endblock %}
+{% block page_subtitle %}Create sales, dispatch coffee and print moving forms{% endblock %}
+{% block content %}
+<section class="panel processing-intro"><div><span class="eyebrow">Outbound coffee</span><h2>Sales and dispatch control</h2><p>A sale may be dispatched in one or several loads. Every load reduces stock and receives a printable moving form.</p></div></section>
+<section class="panel" style="margin-top:18px">
+  <div class="panel-heading"><div><span class="eyebrow">New sale</span><h2>{{ next_sale }}</h2></div></div>
+  <form method="post" class="processing-form">
+    <label>Sale date<input type="date" name="sale_date" id="saleDate" required></label>
+    <label>Buyer name<input name="buyer_name" required></label>
+    <label>Buyer phone<input name="buyer_phone"></label>
+    <label>Destination<input name="destination" required placeholder="Town, warehouse or buyer address"></label>
+    <label>Contract / order reference<input name="contract_ref"></label>
+    <label>Contracted weight (kg)<input type="number" min="0" step="0.01" name="contracted_weight" required></label>
+    <label>Price per kg<input type="number" min="0" step="0.01" name="price_per_kg" required></label>
+    <label class="form-wide">Notes<textarea name="notes" rows="2"></textarea></label>
+    <div class="form-wide"><button class="primary-button">Create sale</button></div>
+  </form>
+</section>
+<section class="panel" style="margin-top:18px">
+<div class="panel-heading"><div><span class="eyebrow">History</span><h2>Sales register</h2></div></div>
+<div class="table-scroll"><table><thead><tr><th>Sale</th><th>Date</th><th>Buyer</th><th>Destination</th><th>Contracted</th><th>Dispatched</th><th>Balance</th><th>Value</th><th>Status</th><th>Action</th></tr></thead><tbody>
+{% for r in rows %}{% set sent=dispatched.get(r.id,0) %}<tr class="{% if r.status=='Voided' %}voided-row{% endif %}"><td><strong>{{ r.sale_no }}</strong></td><td>{{ r.sale_date }}</td><td>{{ r.buyer_name }}</td><td>{{ r.destination }}</td><td>{{ '{:,.2f}'.format(r.contracted_weight) }} kg</td><td>{{ '{:,.2f}'.format(sent) }} kg</td><td>{{ '{:,.2f}'.format([r.contracted_weight-sent,0]|max) }} kg</td><td>UGX {{ '{:,.0f}'.format(r.total_value) }}</td><td>{{ r.status }}</td><td><a class="small-button" href="{{ url_for('sale_detail', id=r.id) }}">Open</a></td></tr>
+{% else %}<tr><td colspan="10" class="empty">No sales recorded yet.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}
+{% block scripts %}<script>document.getElementById('saleDate').valueAsDate=new Date();</script>{% endblock %}
