@@ -2,8 +2,59 @@
 {% block page_title %}Casual Attendance{% endblock %}
 {% block page_subtitle %}Record, review and correct daily attendance{% endblock %}
 {% block content %}
+
 <div class="section-card">
-  <h2>Record attendance</h2>
+  <div class="section-heading-row">
+    <div>
+      <h2>Daily attendance register</h2>
+      <p class="help-text">Select a date, tick the workers who attended, then save them together. Workers already recorded for that date are locked to prevent double entry.</p>
+    </div>
+    <form method="get" class="daily-date-form">
+      <label>Register date
+        <input type="date" name="daily_date" value="{{daily_date_text}}" required onchange="this.form.submit()">
+      </label>
+    </form>
+  </div>
+
+  <form method="post" action="/attendance/daily">
+    <input type="hidden" name="work_date" value="{{daily_date_text}}">
+    <div class="table-wrap"><table class="daily-register-table">
+      <tr><th>Attend</th><th>Worker</th><th>Existing status</th><th>Work type</th><th>Work done</th><th>Action</th></tr>
+      {% for c in casuals %}
+        {% set existing = daily_existing.get(c.id) %}
+        <tr class="{% if existing %}saved-attendance-row{% endif %}">
+          <td>
+            {% if existing %}
+              <span class="saved-check">✓</span>
+            {% else %}
+              <input class="attendance-check" type="checkbox" name="present_ids" value="{{c.id}}" aria-label="Mark {{c.name}} present">
+            {% endif %}
+          </td>
+          <td><strong>{{c.name}}</strong><small class="block-text">{{c.code}}</small></td>
+          <td>
+            {% if existing %}<span class="status-pill">Already recorded: {{existing.status}}</span>{% else %}<span class="muted-text">Not recorded</span>{% endif %}
+          </td>
+          <td>
+            {% if existing %}{{existing.work_type}}
+            {% else %}<select name="work_type_{{c.id}}"><option>Full Day</option><option>Half Day</option></select>{% endif %}
+          </td>
+          <td>
+            {% if existing %}{{existing.work_done or '-'}}
+            {% else %}<input name="work_done_{{c.id}}" placeholder="For example sorting">{% endif %}
+          </td>
+          <td>{% if existing %}<a class="button small" href="/attendance/{{existing.id}}/edit">Edit existing</a>{% else %}<span class="muted-text">Ready to select</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6">No active casual workers found.</td></tr>
+      {% endfor %}
+    </table></div>
+    <div class="register-actions"><button>Save selected attendance</button></div>
+  </form>
+</div>
+
+<div class="section-card">
+  <h2>Record one attendance entry</h2>
+  <p class="help-text">The system will block saving when that worker already has attendance on the selected date.</p>
   <form method="post" class="form">
     <input type="date" name="work_date" required>
     <select name="casual_id" required>

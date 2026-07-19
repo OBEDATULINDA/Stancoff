@@ -57,3 +57,11 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
 .week-days{display:grid;grid-template-columns:repeat(7,1fr);gap:.35rem}.week-day{border:1px solid #e5e7eb;border-radius:8px;padding:.45rem .2rem;text-align:center;min-width:0}.week-day span,.week-day small{display:block;font-size:.7rem}.week-day strong{display:block;margin:.15rem 0}.week-day.worked{background:#f0fdf4;border-color:#bbf7d0}
 .weekly-totals{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin:.8rem 0}.weekly-totals span{background:#f8fafc;border-radius:8px;padding:.5rem}.weekly-totals small,.weekly-totals strong{display:block}.weekly-totals small{font-size:.72rem;color:#667085}.weekly-totals strong{font-size:.85rem;margin-top:.15rem}
 @media(max-width:700px){.payment-preview{grid-template-columns:repeat(2,1fr)}.weekly-card-grid{grid-template-columns:1fr}.week-days{overflow-x:auto}.week-day{min-width:42px}.weekly-totals{grid-template-columns:1fr}.preview-entries>div{font-size:.85rem}}
+
+/* Update 6.3: daily attendance register */
+.section-heading-row{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}
+.daily-date-form label{display:grid;gap:.35rem;font-weight:600}.daily-date-form input{min-width:180px}
+.daily-register-table td{vertical-align:middle}.daily-register-table select,.daily-register-table input[type=text],.daily-register-table input:not([type]){min-width:150px}
+.attendance-check{width:22px;height:22px}.saved-check{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#dcfce7;color:#166534;font-weight:800}
+.saved-attendance-row{background:#f8fafc}.block-text{display:block}.muted-text{color:#667085}.register-actions{margin-top:1rem;display:flex;justify-content:flex-end}
+@media(max-width:700px){.section-heading-row{display:block}.daily-date-form{margin-top:.75rem}.register-actions{justify-content:stretch}.register-actions button{width:100%}}

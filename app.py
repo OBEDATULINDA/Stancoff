@@ -1454,12 +1454,31 @@ def casual_rates():
     return render_template("casual_rates.html", rows=CasualRate.query.order_by(CasualRate.effective_date.desc()).all(),
                            casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all())
 
+def find_existing_attendance(casual_id, work_date, exclude_id=None):
+    """Find a non-voided attendance entry for one worker on one date."""
+    query = Attendance.query.filter(
+        Attendance.casual_id == casual_id,
+        Attendance.work_date == work_date,
+        Attendance.status != "Voided",
+    )
+    if exclude_id is not None:
+        query = query.filter(Attendance.id != exclude_id)
+    return query.first()
+
+
 @app.route("/attendance", methods=["GET","POST"])
 @permission_required("attendance")
 def attendance():
     if request.method == "POST":
         d = datetime.strptime(request.form["work_date"], "%Y-%m-%d").date()
         cid = int(request.form["casual_id"])
+        existing = find_existing_attendance(cid, d)
+        if existing:
+            flash(
+                f"Attendance already exists for {existing.casual.name} on "
+                f"{d.strftime('%d %b %Y')}. Edit the existing entry instead."
+            )
+            return redirect(url_for("attendance", worker_id=cid, date_from=d.isoformat(), date_to=d.isoformat()))
         rr = get_rate(cid, d)
         if not rr:
             flash("Add a rate for this worker before recording attendance.")
@@ -1544,14 +1563,95 @@ def attendance():
         weekly.values(), key=lambda x: (x["start"], x["casual"].name), reverse=True
     )[:40]
 
+    daily_date_text = request.args.get("daily_date", datetime.utcnow().date().isoformat())
+    try:
+        daily_date = datetime.strptime(daily_date_text, "%Y-%m-%d").date()
+    except ValueError:
+        daily_date = datetime.utcnow().date()
+        daily_date_text = daily_date.isoformat()
+    active_casuals = Casual.query.filter_by(status="Active").order_by(Casual.name).all()
+    daily_existing = {
+        row.casual_id: row
+        for row in Attendance.query.filter(
+            Attendance.work_date == daily_date,
+            Attendance.status != "Voided",
+        ).all()
+    }
+
     return render_template(
         "attendance.html",
         rows=rows,
         weekly_cards=weekly_cards,
-        casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all(),
+        casuals=active_casuals,
         all_casuals=Casual.query.order_by(Casual.name).all(),
         filters={"worker_id": worker_id, "status": status, "date_from": date_from, "date_to": date_to},
+        daily_date=daily_date,
+        daily_date_text=daily_date_text,
+        daily_existing=daily_existing,
     )
+
+
+
+@app.route("/attendance/daily", methods=["POST"])
+@permission_required("attendance")
+def attendance_daily_save():
+    try:
+        work_date = datetime.strptime(request.form["work_date"], "%Y-%m-%d").date()
+    except (KeyError, ValueError):
+        flash("Select a valid attendance date.")
+        return redirect(url_for("attendance"))
+
+    selected_ids = request.form.getlist("present_ids")
+    saved = 0
+    skipped = 0
+    missing_rates = []
+    for raw_id in selected_ids:
+        try:
+            casual_id = int(raw_id)
+        except ValueError:
+            continue
+        casual = Casual.query.get(casual_id)
+        if not casual or casual.status != "Active":
+            continue
+        if find_existing_attendance(casual_id, work_date):
+            skipped += 1
+            continue
+        rate_row = get_rate(casual_id, work_date)
+        if not rate_row:
+            missing_rates.append(casual.name)
+            continue
+        work_type = request.form.get(f"work_type_{casual_id}", "Full Day")
+        if work_type not in {"Full Day", "Half Day"}:
+            work_type = "Full Day"
+        amount = rate_row.daily_rate if work_type == "Full Day" else rate_row.daily_rate / 2
+        entry = Attendance(
+            work_date=work_date,
+            casual_id=casual_id,
+            work_done=(request.form.get(f"work_done_{casual_id}") or "").strip() or None,
+            work_type=work_type,
+            rate=rate_row.daily_rate,
+            amount=amount,
+        )
+        db.session.add(entry)
+        saved += 1
+
+    if saved:
+        db.session.commit()
+        log_action(
+            "CREATE",
+            "Daily Attendance Register",
+            details=f"{saved} attendance entries saved for {work_date}",
+        )
+    if saved:
+        flash(f"{saved} attendance entr{'y' if saved == 1 else 'ies'} saved.")
+    if skipped:
+        flash(f"{skipped} existing entr{'y was' if skipped == 1 else 'ies were'} skipped to prevent duplicates.")
+    if missing_rates:
+        flash("No rate was found for: " + ", ".join(missing_rates) + ". Add their rates first.")
+    if not selected_ids:
+        flash("Select at least one worker before saving the daily register.")
+    return redirect(url_for("attendance", daily_date=work_date.isoformat()))
+
 
 
 def recalculate_payment(payment_ref):
@@ -1577,6 +1677,13 @@ def attendance_edit(id):
         old_payment_ref = row.payment_ref
         work_date = datetime.strptime(request.form["work_date"], "%Y-%m-%d").date()
         casual_id = int(request.form["casual_id"])
+        existing = find_existing_attendance(casual_id, work_date, exclude_id=row.id)
+        if existing:
+            flash(
+                f"Attendance already exists for {existing.casual.name} on "
+                f"{work_date.strftime('%d %b %Y')}. Edit that existing record instead."
+            )
+            return redirect(url_for("attendance_edit", id=id))
         rr = get_rate(casual_id, work_date)
         if not rr:
             flash("Add a rate for this worker before saving the correction.")

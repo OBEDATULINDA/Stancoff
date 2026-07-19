@@ -1,0 +1,12 @@
+STANCOFF UPDATE 6.3 - DUPLICATE ATTENDANCE PROTECTION
+
+WHAT CHANGED
+1. The same casual worker cannot be recorded twice on the same date.
+2. The rule also applies when editing an existing attendance entry.
+3. A Daily Attendance Register lets you select several workers and save them together.
+4. Workers already recorded on the selected date are locked and show an Edit Existing button.
+5. Existing attendance, payments, coffee records, users and database tables are not deleted or replaced.
+
+UPLOAD
+Upload all contents of the Stancoff-main folder to the existing GitHub repository, replace matching files, commit, and redeploy the same Render service.
+Do not delete PostgreSQL and do not change DATABASE_URL.
