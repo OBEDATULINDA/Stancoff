@@ -1915,7 +1915,19 @@ def payment_void(id):
 @app.route("/payment-receipt/<int:id>")
 @permission_required("payments")
 def payment_receipt(id):
-    return render_template("payment_receipt.html", row=Payment.query.get_or_404(id))
+    row = Payment.query.get_or_404(id)
+    attendance_entries = Attendance.query.filter_by(payment_ref=row.payment_ref).order_by(Attendance.work_date).all()
+    full_days = sum(1 for entry in attendance_entries if entry.work_type == "Full Day")
+    half_days = sum(1 for entry in attendance_entries if entry.work_type == "Half Day")
+    days_equivalent = full_days + (half_days * 0.5)
+    return render_template(
+        "payment_receipt.html",
+        row=row,
+        attendance_entries=attendance_entries,
+        full_days=full_days,
+        half_days=half_days,
+        days_equivalent=days_equivalent,
+    )
 
 
 @app.route("/audit")

@@ -1,2 +1,65 @@
-<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><style>body{font-family:Arial;max-width:650px;margin:30px auto}.box{border:1px solid #000;padding:25px}table{width:100%}td{padding:7px}</style></head><body><div class=box><h2>STANCOFF COMPANY LIMITED</h2><h3>Casual Payment Receipt</h3><table>
-<tr><td>Reference</td><td>{{row.payment_ref}}</td></tr><tr><td>Worker</td><td>{{row.casual.code}} - {{row.casual.name}}</td></tr><tr><td>Period</td><td>{{row.period_start}} to {{row.period_end}}</td></tr><tr><td>Gross</td><td>UGX {{"%.0f"|format(row.gross_pay)}}</td></tr><tr><td>Deduction</td><td>UGX {{"%.0f"|format(row.deduction)}}</td></tr><tr><td>Net Paid</td><td><b>UGX {{"%.0f"|format(row.net_paid)}}</b></td></tr></table></div><script>window.print()</script></body></html>
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Casual Payment Receipt - {{ row.payment_ref }}</title>
+  <style>
+    body{font-family:Arial,sans-serif;max-width:760px;margin:24px auto;color:#111}
+    .box{border:1.5px solid #000;padding:28px}
+    h2,h3{text-align:center;margin:4px 0}
+    .subtitle{text-align:center;margin:0 0 20px}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left}
+    td:last-child{text-align:right}
+    .amount{font-size:1.15rem;font-weight:bold}
+    .ack{margin-top:26px;line-height:1.6}
+    .signatures{display:grid;grid-template-columns:1fr 1fr;gap:42px;margin-top:48px}
+    .signature-line{border-top:1px solid #000;padding-top:7px;text-align:center}
+    .small{font-size:.9rem;color:#333}
+    .no-print{margin-bottom:15px}
+    @media print{.no-print{display:none}body{margin:0}.box{border:1px solid #000}}
+  </style>
+</head>
+<body>
+  <button class="no-print" onclick="window.print()">Print receipt</button>
+  <div class="box">
+    <h2>STANCOFF COMPANY LIMITED</h2>
+    <h3>CASUAL PAYMENT RECEIPT</h3>
+    <p class="subtitle">Payment acknowledgement</p>
+
+    <table>
+      <tr><td>Receipt reference</td><td>{{ row.payment_ref }}</td></tr>
+      <tr><td>Casual worker</td><td>{{ row.casual.code }} - {{ row.casual.name }}</td></tr>
+      <tr><td>Attendance period</td><td>{{ row.period_start.strftime('%d %b %Y') }} to {{ row.period_end.strftime('%d %b %Y') }}</td></tr>
+      <tr><td>Date of payment</td><td>{{ row.payment_date.strftime('%d %b %Y') }}</td></tr>
+      <tr><td>Full days worked</td><td>{{ full_days }}</td></tr>
+      <tr><td>Half days worked</td><td>{{ half_days }}</td></tr>
+      <tr><td>Total days payable</td><td>{{ "%.1f"|format(days_equivalent) }}</td></tr>
+      <tr><td>Gross amount</td><td>UGX {{ "{:,.0f}".format(row.gross_pay) }}</td></tr>
+      <tr><td>Deduction</td><td>UGX {{ "{:,.0f}".format(row.deduction or 0) }}</td></tr>
+      <tr><td>Payment method</td><td>{{ row.method or '-' }}</td></tr>
+      <tr><td>Net amount paid</td><td class="amount">UGX {{ "{:,.0f}".format(row.net_paid) }}</td></tr>
+    </table>
+
+    <div class="ack">
+      <strong>Payee acknowledgement:</strong><br>
+      I, <strong>{{ row.casual.name }}</strong>, acknowledge that I have received the net amount shown above as payment for
+      <strong>{{ "%.1f"|format(days_equivalent) }}</strong> day(s) worked during the stated attendance period.
+    </div>
+
+    <div class="signatures">
+      <div>
+        <div class="signature-line">Payee signature / thumbprint</div>
+        <p class="small">Name: {{ row.casual.name }}</p>
+        <p class="small">Date: ____________________</p>
+      </div>
+      <div>
+        <div class="signature-line">Payer signature</div>
+        <p class="small">Name: ____________________</p>
+        <p class="small">Date: ____________________</p>
+      </div>
+    </div>
+  </div>
+  <script>window.print()</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+STANCOFF UPDATE 6.4 - CASUAL PAYMENT RECEIPT
+
+This update changes only the printable casual payment receipt.
+
+The receipt now includes:
+- Payment date
+- Attendance period
+- Full days worked
+- Half days worked
+- Total equivalent days paid
+- Payment method
+- Payee acknowledgement statement
+- Payee signature/thumbprint line
+- Payer name and signature line
+- Signature dates
+
+No database table is deleted or replaced. Existing attendance, payments,
+coffee operations, sales, inventory, users and passwords remain unchanged.
