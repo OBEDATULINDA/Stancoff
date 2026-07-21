@@ -1,0 +1,19 @@
+STANCOFF UPDATE 6.5 - CLEAN DROPDOWN NAVIGATION
+
+This update changes only the sidebar navigation.
+
+The following sections are now collapsible dropdowns:
+- Coffee operations
+- Workforce
+- Administration
+
+The section containing the current page opens automatically. The app also remembers which sections the user opened or closed.
+
+No database tables or records are changed.
+
+DEPLOYMENT
+1. Extract this ZIP.
+2. Upload everything inside Stancoff-main to the existing GitHub repository.
+3. Replace matching files and commit.
+4. Let Render redeploy, or use Manual Deploy.
+5. Do not delete PostgreSQL and do not change DATABASE_URL.

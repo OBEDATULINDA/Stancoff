@@ -65,3 +65,15 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
 .attendance-check{width:22px;height:22px}.saved-check{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#dcfce7;color:#166534;font-weight:800}
 .saved-attendance-row{background:#f8fafc}.block-text{display:block}.muted-text{color:#667085}.register-actions{margin-top:1rem;display:flex;justify-content:flex-end}
 @media(max-width:700px){.section-heading-row{display:block}.daily-date-form{margin-top:.75rem}.register-actions{justify-content:stretch}.register-actions button{width:100%}}
+
+/* Update 6.5: collapsible sidebar navigation groups */
+.nav-group{margin-top:5px;border-radius:10px}
+.nav-group summary{list-style:none;cursor:pointer;text-transform:uppercase;letter-spacing:.12em;font-size:10px;font-weight:700;color:#9ab9af;padding:13px 12px 9px;display:flex;align-items:center;justify-content:space-between;user-select:none;border-radius:9px}
+.nav-group summary::-webkit-details-marker{display:none}
+.nav-group summary::after{content:'›';font-size:18px;line-height:1;transform:rotate(0deg);transition:transform .18s ease;color:#b9cec7}
+.nav-group[open] summary::after{transform:rotate(90deg)}
+.nav-group summary:hover,.nav-group[open] summary{background:rgba(255,255,255,.06);color:#fff}
+.nav-group-links{display:flex;flex-direction:column;gap:4px;padding:3px 0 5px 8px}
+.nav-group-links a{position:relative;padding-left:18px}
+.nav-group-links a::before{content:'';position:absolute;left:8px;top:50%;width:3px;height:3px;border-radius:50%;background:#78998e;transform:translateY(-50%)}
+.nav-group-links a.active::before{background:#fff}

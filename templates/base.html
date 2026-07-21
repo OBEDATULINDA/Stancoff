@@ -19,35 +19,55 @@
     </a>
     <nav class="side-nav">
       <a href="/" class="{% if request.path=='/' %}active{% endif %}">Dashboard</a>
-      {% if current_role in ['Admin','Manager','Receiving Clerk'] %}
-      <div class="nav-label">Coffee operations</div>
-      <a href="/suppliers">Suppliers</a>
-      <a href="/batches">Batches</a>
-      <a href="/purchases">Purchases</a>
+
+      {% set coffee_open = request.path.startswith('/suppliers') or request.path.startswith('/batches') or request.path.startswith('/purchases') or request.path.startswith('/processing') or request.path.startswith('/drying') or request.path.startswith('/inventory') or request.path.startswith('/locations') or request.path.startswith('/sales') or request.path.startswith('/dispatch') or request.path.startswith('/prices') %}
+      {% if current_role in ['Admin','Manager','Receiving Clerk','Processing Supervisor','Storekeeper'] %}
+      <details class="nav-group" data-nav-group="coffee" {% if coffee_open %}open{% endif %}>
+        <summary>Coffee operations</summary>
+        <div class="nav-group-links">
+          {% if current_role in ['Admin','Manager','Receiving Clerk'] %}
+          <a href="/suppliers" class="{% if request.path.startswith('/suppliers') %}active{% endif %}">Suppliers</a>
+          <a href="/batches" class="{% if request.path.startswith('/batches') %}active{% endif %}">Batches</a>
+          <a href="/purchases" class="{% if request.path.startswith('/purchases') %}active{% endif %}">Purchases</a>
+          {% endif %}
+          {% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
+          <a href="/processing" class="{% if request.path.startswith('/processing') %}active{% endif %}">Processing</a>
+          <a href="/drying" class="{% if request.path.startswith('/drying') %}active{% endif %}">Drying</a>
+          <a href="/inventory" class="{% if request.path.startswith('/inventory') %}active{% endif %}">Storage &amp; Inventory</a>
+          <a href="/locations" class="{% if request.path.startswith('/locations') %}active{% endif %}">Locations</a>
+          {% if current_role in ['Admin','Manager','Storekeeper'] %}
+          <a href="/sales" class="{% if request.path.startswith('/sales') or request.path.startswith('/dispatch') %}active{% endif %}">Sales &amp; Dispatch</a>
+          {% endif %}
+          {% endif %}
+          {% if current_role in ['Admin','Manager'] %}
+          <a href="/prices" class="{% if request.path.startswith('/prices') %}active{% endif %}">Price history</a>
+          {% endif %}
+        </div>
+      </details>
       {% endif %}
-      {% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
-      <a href="/processing" class="{% if request.path.startswith('/processing') %}active{% endif %}">Processing</a>
-      <a href="/drying" class="{% if request.path.startswith('/drying') %}active{% endif %}">Drying</a>
-      <a href="/inventory" class="{% if request.path.startswith('/inventory') %}active{% endif %}">Storage & Inventory</a>
-      <a href="/locations" class="{% if request.path.startswith('/locations') %}active{% endif %}">Locations</a>
-      {% if current_role in ['Admin','Manager','Storekeeper'] %}
-      <a href="/sales" class="{% if request.path.startswith('/sales') or request.path.startswith('/dispatch') %}active{% endif %}">Sales & Dispatch</a>
-      {% endif %}
-      {% endif %}
-      {% if current_role in ['Admin','Manager'] %}
-      <a href="/prices">Price history</a>
-      {% endif %}
+
+      {% set workforce_open = request.path.startswith('/casuals') or request.path.startswith('/casual-rates') or request.path.startswith('/attendance') or request.path.startswith('/payments') %}
       {% if current_role in ['Admin','Manager','Payroll Officer'] %}
-      <div class="nav-label">Workforce</div>
-      <a href="/casuals">Casual workers</a>
-      <a href="/casual-rates">Rate history</a>
-      <a href="/attendance">Attendance</a>
-      <a href="/payments">Payments</a>
+      <details class="nav-group" data-nav-group="workforce" {% if workforce_open %}open{% endif %}>
+        <summary>Workforce</summary>
+        <div class="nav-group-links">
+          <a href="/casuals" class="{% if request.path.startswith('/casuals') %}active{% endif %}">Casual workers</a>
+          <a href="/casual-rates" class="{% if request.path.startswith('/casual-rates') %}active{% endif %}">Rate history</a>
+          <a href="/attendance" class="{% if request.path.startswith('/attendance') %}active{% endif %}">Attendance</a>
+          <a href="/payments" class="{% if request.path.startswith('/payments') %}active{% endif %}">Payments</a>
+        </div>
+      </details>
       {% endif %}
+
+      {% set admin_open = request.path.startswith('/users') or request.path.startswith('/audit') %}
       {% if current_role=='Admin' %}
-      <div class="nav-label">Administration</div>
-      <a href="/users">Users</a>
-      <a href="/audit">Audit log</a>
+      <details class="nav-group" data-nav-group="administration" {% if admin_open %}open{% endif %}>
+        <summary>Administration</summary>
+        <div class="nav-group-links">
+          <a href="/users" class="{% if request.path.startswith('/users') %}active{% endif %}">Users</a>
+          <a href="/audit" class="{% if request.path.startswith('/audit') %}active{% endif %}">Audit log</a>
+        </div>
+      </details>
       {% endif %}
     </nav>
     <div class="sidebar-user">
@@ -87,6 +107,17 @@ document.getElementById('today')?.append(
   new Intl.DateTimeFormat('en-GB',{dateStyle:'medium'}).format(new Date())
 );
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js')}
+
+// Remember which sidebar sections the user opened or closed.
+document.querySelectorAll('.nav-group[data-nav-group]').forEach((group) => {
+  const key = `stancoff-nav-${group.dataset.navGroup}`;
+  const hasActiveLink = Boolean(group.querySelector('a.active'));
+  const savedState = localStorage.getItem(key);
+  if (!hasActiveLink && savedState !== null) group.open = savedState === 'open';
+  group.addEventListener('toggle', () => {
+    localStorage.setItem(key, group.open ? 'open' : 'closed');
+  });
+});
 </script>
 {% block scripts %}{% endblock %}
 </body>
