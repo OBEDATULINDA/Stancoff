@@ -1166,6 +1166,42 @@ def stations():
     counts = dict(db.session.query(Location.station_id, func.count(Location.id)).group_by(Location.station_id).all())
     return render_template("stations.html", rows=rows, counts=counts)
 
+@app.route("/stations/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("stations")
+def station_edit(id):
+    row = Station.query.get_or_404(id)
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip().upper()
+        name = (request.form.get("name") or "").strip()
+        district = (request.form.get("district") or "").strip() or None
+        notes = (request.form.get("notes") or "").strip() or None
+
+        if not code or not name:
+            flash("Enter both station code and station name.")
+            return render_template("station_edit.html", row=row)
+
+        duplicate = Station.query.filter(
+            Station.id != row.id,
+            (func.lower(Station.code) == code.lower()) |
+            (func.lower(Station.name) == name.lower())
+        ).first()
+        if duplicate:
+            flash("Another station already uses this code or name.")
+            return render_template("station_edit.html", row=row)
+
+        old_label = f"{row.code} - {row.name}"
+        row.code = code
+        row.name = name
+        row.district = district
+        row.notes = notes
+        db.session.commit()
+        log_action("UPDATE", "Stations", row.id, f"{old_label} changed to {row.code} - {row.name}")
+        flash("Station updated successfully. Existing locations, inventory and transfers remain linked to it.")
+        return redirect(url_for("stations"))
+
+    return render_template("station_edit.html", row=row)
+
+
 @app.route("/stations/<int:id>/toggle", methods=["POST"])
 @permission_required("stations")
 def station_toggle(id):

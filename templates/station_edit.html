@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Edit Station · Stancoff{% endblock %}
+{% block page_title %}Edit coffee station{% endblock %}
+{% block page_subtitle %}Update the station details without affecting its locations, stock or movement history{% endblock %}
+{% block content %}
+<section class="panel processing-intro">
+  <div>
+    <span class="eyebrow">Station setup</span>
+    <h2>{{ row.name }}</h2>
+    <p>Changing the name or code does not create a new station. All existing records remain connected to this station.</p>
+  </div>
+  <a class="secondary-button" href="{{ url_for('stations') }}">Back to stations</a>
+</section>
+
+<form method="post" class="processing-form panel" style="margin-top:18px">
+  <label>Station code
+    <input name="code" required maxlength="20" value="{{ request.form.get('code', row.code) }}">
+  </label>
+  <label>Station name
+    <input name="name" required maxlength="150" value="{{ request.form.get('name', row.name) }}">
+  </label>
+  <label>District
+    <input name="district" maxlength="120" value="{{ request.form.get('district', row.district or '') }}">
+  </label>
+  <label class="form-wide">Notes
+    <textarea name="notes" rows="3">{{ request.form.get('notes', row.notes or '') }}</textarea>
+  </label>
+  <div class="form-wide form-actions">
+    <button class="primary-button" type="submit">Save changes</button>
+    <a class="secondary-button" href="{{ url_for('stations') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

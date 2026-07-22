@@ -1,0 +1,14 @@
+STANCOFF UPDATE 6.7 - EDITABLE STATIONS
+
+What changed
+------------
+1. Every station now has an Edit button.
+2. You can change the station code, name, district and notes.
+3. The system prevents duplicate station codes or names.
+4. Editing a station does not create a new station and does not break existing links.
+5. Existing locations, coffee stock, drying records, station transfers and movement history remain attached to the same station ID.
+6. Station activation and deactivation still work as before.
+
+Database safety
+---------------
+This update does not delete, recreate or replace any PostgreSQL table. It only adds an application route and templates. Existing data remains intact.
