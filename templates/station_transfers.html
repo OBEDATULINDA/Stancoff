@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Station Transfers · Stancoff{% endblock %}
+{% block page_title %}Station transfers{% endblock %}
+{% block page_subtitle %}Move drying or stored coffee safely from one station to another{% endblock %}
+{% block content %}
+<section class="panel processing-intro"><div><span class="eyebrow">Inter-station movement</span><h2>{{ next_transfer }}</h2><p>The same batch and grade are retained. Inventory leaves the sending location and appears at the receiving location.</p></div><a class="secondary-button" href="{{ url_for('inventory') }}">View inventory</a></section>
+<form method="post" class="processing-form panel" id="transferForm">
+<label>Coffee to transfer<select name="source_stock_id" id="sourceStock" required><option value="">Select coffee</option>{% for s in stocks %}<option value="{{ s.id }}" data-weight="{{ s.weight }}" data-station="{{ s.location.station_id }}">{{ s.batch.batch_no }} · {{ s.grade }} · {{ s.location.station.name }} / {{ s.location.name }} · {{ '{:,.2f}'.format(s.weight) }} kg</option>{% endfor %}</select></label>
+<label>Receiving location<select name="to_location_id" id="destination" required><option value="">Select destination</option>{% for l in destinations %}<option value="{{ l.id }}" data-station="{{ l.station_id }}">{{ l.station.name }} / {{ l.name }} · {{ l.location_type }}</option>{% endfor %}</select></label>
+<label>Transfer date<input type="date" name="transfer_date" id="transferDate" required></label>
+<label>Weight (kg)<input type="number" min="0.01" step="0.01" name="weight" id="weight" required></label>
+<label>Moisture %<input type="number" min="0" max="100" step="0.01" name="moisture"></label>
+<label>Number of bags<input type="number" min="0" name="number_of_bags"></label>
+<label>Vehicle registration<input name="vehicle_no"></label><label>Driver name<input name="driver_name"></label><label>Driver phone<input name="driver_phone"></label>
+<label>Dispatch time<input type="time" name="dispatch_time"></label><label>Arrival time<input type="time" name="arrival_time"></label>
+<label>Dispatched by<input name="dispatched_by"></label><label>Received by<input name="received_by"></label><label>Authorized by<input name="authorized_by"></label>
+<label class="form-wide">Remarks<textarea name="remarks" rows="2" placeholder="Relocation to Rwimi, weather condition, handling instructions..."></textarea></label>
+<div class="form-wide"><button class="primary-button">Save transfer and print note</button></div></form>
+<section class="panel" style="margin-top:18px"><div class="panel-heading"><div><span class="eyebrow">Traceability</span><h2>Transfer history</h2></div></div><div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Grade</th><th>From</th><th>To</th><th>Weight</th><th>Vehicle</th><th>Status</th><th>Note</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><strong>{{ r.transfer_no }}</strong></td><td>{{ r.movement.movement_date }}</td><td>{{ r.movement.batch.batch_no }}</td><td>{{ r.movement.grade }}</td><td>{{ r.from_station.name }} / {{ r.movement.from_location.name }}</td><td>{{ r.to_station.name }} / {{ r.movement.to_location.name }}</td><td>{{ '{:,.2f}'.format(r.movement.weight) }} kg</td><td>{{ r.vehicle_no or '—' }}</td><td>{{ r.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('station_transfer_print', id=r.id) }}">Print</a></td></tr>{% else %}<tr><td colspan="10" class="empty">No station transfers yet.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}
+{% block scripts %}<script>
+const src=document.getElementById('sourceStock'), dst=document.getElementById('destination'), qty=document.getElementById('weight');document.getElementById('transferDate').valueAsDate=new Date();src.addEventListener('change',()=>{const o=src.selectedOptions[0];if(o&&o.dataset.weight)qty.value=o.dataset.weight;});document.getElementById('transferForm').addEventListener('submit',e=>{const a=src.selectedOptions[0],b=dst.selectedOptions[0];if(a&&b&&a.dataset.station===b.dataset.station){e.preventDefault();alert('Choose a receiving location at a different station.');}if(a&&Number(qty.value)>Number(a.dataset.weight)){e.preventDefault();alert('The transfer weight cannot exceed available stock.');}});
+</script>{% endblock %}

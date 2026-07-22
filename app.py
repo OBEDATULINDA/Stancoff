@@ -5,7 +5,7 @@ from functools import wraps
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, abort
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -21,10 +21,10 @@ db = SQLAlchemy(app)
 
 ROLE_PERMISSIONS = {
     "Admin": {"*"},
-    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","drying","inventory","locations","sales","dispatch","casuals","rates","attendance","payments","reports"},
+    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","drying","inventory","locations","stations","transfers","sales","dispatch","casuals","rates","attendance","payments","reports"},
     "Receiving Clerk": {"dashboard","suppliers","batches","purchases"},
-    "Processing Supervisor": {"dashboard","batches","processing","drying","inventory","locations","reports"},
-    "Storekeeper": {"dashboard","batches","drying","inventory","locations","sales","dispatch","reports"},
+    "Processing Supervisor": {"dashboard","batches","processing","drying","inventory","locations","stations","transfers","reports"},
+    "Storekeeper": {"dashboard","batches","drying","inventory","locations","stations","transfers","sales","dispatch","reports"},
     "Payroll Officer": {"dashboard","casuals","rates","attendance","payments"},
     "Viewer": {"dashboard","reports"},
 }
@@ -139,13 +139,24 @@ class Drying(db.Model):
     processing = db.relationship("Processing")
     batch = db.relationship("Batch")
 
+class Station(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(20), unique=True, nullable=False)
+    name = db.Column(db.String(150), unique=True, nullable=False)
+    district = db.Column(db.String(120))
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 class Location(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), unique=True, nullable=False)
     location_type = db.Column(db.String(40), nullable=False)
+    station_id = db.Column(db.Integer, db.ForeignKey("station.id"))
     status = db.Column(db.String(20), nullable=False, default="Active")
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    station = db.relationship("Station")
 
 class CoffeeStock(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -184,6 +195,28 @@ class CoffeeMovement(db.Model):
     batch = db.relationship("Batch")
     from_location = db.relationship("Location", foreign_keys=[from_location_id])
     to_location = db.relationship("Location", foreign_keys=[to_location_id])
+
+
+class StationTransfer(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    transfer_no = db.Column(db.String(30), unique=True, nullable=False)
+    movement_id = db.Column(db.Integer, db.ForeignKey("coffee_movement.id"), nullable=False, unique=True)
+    from_station_id = db.Column(db.Integer, db.ForeignKey("station.id"), nullable=False)
+    to_station_id = db.Column(db.Integer, db.ForeignKey("station.id"), nullable=False)
+    number_of_bags = db.Column(db.Integer)
+    vehicle_no = db.Column(db.String(80))
+    driver_name = db.Column(db.String(150))
+    driver_phone = db.Column(db.String(60))
+    dispatch_time = db.Column(db.String(20))
+    arrival_time = db.Column(db.String(20))
+    dispatched_by = db.Column(db.String(120))
+    received_by = db.Column(db.String(120))
+    authorized_by = db.Column(db.String(120))
+    status = db.Column(db.String(20), nullable=False, default="Completed")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    movement = db.relationship("CoffeeMovement")
+    from_station = db.relationship("Station", foreign_keys=[from_station_id])
+    to_station = db.relationship("Station", foreign_keys=[to_station_id])
 
 class Sale(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -329,9 +362,28 @@ def get_rate(casual_id, d):
         CasualRate.effective_date <= d
     ).order_by(CasualRate.effective_date.desc(), CasualRate.id.desc()).first()
 
+def ensure_multistation_schema():
+    """Add multi-station support without deleting or recreating existing data."""
+    inspector = inspect(db.engine)
+    table_names = inspector.get_table_names()
+    if "location" in table_names:
+        columns = {c["name"] for c in inspector.get_columns("location")}
+        if "station_id" not in columns:
+            db.session.execute(text("ALTER TABLE location ADD COLUMN station_id INTEGER"))
+            db.session.commit()
+    db.create_all()
+
+    default_station = Station.query.order_by(Station.id).first()
+    if not default_station:
+        default_station = Station(code="STA", name="Existing Station", status="Active", notes="Automatically created for locations that existed before Update 6.6.")
+        db.session.add(default_station)
+        db.session.commit()
+    Location.query.filter(Location.station_id.is_(None)).update({Location.station_id: default_station.id}, synchronize_session=False)
+    db.session.commit()
+
 @app.before_request
 def ensure_db():
-    db.create_all()
+    ensure_multistation_schema()
     if not User.query.first():
         admin_user = os.getenv("ADMIN_USERNAME", "admin")
         admin_password = os.getenv("ADMIN_PASSWORD", "ChangeMe123!")
@@ -1071,7 +1123,7 @@ def ensure_initial_stock():
         location_name = (row.drying_location or "Unspecified Drying Area").strip()
         location = Location.query.filter(func.lower(Location.name) == location_name.lower()).first()
         if not location:
-            location = Location(name=location_name, location_type="Drying Area", status="Active")
+            location = Location(name=location_name, location_type="Drying Area", status="Active", station_id=Station.query.order_by(Station.id).first().id)
             db.session.add(location)
             db.session.flush()
         starting_weight = float(row.dry_weight if row.drying_status == "Completed" and row.dry_weight is not None else row.input_weight or 0)
@@ -1092,6 +1144,96 @@ def ensure_initial_stock():
         db.session.commit()
 
 
+@app.route("/stations", methods=["GET", "POST"])
+@permission_required("stations")
+def stations():
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip().upper()
+        name = (request.form.get("name") or "").strip()
+        if not code or not name:
+            flash("Enter both station code and station name.")
+            return redirect(url_for("stations"))
+        if Station.query.filter((func.lower(Station.code) == code.lower()) | (func.lower(Station.name) == name.lower())).first():
+            flash("A station with this code or name already exists.")
+            return redirect(url_for("stations"))
+        row = Station(code=code, name=name, district=request.form.get("district"), notes=request.form.get("notes"))
+        db.session.add(row)
+        db.session.commit()
+        log_action("CREATE", "Stations", row.id, f"{row.code} - {row.name}")
+        flash("Station added successfully.")
+        return redirect(url_for("stations"))
+    rows = Station.query.order_by(Station.name).all()
+    counts = dict(db.session.query(Location.station_id, func.count(Location.id)).group_by(Location.station_id).all())
+    return render_template("stations.html", rows=rows, counts=counts)
+
+@app.route("/stations/<int:id>/toggle", methods=["POST"])
+@permission_required("stations")
+def station_toggle(id):
+    row = Station.query.get_or_404(id)
+    row.status = "Inactive" if row.status == "Active" else "Active"
+    db.session.commit()
+    log_action("UPDATE", "Stations", row.id, f"Status changed to {row.status}")
+    flash("Station status updated.")
+    return redirect(url_for("stations"))
+
+@app.route("/station-transfers", methods=["GET", "POST"])
+@permission_required("transfers")
+def station_transfers():
+    ensure_initial_stock()
+    if request.method == "POST":
+        source = CoffeeStock.query.get_or_404(int(request.form["source_stock_id"]))
+        destination = Location.query.get_or_404(int(request.form["to_location_id"]))
+        if not source.location.station_id or not destination.station_id or source.location.station_id == destination.station_id:
+            flash("Station transfers must move coffee between two different stations.")
+            return redirect(url_for("station_transfers"))
+        weight = float(request.form.get("weight") or 0)
+        if weight <= 0 or weight > float(source.weight or 0) + 0.0001:
+            flash(f"Transfer weight cannot exceed {source.weight:,.2f} kg.")
+            return redirect(url_for("station_transfers"))
+        moisture = float(request.form["moisture"]) if request.form.get("moisture") else source.moisture
+        destination_stock = CoffeeStock.query.filter_by(drying_id=source.drying_id, location_id=destination.id).first()
+        old_weight = float(destination_stock.weight or 0) if destination_stock else 0
+        if not destination_stock:
+            destination_stock = CoffeeStock(drying_id=source.drying_id, batch_id=source.batch_id, grade=source.grade, location_id=destination.id, weight=0, moisture=moisture)
+            db.session.add(destination_stock)
+        destination_stock.weight = old_weight + weight
+        destination_stock.moisture = moisture
+        destination_stock.stock_status = stock_status_for_location(destination.location_type)
+        source.weight = max(0, float(source.weight or 0) - weight)
+        movement = CoffeeMovement(
+            movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6), drying_id=source.drying_id,
+            batch_id=source.batch_id, grade=source.grade, from_location_id=source.location_id,
+            to_location_id=destination.id, movement_date=datetime.strptime(request.form["transfer_date"], "%Y-%m-%d").date(),
+            weight=weight, moisture=moisture, movement_type="Station Transfer",
+            reason=request.form.get("remarks"), moved_by=request.form.get("dispatched_by"), created_by=session.get("username"))
+        db.session.add(movement)
+        db.session.flush()
+        transfer = StationTransfer(
+            transfer_no=next_code(StationTransfer, "transfer_no", "TRF", 6), movement_id=movement.id,
+            from_station_id=source.location.station_id, to_station_id=destination.station_id,
+            number_of_bags=int(request.form["number_of_bags"]) if request.form.get("number_of_bags") else None,
+            vehicle_no=request.form.get("vehicle_no"), driver_name=request.form.get("driver_name"),
+            driver_phone=request.form.get("driver_phone"), dispatch_time=request.form.get("dispatch_time"),
+            arrival_time=request.form.get("arrival_time"), dispatched_by=request.form.get("dispatched_by"),
+            received_by=request.form.get("received_by"), authorized_by=request.form.get("authorized_by"))
+        db.session.add(transfer)
+        batch = db.session.get(Batch, source.batch_id)
+        if batch: batch.status = "Transferred to " + destination.station.name
+        db.session.commit()
+        log_action("CREATE", "Station Transfer", transfer.id, transfer.transfer_no)
+        flash(f"{transfer.transfer_no} saved. {weight:,.2f} kg moved to {destination.station.name}.")
+        return redirect(url_for("station_transfer_print", id=transfer.id))
+    stocks = CoffeeStock.query.join(Location).filter(CoffeeStock.weight > 0.0001, Location.station_id.isnot(None)).order_by(CoffeeStock.updated_at.desc()).all()
+    destinations = Location.query.join(Station).filter(Location.status == "Active", Station.status == "Active").order_by(Station.name, Location.location_type, Location.name).all()
+    rows = StationTransfer.query.order_by(StationTransfer.id.desc()).limit(200).all()
+    return render_template("station_transfers.html", stocks=stocks, destinations=destinations, rows=rows, next_transfer=next_code(StationTransfer, "transfer_no", "TRF", 6))
+
+@app.route("/station-transfers/<int:id>/print")
+@permission_required("transfers")
+def station_transfer_print(id):
+    row = StationTransfer.query.get_or_404(id)
+    return render_template("station_transfer_note.html", row=row)
+
 @app.route("/locations", methods=["GET", "POST"])
 @permission_required("locations")
 def locations():
@@ -1104,13 +1246,18 @@ def locations():
         if Location.query.filter(func.lower(Location.name) == name.lower()).first():
             flash("A location with this name already exists.")
             return redirect(url_for("locations"))
-        row = Location(name=name, location_type=location_type, notes=request.form.get("notes"))
+        station_id = int(request.form.get("station_id") or 0)
+        station = db.session.get(Station, station_id)
+        if not station:
+            flash("Select a valid station.")
+            return redirect(url_for("locations"))
+        row = Location(name=name, location_type=location_type, station_id=station.id, notes=request.form.get("notes"))
         db.session.add(row)
         db.session.commit()
         log_action("CREATE", "Locations", row.id, f"{row.name} - {row.location_type}")
         flash("Location added successfully.")
         return redirect(url_for("locations"))
-    return render_template("locations.html", rows=Location.query.order_by(Location.location_type, Location.name).all())
+    return render_template("locations.html", rows=Location.query.order_by(Location.station_id, Location.location_type, Location.name).all(), stations=Station.query.filter_by(status="Active").order_by(Station.name).all())
 
 
 @app.route("/locations/<int:id>/toggle", methods=["POST"])
@@ -1203,10 +1350,14 @@ def inventory():
     movements = CoffeeMovement.query.order_by(CoffeeMovement.id.desc()).limit(200).all()
     grade_totals = {"Grade A": 0.0, "Grade B": 0.0, "Grade C": 0.0}
     location_totals = {}
+    station_totals = {}
     for stock in stocks:
         grade_totals[stock.grade] = grade_totals.get(stock.grade, 0) + float(stock.weight or 0)
         location_totals.setdefault(stock.location.name, 0.0)
         location_totals[stock.location.name] += float(stock.weight or 0)
+        station_name = stock.location.station.name if stock.location.station else "Unassigned"
+        station_totals.setdefault(station_name, 0.0)
+        station_totals[station_name] += float(stock.weight or 0)
     return render_template(
         "inventory.html",
         stocks=stocks,
@@ -1215,6 +1366,7 @@ def inventory():
         grade_totals=grade_totals,
         total_stock=sum(grade_totals.values()),
         location_totals=location_totals,
+        station_totals=station_totals,
         next_movement=next_code(CoffeeMovement, "movement_no", "MOV", 6),
     )
 
@@ -1956,5 +2108,5 @@ def forbidden(_):
 
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
+        ensure_multistation_schema()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)))

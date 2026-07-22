@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Stations · Stancoff{% endblock %}
+{% block page_title %}Coffee stations{% endblock %}
+{% block page_subtitle %}Manage processing stations such as the existing station and Rwimi{% endblock %}
+{% block content %}
+<section class="panel processing-intro"><div><span class="eyebrow">Update 6.6</span><h2>Multi-station operations</h2><p>Every drying yard, temporary store and warehouse belongs to a station.</p></div><a class="secondary-button" href="{{ url_for('locations') }}">Manage locations</a></section>
+<form method="post" class="processing-form panel">
+  <label>Station code<input name="code" required placeholder="Example: RWI"></label>
+  <label>Station name<input name="name" required placeholder="Example: Rwimi Station"></label>
+  <label>District<input name="district" placeholder="Example: Kasese"></label>
+  <label class="form-wide">Notes<textarea name="notes" rows="2"></textarea></label>
+  <div class="form-wide"><button class="primary-button">Add station</button></div>
+</form>
+<section class="panel" style="margin-top:18px"><div class="panel-heading"><div><span class="eyebrow">Setup</span><h2>Available stations</h2></div></div>
+<div class="table-scroll"><table><thead><tr><th>Code</th><th>Station</th><th>District</th><th>Locations</th><th>Status</th><th>Notes</th><th>Action</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><strong>{{ r.code }}</strong></td><td>{{ r.name }}</td><td>{{ r.district or '—' }}</td><td>{{ counts.get(r.id,0) }}</td><td>{{ r.status }}</td><td>{{ r.notes or '—' }}</td><td><form method="post" action="{{ url_for('station_toggle', id=r.id) }}"><button class="small-button {% if r.status=='Active' %}danger{% endif %}">{{ 'Deactivate' if r.status=='Active' else 'Activate' }}</button></form></td></tr>
+{% else %}<tr><td colspan="7" class="empty">No stations yet.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

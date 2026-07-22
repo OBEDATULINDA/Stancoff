@@ -1,22 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Locations · Stancoff{% endblock %}
 {% block page_title %}Coffee locations{% endblock %}
-{% block page_subtitle %}Set up drying areas, temporary stores and final warehouses{% endblock %}
+{% block page_subtitle %}Set up drying areas, temporary stores and warehouses under each station{% endblock %}
 {% block content %}
 <section class="panel processing-intro">
   <div><span class="eyebrow">Update 3</span><h2>Where coffee can be kept</h2><p>Create each real place used for drying or storage. You only need to create a location once.</p></div>
 </section>
 <form method="post" class="processing-form panel">
-  <label>Location name<input name="name" required placeholder="Example: Drying Yard 1"></label>
+  <label>Station<select name="station_id" required><option value="">Select station</option>{% for station in stations %}<option value="{{ station.id }}">{{ station.name }}</option>{% endfor %}</select></label>
+  <label>Location name<input name="name" required placeholder="Example: Rwimi Drying Yard 1"></label>
   <label>Location type<select name="location_type" required><option value="">Select type</option><option>Drying Area</option><option>Temporary Storage</option><option>Final Warehouse</option></select></label>
   <label>Notes<input name="notes" placeholder="Section, capacity or other details"></label>
   <div class="form-wide"><button class="primary-button">Add location</button></div>
 </form>
 <section class="panel" style="margin-top:18px">
   <div class="panel-heading"><div><span class="eyebrow">Setup</span><h2>Available locations</h2></div></div>
-  <div class="table-scroll"><table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Notes</th><th>Action</th></tr></thead><tbody>
-  {% for r in rows %}<tr><td><strong>{{ r.name }}</strong></td><td>{{ r.location_type }}</td><td>{{ r.status }}</td><td>{{ r.notes or '—' }}</td><td><form method="post" action="{{ url_for('location_toggle', id=r.id) }}"><button class="small-button {% if r.status=='Active' %}danger{% endif %}">{{ 'Deactivate' if r.status=='Active' else 'Activate' }}</button></form></td></tr>
-  {% else %}<tr><td colspan="5" class="empty">No locations yet.</td></tr>{% endfor %}
+  <div class="table-scroll"><table><thead><tr><th>Station</th><th>Name</th><th>Type</th><th>Status</th><th>Notes</th><th>Action</th></tr></thead><tbody>
+  {% for r in rows %}<tr><td>{{ r.station.name if r.station else 'Unassigned' }}</td><td><strong>{{ r.name }}</strong></td><td>{{ r.location_type }}</td><td>{{ r.status }}</td><td>{{ r.notes or '—' }}</td><td><form method="post" action="{{ url_for('location_toggle', id=r.id) }}"><button class="small-button {% if r.status=='Active' %}danger{% endif %}">{{ 'Deactivate' if r.status=='Active' else 'Activate' }}</button></form></td></tr>
+  {% else %}<tr><td colspan="6" class="empty">No locations yet.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 {% endblock %}

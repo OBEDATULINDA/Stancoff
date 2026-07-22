@@ -20,7 +20,7 @@
     <nav class="side-nav">
       <a href="/" class="{% if request.path=='/' %}active{% endif %}">Dashboard</a>
 
-      {% set coffee_open = request.path.startswith('/suppliers') or request.path.startswith('/batches') or request.path.startswith('/purchases') or request.path.startswith('/processing') or request.path.startswith('/drying') or request.path.startswith('/inventory') or request.path.startswith('/locations') or request.path.startswith('/sales') or request.path.startswith('/dispatch') or request.path.startswith('/prices') %}
+      {% set coffee_open = request.path.startswith('/suppliers') or request.path.startswith('/batches') or request.path.startswith('/purchases') or request.path.startswith('/processing') or request.path.startswith('/drying') or request.path.startswith('/inventory') or request.path.startswith('/locations') or request.path.startswith('/stations') or request.path.startswith('/station-transfers') or request.path.startswith('/sales') or request.path.startswith('/dispatch') or request.path.startswith('/prices') %}
       {% if current_role in ['Admin','Manager','Receiving Clerk','Processing Supervisor','Storekeeper'] %}
       <details class="nav-group" data-nav-group="coffee" {% if coffee_open %}open{% endif %}>
         <summary>Coffee operations</summary>
@@ -34,7 +34,9 @@
           <a href="/processing" class="{% if request.path.startswith('/processing') %}active{% endif %}">Processing</a>
           <a href="/drying" class="{% if request.path.startswith('/drying') %}active{% endif %}">Drying</a>
           <a href="/inventory" class="{% if request.path.startswith('/inventory') %}active{% endif %}">Storage &amp; Inventory</a>
+          <a href="/stations" class="{% if request.path.startswith('/stations') %}active{% endif %}">Stations</a>
           <a href="/locations" class="{% if request.path.startswith('/locations') %}active{% endif %}">Locations</a>
+          <a href="/station-transfers" class="{% if request.path.startswith('/station-transfers') %}active{% endif %}">Station Transfers</a>
           {% if current_role in ['Admin','Manager','Storekeeper'] %}
           <a href="/sales" class="{% if request.path.startswith('/sales') or request.path.startswith('/dispatch') %}active{% endif %}">Sales &amp; Dispatch</a>
           {% endif %}

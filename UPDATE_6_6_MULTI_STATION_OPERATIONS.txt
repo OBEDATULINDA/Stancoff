@@ -1,0 +1,23 @@
+STANCOFF UPDATE 6.6 — MULTI-STATION OPERATIONS
+
+WHAT IS NEW
+1. Stations master: create the existing station, Rwimi, and future stations.
+2. Every coffee location belongs to a station.
+3. Dedicated Station Transfers screen for moving drying or stored coffee between stations.
+4. Transfer preserves the original batch, grade, moisture and traceability.
+5. Inventory automatically reduces at the sending location and increases at the receiving location.
+6. Printable Coffee Station Transfer Note with vehicle, driver, bags, dispatch/arrival times and signatures.
+7. Inventory screens now show both station and location.
+
+DATABASE SAFETY
+- Existing tables are never dropped or recreated.
+- A nullable station_id column is added to the existing location table only if it is missing.
+- Existing locations are assigned to an automatically created "Existing Station".
+- Existing purchases, batches, drying, inventory, movements, sales, payroll, users and passwords remain intact.
+
+FIRST SETUP
+1. Deploy this update normally without deleting PostgreSQL or DATABASE_URL.
+2. Open Coffee Operations > Stations.
+3. Rename is not included in this update; use "Existing Station" for the current site, and add Rwimi Station with code RWI.
+4. Open Locations and add the receiving drying yards/stores under Rwimi. Use globally distinct names such as "Rwimi Drying Yard 1".
+5. Open Station Transfers and record each relocation load.

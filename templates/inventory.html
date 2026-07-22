@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Storage & Inventory · Stancoff{% endblock %}
 {% block page_title %}Storage & inventory{% endblock %}
-{% block page_subtitle %}Move coffee between drying, temporary storage and final storage{% endblock %}
+{% block page_subtitle %}Track coffee across stations, drying areas and stores{% endblock %}
 {% block content %}
 <section class="panel processing-intro">
   <div><span class="eyebrow">Movement ledger</span><h2>Where is the coffee right now?</h2><p>Every movement is recorded. Coffee may return to drying as many times as needed.</p></div>
-  <a class="secondary-button" href="{{ url_for('locations') }}">Manage locations</a>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="secondary-button" href="{{ url_for('stations') }}">Manage stations</a><a class="secondary-button" href="{{ url_for('locations') }}">Manage locations</a><a class="primary-button" href="{{ url_for('station_transfers') }}">Station transfer</a></div>
 </section>
 <div class="metric-grid">
   <div class="metric-card"><span>Grade A · Red</span><strong>{{ '{:,.2f}'.format(grade_totals.get('Grade A',0)) }} kg</strong></div>
@@ -17,8 +17,8 @@
   <div class="panel-heading"><div><span class="eyebrow">New movement</span><h2>{{ next_movement }}</h2></div></div>
   {% if not locations %}<div class="flash">Create at least two locations before recording a movement.</div>{% endif %}
   <form method="post" class="processing-form" id="movementForm">
-    <label>Move coffee from<select name="source_stock_id" id="sourceStock" required><option value="">Select current coffee</option>{% for s in stocks %}<option value="{{ s.id }}" data-weight="{{ s.weight }}" data-location="{{ s.location_id }}">{{ s.batch.batch_no }} · {{ s.grade }} · {{ s.location.name }} · {{ '{:,.2f}'.format(s.weight) }} kg</option>{% endfor %}</select></label>
-    <label>Move coffee to<select name="to_location_id" id="destination" required><option value="">Select destination</option>{% for l in locations %}<option value="{{ l.id }}">{{ l.name }} · {{ l.location_type }}</option>{% endfor %}</select></label>
+    <label>Move coffee from<select name="source_stock_id" id="sourceStock" required><option value="">Select current coffee</option>{% for s in stocks %}<option value="{{ s.id }}" data-weight="{{ s.weight }}" data-location="{{ s.location_id }}">{{ s.batch.batch_no }} · {{ s.grade }} · {{ s.location.station.name if s.location.station else 'Unassigned' }} / {{ s.location.name }} · {{ '{:,.2f}'.format(s.weight) }} kg</option>{% endfor %}</select></label>
+    <label>Move coffee to<select name="to_location_id" id="destination" required><option value="">Select destination</option>{% for l in locations %}<option value="{{ l.id }}">{{ l.station.name if l.station else 'Unassigned' }} / {{ l.name }} · {{ l.location_type }}</option>{% endfor %}</select></label>
     <label>Movement date<input type="date" name="movement_date" id="movementDate" required></label>
     <label>Weight to move (kg)<input type="number" min="0.01" step="0.01" name="weight" id="moveWeight" required></label>
     <label>Moisture %<input type="number" min="0" max="100" step="0.01" name="moisture" placeholder="Optional"></label>
@@ -29,15 +29,15 @@
 </section>
 <section class="panel" style="margin-top:18px">
   <div class="panel-heading"><div><span class="eyebrow">Current position</span><h2>Live inventory</h2></div></div>
-  <div class="table-scroll"><table><thead><tr><th>Batch</th><th>Grade</th><th>Current location</th><th>Type</th><th>Weight</th><th>Moisture</th><th>Status</th><th>History</th></tr></thead><tbody>
-  {% for s in stocks %}<tr><td><strong>{{ s.batch.batch_no }}</strong></td><td>{{ s.grade }}</td><td>{{ s.location.name }}</td><td>{{ s.location.location_type }}</td><td>{{ '{:,.2f}'.format(s.weight) }} kg</td><td>{{ '{:.2f}%'.format(s.moisture) if s.moisture is not none else '—' }}</td><td>{{ s.stock_status }}</td><td><a class="small-button" href="{{ url_for('inventory_batch_history', batch_id=s.batch_id) }}">View batch</a></td></tr>
-  {% else %}<tr><td colspan="8" class="empty">No drying coffee is available for inventory yet.</td></tr>{% endfor %}
+  <div class="table-scroll"><table><thead><tr><th>Batch</th><th>Grade</th><th>Station</th><th>Current location</th><th>Type</th><th>Weight</th><th>Moisture</th><th>Status</th><th>History</th></tr></thead><tbody>
+  {% for s in stocks %}<tr><td><strong>{{ s.batch.batch_no }}</strong></td><td>{{ s.grade }}</td><td>{{ s.location.station.name if s.location.station else 'Unassigned' }}</td><td>{{ s.location.name }}</td><td>{{ s.location.location_type }}</td><td>{{ '{:,.2f}'.format(s.weight) }} kg</td><td>{{ '{:.2f}%'.format(s.moisture) if s.moisture is not none else '—' }}</td><td>{{ s.stock_status }}</td><td><a class="small-button" href="{{ url_for('inventory_batch_history', batch_id=s.batch_id) }}">View batch</a></td></tr>
+  {% else %}<tr><td colspan="9" class="empty">No drying coffee is available for inventory yet.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 <section class="panel" style="margin-top:18px">
   <div class="panel-heading"><div><span class="eyebrow">Audit trail</span><h2>Movement history</h2></div></div>
-  <div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Grade</th><th>From</th><th>To</th><th>Weight</th><th>Moisture</th><th>Type</th><th>Status</th><th>Moving form</th><th>Action</th></tr></thead><tbody>
-  {% for m in movements %}<tr class="{% if m.status=='Voided' %}voided-row{% endif %}"><td><strong>{{ m.movement_no }}</strong></td><td>{{ m.movement_date }}</td><td>{{ m.batch.batch_no }}</td><td>{{ m.grade }}</td><td>{{ m.from_location.name }}</td><td>{{ m.to_location.name }}</td><td>{{ '{:,.2f}'.format(m.weight) }} kg</td><td>{{ '{:.2f}%'.format(m.moisture) if m.moisture is not none else '—' }}</td><td>{{ m.movement_type }}</td><td>{{ m.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('inventory_movement_print', id=m.id) }}">Print</a></td><td>{% if m.status!='Voided' %}<form method="post" action="{{ url_for('inventory_movement_void', id=m.id) }}" class="inline-void" onsubmit="return confirm('Reverse and void this movement?')"><input name="void_reason" required placeholder="Reason"><button class="small-button danger">Void</button></form>{% else %}<small>{{ m.void_reason }}</small>{% endif %}</td></tr>
+  <div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Grade</th><th>From station/location</th><th>To station/location</th><th>Weight</th><th>Moisture</th><th>Type</th><th>Status</th><th>Moving form</th><th>Action</th></tr></thead><tbody>
+  {% for m in movements %}<tr class="{% if m.status=='Voided' %}voided-row{% endif %}"><td><strong>{{ m.movement_no }}</strong></td><td>{{ m.movement_date }}</td><td>{{ m.batch.batch_no }}</td><td>{{ m.grade }}</td><td>{{ m.from_location.station.name if m.from_location.station else 'Unassigned' }} / {{ m.from_location.name }}</td><td>{{ m.to_location.station.name if m.to_location.station else 'Unassigned' }} / {{ m.to_location.name }}</td><td>{{ '{:,.2f}'.format(m.weight) }} kg</td><td>{{ '{:.2f}%'.format(m.moisture) if m.moisture is not none else '—' }}</td><td>{{ m.movement_type }}</td><td>{{ m.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('inventory_movement_print', id=m.id) }}">Print</a></td><td>{% if m.status!='Voided' %}<form method="post" action="{{ url_for('inventory_movement_void', id=m.id) }}" class="inline-void" onsubmit="return confirm('Reverse and void this movement?')"><input name="void_reason" required placeholder="Reason"><button class="small-button danger">Void</button></form>{% else %}<small>{{ m.void_reason }}</small>{% endif %}</td></tr>
   {% else %}<tr><td colspan="12" class="empty">No movements recorded yet.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
