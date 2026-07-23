@@ -183,6 +183,7 @@ class CoffeeMovement(db.Model):
     to_location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=False)
     movement_date = db.Column(db.Date, nullable=False)
     weight = db.Column(db.Float, nullable=False)
+    source_weight = db.Column(db.Float)
     moisture = db.Column(db.Float)
     movement_type = db.Column(db.String(40), nullable=False)
     reason = db.Column(db.Text)
@@ -370,6 +371,11 @@ def ensure_multistation_schema():
         columns = {c["name"] for c in inspector.get_columns("location")}
         if "station_id" not in columns:
             db.session.execute(text("ALTER TABLE location ADD COLUMN station_id INTEGER"))
+            db.session.commit()
+    if "coffee_movement" in table_names:
+        movement_columns = {c["name"] for c in inspector.get_columns("coffee_movement")}
+        if "source_weight" not in movement_columns:
+            db.session.execute(text("ALTER TABLE coffee_movement ADD COLUMN source_weight FLOAT"))
             db.session.commit()
     db.create_all()
 
@@ -1044,36 +1050,35 @@ def drying():
 
 
 def refresh_drying_completion(drying_record):
-    """Refresh drying totals from current warehouse balances without deleting history."""
-    warehouse_weight = db.session.query(func.coalesce(func.sum(CoffeeStock.weight), 0.0)).join(
-        Location, CoffeeStock.location_id == Location.id
-    ).filter(
+    """Refresh drying totals using wet input consumed and actual dry output stored."""
+    finished_movements = CoffeeMovement.query.filter(
+        CoffeeMovement.drying_id == drying_record.id,
+        CoffeeMovement.status == "Active",
+        CoffeeMovement.movement_type.like("Finished Drying%"),
+    ).all()
+    dry_output = sum(float(m.weight or 0) for m in finished_movements)
+    wet_consumed = sum(float(m.source_weight if m.source_weight is not None else m.weight or 0) for m in finished_movements)
+
+    unfinished_weight = db.session.query(func.coalesce(func.sum(CoffeeStock.weight), 0.0)).filter(
         CoffeeStock.drying_id == drying_record.id,
         CoffeeStock.weight > 0.0001,
-        Location.location_type == "Final Warehouse",
+        ~CoffeeStock.stock_status.in_(["Finished Dry", "Stored"]),
     ).scalar() or 0.0
-    unfinished_weight = db.session.query(func.coalesce(func.sum(CoffeeStock.weight), 0.0)).join(
-        Location, CoffeeStock.location_id == Location.id
-    ).filter(
-        CoffeeStock.drying_id == drying_record.id,
-        CoffeeStock.weight > 0.0001,
-        Location.location_type != "Final Warehouse",
-    ).scalar() or 0.0
-    drying_record.dry_weight = float(warehouse_weight)
+
+    drying_record.dry_weight = dry_output
     drying_record.outturn_percent = (
-        float(warehouse_weight) / float(drying_record.input_weight) * 100
+        dry_output / float(drying_record.input_weight) * 100
         if drying_record.input_weight else 0
     )
-    if unfinished_weight <= 0.0001 and warehouse_weight > 0:
+    drying_record.drying_loss = max(0, wet_consumed - dry_output)
+    if float(unfinished_weight) <= 0.0001 and dry_output > 0:
         drying_record.drying_status = "Completed"
-        drying_record.drying_loss = max(0, float(drying_record.input_weight or 0) - float(warehouse_weight))
-    elif warehouse_weight > 0:
+        drying_record.drying_loss = max(0, float(drying_record.input_weight or 0) - dry_output)
+    elif dry_output > 0:
         drying_record.drying_status = "Partially Completed"
-        drying_record.drying_loss = 0
     else:
         drying_record.drying_status = "Drying"
-        drying_record.drying_loss = 0
-    return float(warehouse_weight), float(unfinished_weight)
+    return dry_output, float(unfinished_weight)
 
 
 @app.route("/drying/<int:id>/finish", methods=["GET", "POST"])
@@ -1089,6 +1094,7 @@ def finish_drying(id):
         CoffeeStock.drying_id == row.id,
         CoffeeStock.weight > 0.0001,
         Location.location_type != "Final Warehouse",
+        ~CoffeeStock.stock_status.in_(["Finished Dry", "Stored"]),
     ).order_by(Location.station_id, Location.name).all()
     destinations = Location.query.join(Station).filter(
         Location.status == "Active",
@@ -1115,9 +1121,13 @@ def finish_drying(id):
             flash("Choose a different destination location.")
             return redirect(url_for("finish_drying", id=id))
 
-        weight = float(request.form.get("weight") or 0)
-        if weight <= 0 or weight > float(source.weight or 0) + 0.0001:
-            flash(f"Weight must be greater than zero and cannot exceed {source.weight:,.2f} kg.")
+        wet_weight = float(request.form.get("wet_weight") or 0)
+        dry_weight = float(request.form.get("dry_weight") or 0)
+        if wet_weight <= 0 or wet_weight > float(source.weight or 0) + 0.0001:
+            flash(f"Wet weight being finished must be greater than zero and cannot exceed {source.weight:,.2f} kg.")
+            return redirect(url_for("finish_drying", id=id))
+        if dry_weight <= 0 or dry_weight > wet_weight + 0.0001:
+            flash("Dry weight must be greater than zero and cannot exceed the wet weight being finished.")
             return redirect(url_for("finish_drying", id=id))
 
         movement_date = datetime.strptime(request.form["movement_date"], "%Y-%m-%d").date()
@@ -1136,16 +1146,16 @@ def finish_drying(id):
                 moisture=moisture,
             )
             db.session.add(destination_stock)
-        new_total = old_destination_weight + weight
+        new_total = old_destination_weight + dry_weight
         if moisture is not None:
             old_moisture = float(destination_stock.moisture if destination_stock.moisture is not None else moisture)
             destination_stock.moisture = (
-                ((old_destination_weight * old_moisture) + (weight * moisture)) / new_total
+                ((old_destination_weight * old_moisture) + (dry_weight * moisture)) / new_total
                 if new_total else moisture
             )
         destination_stock.weight = new_total
-        destination_stock.stock_status = stock_status_for_location(destination.location_type)
-        source.weight = max(0, float(source.weight or 0) - weight)
+        destination_stock.stock_status = "Stored" if destination.location_type == "Final Warehouse" else "Finished Dry"
+        source.weight = max(0, float(source.weight or 0) - wet_weight)
         source.stock_status = stock_status_for_location(source.location.location_type)
 
         cross_station = source.location.station_id != destination.station_id
@@ -1158,7 +1168,8 @@ def finish_drying(id):
             from_location_id=source.location_id,
             to_location_id=destination.id,
             movement_date=movement_date,
-            weight=weight,
+            weight=dry_weight,
+            source_weight=wet_weight,
             moisture=moisture,
             movement_type=movement_type,
             reason=request.form.get("remarks"),
@@ -1201,7 +1212,7 @@ def finish_drying(id):
         row.batch.status = "Stored" if destination.location_type == "Final Warehouse" else "Temporary Storage"
         db.session.commit()
         log_action("CREATE", "Finish Drying", movement.id, movement.movement_no)
-        flash(f"{weight:,.2f} kg moved to {destination.station.name} · {destination.name}.")
+        flash(f"{dry_weight:,.2f} kg dry coffee stored from {wet_weight:,.2f} kg wet coffee at {destination.station.name} · {destination.name}.")
         if transfer:
             return redirect(url_for("station_transfer_print", id=transfer.id))
         return redirect(url_for("inventory_movement_print", id=movement.id))
@@ -1415,7 +1426,7 @@ def station_transfers():
         destination_stock.weight = old_weight + weight
         destination_stock.moisture = moisture
         destination_stock.stock_status = stock_status_for_location(destination.location_type)
-        source.weight = max(0, float(source.weight or 0) - weight)
+        source.weight = max(0, float(source.weight or 0) - wet_weight)
         movement = CoffeeMovement(
             movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6), drying_id=source.drying_id,
             batch_id=source.batch_id, grade=source.grade, from_location_id=source.location_id,
@@ -1522,14 +1533,14 @@ def inventory():
                 moisture=moisture,
             )
             db.session.add(destination_stock)
-        new_total = old_destination_weight + weight
+        new_total = old_destination_weight + dry_weight
         if moisture is not None:
             old_m = float(destination_stock.moisture or moisture)
             destination_stock.moisture = ((old_destination_weight * old_m) + (weight * moisture)) / new_total if new_total else moisture
         destination_stock.weight = new_total
         destination_stock.stock_status = stock_status_for_location(destination.location_type)
 
-        source.weight = max(0, float(source.weight or 0) - weight)
+        source.weight = max(0, float(source.weight or 0) - wet_weight)
         source.stock_status = stock_status_for_location(source.location.location_type)
 
         movement_type = {

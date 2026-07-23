@@ -1,0 +1,9 @@
+STANCOFF UPDATE 6.8.1 — DRY WEIGHT STORAGE FIX
+
+Finish Drying now records two separate quantities:
+1. Wet/semi-dry weight being completed and removed from the drying balance.
+2. Actual dry weight entering the selected storage location.
+
+The difference is recorded as drying loss. Partial completion remains supported.
+A safe nullable source_weight column is added automatically to coffee_movement.
+No existing PostgreSQL tables or records are deleted.

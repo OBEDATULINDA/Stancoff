@@ -24,8 +24,9 @@
         {% endfor %}
       </select>
     </label>
-    <label>Available weight<input id="availableWeight" readonly></label>
-    <label>Weight to store or transfer (kg)<input type="number" step="0.01" min="0.01" name="weight" id="moveWeight" required></label>
+    <label>Wet / semi-dry weight available<input id="availableWeight" readonly></label>
+    <label>Wet weight being finished (kg)<input type="number" step="0.01" min="0.01" name="wet_weight" id="wetWeight" required></label>
+    <label>Actual dry weight to store (kg)<input type="number" step="0.01" min="0.01" name="dry_weight" id="dryWeight" required></label>
     <label>Completion / movement date<input type="date" name="movement_date" value="{{ today }}" required></label>
     <label>Moisture % <small>Optional record only; no separate moisture approval is required.</small><input type="number" step="0.01" min="0" max="100" name="moisture" id="moisture"></label>
     <label>Destination station
@@ -52,7 +53,8 @@
 
     <div class="form-wide calculation-box">
       <div><span>Movement type</span><strong id="movementType">Select source and destination</strong></div>
-      <div><span>Remaining at source</span><strong id="remainingWeight">0.00 kg</strong></div>
+      <div><span>Wet balance remaining</span><strong id="remainingWeight">0.00 kg</strong></div>
+      <div><span>Drying loss for this movement</span><strong id="dryingLoss">0.00 kg</strong></div>
     </div>
 
     <div class="form-wide" id="transportFields" style="display:none">
@@ -88,13 +90,15 @@
 const source=document.getElementById('sourceStock');
 const station=document.getElementById('destinationStation');
 const locationSelect=document.getElementById('destinationLocation');
-const weight=document.getElementById('moveWeight');
+const wetWeight=document.getElementById('wetWeight');
+const dryWeight=document.getElementById('dryWeight');
 const allLocations=Array.from(locationSelect ? locationSelect.querySelectorAll('option[data-station]') : []);
 function selectedSource(){return source && source.selectedOptions.length ? source.selectedOptions[0] : null;}
 function refreshSource(){
   const opt=selectedSource(); const available=Number(opt?.dataset.weight||0);
   document.getElementById('availableWeight').value=available ? available.toLocaleString(undefined,{maximumFractionDigits:2})+' kg' : '';
-  if(available) weight.value=available;
+  if(available) wetWeight.value=available;
+  dryWeight.value='';
   if(opt?.dataset.moisture) document.getElementById('moisture').value=opt.dataset.moisture;
   refreshSummary();
 }
@@ -106,19 +110,22 @@ function filterLocations(){
 }
 function refreshSummary(){
   const opt=selectedSource(); const from=opt?.dataset.station||''; const to=station?.value||'';
-  const available=Number(opt?.dataset.weight||0), moving=Number(weight?.value||0);
-  document.getElementById('remainingWeight').textContent=Math.max(0,available-moving).toFixed(2)+' kg';
+  const available=Number(opt?.dataset.weight||0), wet=Number(wetWeight?.value||0), dry=Number(dryWeight?.value||0);
+  document.getElementById('remainingWeight').textContent=Math.max(0,available-wet).toFixed(2)+' kg';
+  document.getElementById('dryingLoss').textContent=Math.max(0,wet-dry).toFixed(2)+' kg';
   const cross=from && to && from!==to;
   document.getElementById('movementType').textContent=!from||!to?'Select source and destination':(cross?'Station transfer and storage':'Storage within the same station');
   document.getElementById('transportFields').style.display=cross?'block':'none';
 }
 if(source) source.addEventListener('change',refreshSource);
 if(station) station.addEventListener('change',filterLocations);
-if(weight) weight.addEventListener('input',refreshSummary);
+if(wetWeight) wetWeight.addEventListener('input',refreshSummary);
+if(dryWeight) dryWeight.addEventListener('input',refreshSummary);
 if(locationSelect) locationSelect.addEventListener('change',refreshSummary);
 if(document.getElementById('finishForm')) document.getElementById('finishForm').addEventListener('submit',e=>{
-  const available=Number(selectedSource()?.dataset.weight||0), moving=Number(weight.value||0);
-  if(moving<=0||moving>available){e.preventDefault();alert('Weight must be greater than zero and cannot exceed the available balance.');}
+  const available=Number(selectedSource()?.dataset.weight||0), wet=Number(wetWeight.value||0), dry=Number(dryWeight.value||0);
+  if(wet<=0||wet>available){e.preventDefault();alert('Wet weight must be greater than zero and cannot exceed the available wet balance.');return;}
+  if(dry<=0||dry>wet){e.preventDefault();alert('Dry weight must be greater than zero and cannot exceed the wet weight being finished.');}
 });
 </script>
 {% endblock %}
