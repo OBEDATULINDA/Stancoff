@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Drying · Stancoff{% endblock %}
 {% block page_title %}Coffee drying{% endblock %}
-{% block page_subtitle %}Dry Grade A, Grade B and Grade C separately{% endblock %}
+{% block page_subtitle %}Track drying and move finished coffee to storage{% endblock %}
 {% block content %}
 <section class="panel processing-intro">
   <div>
     <span class="eyebrow">Update 2</span>
-    <h2>Record drying by grade</h2>
-    <p>Select a processed batch and one grade. The system keeps every grade separate until storage.</p>
+    <h2>Record and complete drying by grade</h2>
+    <p>Select a processed batch and grade. When drying is finished, choose the destination station and storage location.</p>
   </div>
   <div class="grade-key">
     <span class="grade-pill grade-a">Grade A · Red</span>
@@ -38,7 +38,7 @@
     <label>Drying end date<input type="date" name="end_date" id="endDate"><small>Leave empty while coffee is still drying.</small></label>
     <label>Weight entering drying (kg)<input type="number" step="0.01" min="0.01" name="input_weight" id="inputWeight" required></label>
     <label>Dry weight (kg)<input type="number" step="0.01" min="0" name="dry_weight" id="dryWeight"><small>Enter after drying is completed.</small></label>
-    <label>Final moisture %<input type="number" step="0.01" min="0" max="100" name="moisture"></label>
+    <label>Moisture % <small>Optional reading; no separate approval is required.</small><input type="number" step="0.01" min="0" max="100" name="moisture"></label>
     <label>Drying location<input name="drying_location" placeholder="Drying bed, yard or section"></label>
     <label>Dried by<input name="dried_by" placeholder="Supervisor or responsible person"></label>
     <label class="form-wide">Notes<textarea name="notes" rows="3" placeholder="Weather, turning, defects or drying observations"></textarea></label>
@@ -67,6 +67,7 @@
         <td>
           {% if r.status != 'Voided' %}
           <a class="small-button" href="{{ url_for('drying_edit', id=r.id) }}">Edit</a>
+          {% if r.id in finishable_ids %}<a class="small-button" href="{{ url_for('finish_drying', id=r.id) }}">Finish drying</a>{% endif %}
           <form method="post" action="{{ url_for('drying_void', id=r.id) }}" class="inline-void" onsubmit="return confirm('Void this drying record?')">
             <input name="void_reason" placeholder="Reason" required><button class="small-button danger">Void</button>
           </form>

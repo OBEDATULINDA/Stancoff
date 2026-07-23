@@ -1020,6 +1020,12 @@ def drying():
         flash("Drying record saved successfully.")
         return redirect(url_for("drying"))
 
+    ensure_initial_stock()
+    finishable_ids = {
+        stock.drying_id for stock in CoffeeStock.query.join(Location).filter(
+            CoffeeStock.weight > 0.0001, Location.location_type != "Final Warehouse"
+        ).all()
+    }
     grade_weights = {
         p.id: {
             "Grade A": float(p.grade_a_weight or 0),
@@ -1032,8 +1038,182 @@ def drying():
         rows=Drying.query.order_by(Drying.id.desc()).all(),
         processes=active_processes,
         grade_weights=grade_weights,
+        finishable_ids=finishable_ids,
         next_drying=next_code(Drying, "drying_no", "DRY", 6)
     )
+
+
+def refresh_drying_completion(drying_record):
+    """Refresh drying totals from current warehouse balances without deleting history."""
+    warehouse_weight = db.session.query(func.coalesce(func.sum(CoffeeStock.weight), 0.0)).join(
+        Location, CoffeeStock.location_id == Location.id
+    ).filter(
+        CoffeeStock.drying_id == drying_record.id,
+        CoffeeStock.weight > 0.0001,
+        Location.location_type == "Final Warehouse",
+    ).scalar() or 0.0
+    unfinished_weight = db.session.query(func.coalesce(func.sum(CoffeeStock.weight), 0.0)).join(
+        Location, CoffeeStock.location_id == Location.id
+    ).filter(
+        CoffeeStock.drying_id == drying_record.id,
+        CoffeeStock.weight > 0.0001,
+        Location.location_type != "Final Warehouse",
+    ).scalar() or 0.0
+    drying_record.dry_weight = float(warehouse_weight)
+    drying_record.outturn_percent = (
+        float(warehouse_weight) / float(drying_record.input_weight) * 100
+        if drying_record.input_weight else 0
+    )
+    if unfinished_weight <= 0.0001 and warehouse_weight > 0:
+        drying_record.drying_status = "Completed"
+        drying_record.drying_loss = max(0, float(drying_record.input_weight or 0) - float(warehouse_weight))
+    elif warehouse_weight > 0:
+        drying_record.drying_status = "Partially Completed"
+        drying_record.drying_loss = 0
+    else:
+        drying_record.drying_status = "Drying"
+        drying_record.drying_loss = 0
+    return float(warehouse_weight), float(unfinished_weight)
+
+
+@app.route("/drying/<int:id>/finish", methods=["GET", "POST"])
+@permission_required("drying")
+def finish_drying(id):
+    ensure_initial_stock()
+    row = Drying.query.get_or_404(id)
+    if row.status == "Voided":
+        flash("A voided drying record cannot be completed.")
+        return redirect(url_for("drying"))
+
+    source_stocks = CoffeeStock.query.join(Location).filter(
+        CoffeeStock.drying_id == row.id,
+        CoffeeStock.weight > 0.0001,
+        Location.location_type != "Final Warehouse",
+    ).order_by(Location.station_id, Location.name).all()
+    destinations = Location.query.join(Station).filter(
+        Location.status == "Active",
+        Station.status == "Active",
+        Location.location_type.in_(["Temporary Storage", "Final Warehouse"]),
+    ).order_by(Station.name, Location.location_type, Location.name).all()
+
+    if request.method == "POST":
+        source = CoffeeStock.query.get_or_404(int(request.form["source_stock_id"]))
+        destination = Location.query.get_or_404(int(request.form["to_location_id"]))
+        if source.drying_id != row.id or source.weight <= 0.0001:
+            flash("Select an available coffee balance from this drying record.")
+            return redirect(url_for("finish_drying", id=id))
+        if source.location.location_type == "Final Warehouse":
+            flash("This coffee is already in a final warehouse.")
+            return redirect(url_for("finish_drying", id=id))
+        if destination.status != "Active" or not destination.station or destination.station.status != "Active":
+            flash("Select an active destination station and location.")
+            return redirect(url_for("finish_drying", id=id))
+        if destination.location_type not in {"Temporary Storage", "Final Warehouse"}:
+            flash("Finished coffee can only be sent to temporary storage or a final warehouse.")
+            return redirect(url_for("finish_drying", id=id))
+        if source.location_id == destination.id:
+            flash("Choose a different destination location.")
+            return redirect(url_for("finish_drying", id=id))
+
+        weight = float(request.form.get("weight") or 0)
+        if weight <= 0 or weight > float(source.weight or 0) + 0.0001:
+            flash(f"Weight must be greater than zero and cannot exceed {source.weight:,.2f} kg.")
+            return redirect(url_for("finish_drying", id=id))
+
+        movement_date = datetime.strptime(request.form["movement_date"], "%Y-%m-%d").date()
+        moisture = float(request.form["moisture"]) if request.form.get("moisture") else source.moisture
+        destination_stock = CoffeeStock.query.filter_by(
+            drying_id=source.drying_id, location_id=destination.id
+        ).first()
+        old_destination_weight = float(destination_stock.weight or 0) if destination_stock else 0
+        if not destination_stock:
+            destination_stock = CoffeeStock(
+                drying_id=source.drying_id,
+                batch_id=source.batch_id,
+                grade=source.grade,
+                location_id=destination.id,
+                weight=0,
+                moisture=moisture,
+            )
+            db.session.add(destination_stock)
+        new_total = old_destination_weight + weight
+        if moisture is not None:
+            old_moisture = float(destination_stock.moisture if destination_stock.moisture is not None else moisture)
+            destination_stock.moisture = (
+                ((old_destination_weight * old_moisture) + (weight * moisture)) / new_total
+                if new_total else moisture
+            )
+        destination_stock.weight = new_total
+        destination_stock.stock_status = stock_status_for_location(destination.location_type)
+        source.weight = max(0, float(source.weight or 0) - weight)
+        source.stock_status = stock_status_for_location(source.location.location_type)
+
+        cross_station = source.location.station_id != destination.station_id
+        movement_type = "Finished Drying - Station Transfer" if cross_station else "Finished Drying - Storage"
+        movement = CoffeeMovement(
+            movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6),
+            drying_id=source.drying_id,
+            batch_id=source.batch_id,
+            grade=source.grade,
+            from_location_id=source.location_id,
+            to_location_id=destination.id,
+            movement_date=movement_date,
+            weight=weight,
+            moisture=moisture,
+            movement_type=movement_type,
+            reason=request.form.get("remarks"),
+            moved_by=request.form.get("stored_by") or request.form.get("dispatched_by"),
+            created_by=session.get("username"),
+        )
+        db.session.add(movement)
+        db.session.flush()
+
+        transfer = None
+        if cross_station:
+            if not source.location.station_id or not destination.station_id:
+                db.session.rollback()
+                flash("Both the sending and receiving locations must belong to a station.")
+                return redirect(url_for("finish_drying", id=id))
+            transfer = StationTransfer(
+                transfer_no=next_code(StationTransfer, "transfer_no", "TRF", 6),
+                movement_id=movement.id,
+                from_station_id=source.location.station_id,
+                to_station_id=destination.station_id,
+                number_of_bags=int(request.form["number_of_bags"]) if request.form.get("number_of_bags") else None,
+                vehicle_no=request.form.get("vehicle_no"),
+                driver_name=request.form.get("driver_name"),
+                driver_phone=request.form.get("driver_phone"),
+                dispatch_time=request.form.get("dispatch_time"),
+                arrival_time=request.form.get("arrival_time"),
+                dispatched_by=request.form.get("dispatched_by") or request.form.get("stored_by"),
+                received_by=request.form.get("received_by"),
+                authorized_by=request.form.get("authorized_by"),
+            )
+            db.session.add(transfer)
+
+        warehouse_weight, unfinished_weight = refresh_drying_completion(row)
+        if row.drying_status == "Completed":
+            row.end_date = movement_date
+        elif row.drying_status == "Partially Completed":
+            row.end_date = None
+        row.moisture = moisture if moisture is not None else row.moisture
+        row.dried_by = request.form.get("stored_by") or row.dried_by
+        row.batch.status = "Stored" if destination.location_type == "Final Warehouse" else "Temporary Storage"
+        db.session.commit()
+        log_action("CREATE", "Finish Drying", movement.id, movement.movement_no)
+        flash(f"{weight:,.2f} kg moved to {destination.station.name} · {destination.name}.")
+        if transfer:
+            return redirect(url_for("station_transfer_print", id=transfer.id))
+        return redirect(url_for("inventory_movement_print", id=movement.id))
+
+    return render_template(
+        "finish_drying.html",
+        row=row,
+        source_stocks=source_stocks,
+        destinations=destinations,
+        today=datetime.utcnow().date().isoformat(),
+    )
+
 
 @app.route("/drying/<int:id>/edit", methods=["GET", "POST"])
 @permission_required("drying")

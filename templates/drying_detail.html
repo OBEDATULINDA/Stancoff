@@ -21,6 +21,9 @@
   </div>
   {% if row.notes %}<hr><p>{{ row.notes }}</p>{% endif %}
   {% if row.status == 'Voided' %}<div class="flash"><strong>Void reason:</strong> {{ row.void_reason }}</div>{% endif %}
-  <p><a class="secondary-button" href="{{ url_for('drying') }}">Back to drying</a></p>
+  <p class="action-row">
+    {% if row.status != 'Voided' %}<a class="primary-button" href="{{ url_for('finish_drying', id=row.id) }}">Finish drying / move to storage</a>{% endif %}
+    <a class="secondary-button" href="{{ url_for('drying') }}">Back to drying</a>
+  </p>
 </section>
 {% endblock %}

@@ -1,0 +1,22 @@
+STANCOFF UPDATE 6.8 — UNIFIED COFFEE MOVEMENT ENGINE
+
+WHAT CHANGED
+1. The separate moisture-test approval step is not required.
+2. Drying records now have a Finish drying action.
+3. Finish drying lets the user select:
+   - the current coffee balance,
+   - weight to move (partial or full),
+   - destination station,
+   - destination temporary store or final warehouse.
+4. Same-station storage creates a normal coffee movement.
+5. Cross-station storage automatically creates both:
+   - a coffee movement, and
+   - a station transfer with a printable transfer note.
+6. Inventory reduces at the source and increases at the destination.
+7. Partial completion leaves the remaining coffee at its current location.
+8. Existing PostgreSQL records and tables are preserved.
+
+DEPLOYMENT
+Extract the ZIP, upload the contents of Stancoff-main to the existing GitHub repository,
+commit the changes, and allow Render to redeploy. Do not delete the PostgreSQL database
+and do not change DATABASE_URL.
