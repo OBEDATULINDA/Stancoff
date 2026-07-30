@@ -1533,14 +1533,14 @@ def inventory():
                 moisture=moisture,
             )
             db.session.add(destination_stock)
-        new_total = old_destination_weight + dry_weight
+        new_total = old_destination_weight + weight
         if moisture is not None:
             old_m = float(destination_stock.moisture or moisture)
             destination_stock.moisture = ((old_destination_weight * old_m) + (weight * moisture)) / new_total if new_total else moisture
         destination_stock.weight = new_total
         destination_stock.stock_status = stock_status_for_location(destination.location_type)
 
-        source.weight = max(0, float(source.weight or 0) - wet_weight)
+        source.weight = max(0, float(source.weight or 0) - weight)
         source.stock_status = stock_status_for_location(source.location.location_type)
 
         movement_type = {

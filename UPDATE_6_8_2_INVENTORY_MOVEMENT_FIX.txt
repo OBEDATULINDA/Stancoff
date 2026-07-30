@@ -1,0 +1,15 @@
+STANCOFF UPDATE 6.8.2 — INVENTORY MOVEMENT FIX
+
+Fixes an error when moving coffee through Inventory, including Drying Yard -> Temporary Storage/Warehouse.
+
+Problem fixed:
+- Normal inventory movement incorrectly referenced dry_weight and wet_weight variables.
+- Those variables belong only to the Finish Drying workflow.
+
+Correct behaviour:
+- Inventory movements use the movement weight entered by the user.
+- Source stock decreases by that movement weight.
+- Destination stock increases by that movement weight.
+- Finish Drying continues to separately use wet input weight and actual dry output weight.
+
+No database tables are deleted or recreated. Existing PostgreSQL records remain intact.
