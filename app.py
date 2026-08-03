@@ -234,7 +234,9 @@ class StationTransferDocument(db.Model):
     received_by = db.Column(db.String(120))
     authorized_by = db.Column(db.String(120))
     remarks = db.Column(db.Text)
-    status = db.Column(db.String(20), nullable=False, default="Completed")
+    received_date = db.Column(db.Date)
+    receipt_notes = db.Column(db.Text)
+    status = db.Column(db.String(20), nullable=False, default="In Transit")
     created_by = db.Column(db.String(80))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     from_station = db.relationship("Station", foreign_keys=[from_station_id])
@@ -247,6 +249,10 @@ class StationTransferItem(db.Model):
     document_id = db.Column(db.Integer, db.ForeignKey("station_transfer_document.id"), nullable=False)
     movement_id = db.Column(db.Integer, db.ForeignKey("coffee_movement.id"), nullable=False, unique=True)
     number_of_bags = db.Column(db.Integer)
+    received_weight = db.Column(db.Float)
+    received_moisture = db.Column(db.Float)
+    received_bags = db.Column(db.Integer)
+    weight_difference = db.Column(db.Float)
     document = db.relationship("StationTransferDocument", back_populates="items")
     movement = db.relationship("CoffeeMovement")
 
@@ -409,6 +415,26 @@ def ensure_multistation_schema():
         if "source_weight" not in movement_columns:
             db.session.execute(text("ALTER TABLE coffee_movement ADD COLUMN source_weight FLOAT"))
             db.session.commit()
+    if "station_transfer_document" in table_names:
+        document_columns = {c["name"] for c in inspector.get_columns("station_transfer_document")}
+        for column_name, column_type in {
+            "received_date": "DATE",
+            "receipt_notes": "TEXT",
+        }.items():
+            if column_name not in document_columns:
+                db.session.execute(text(f"ALTER TABLE station_transfer_document ADD COLUMN {column_name} {column_type}"))
+                db.session.commit()
+    if "station_transfer_item" in table_names:
+        item_columns = {c["name"] for c in inspector.get_columns("station_transfer_item")}
+        for column_name, column_type in {
+            "received_weight": "FLOAT",
+            "received_moisture": "FLOAT",
+            "received_bags": "INTEGER",
+            "weight_difference": "FLOAT",
+        }.items():
+            if column_name not in item_columns:
+                db.session.execute(text(f"ALTER TABLE station_transfer_item ADD COLUMN {column_name} {column_type}"))
+                db.session.commit()
     db.create_all()
 
     default_station = Station.query.order_by(Station.id).first()
@@ -1494,6 +1520,7 @@ def station_transfers():
                 received_by=request.form.get("received_by"),
                 authorized_by=request.form.get("authorized_by"),
                 remarks=request.form.get("remarks"),
+                status="In Transit",
                 created_by=session.get("username"),
             )
             db.session.add(document)
@@ -1501,20 +1528,8 @@ def station_transfers():
 
             total_weight = 0
             for source, destination, weight, moisture, bag_count in prepared:
-                destination_stock = CoffeeStock.query.filter_by(drying_id=source.drying_id, location_id=destination.id).first()
-                old_weight = float(destination_stock.weight or 0) if destination_stock else 0
-                if not destination_stock:
-                    destination_stock = CoffeeStock(
-                        drying_id=source.drying_id, batch_id=source.batch_id, grade=source.grade,
-                        location_id=destination.id, weight=0, moisture=moisture
-                    )
-                    db.session.add(destination_stock)
-                new_total = old_weight + weight
-                if moisture is not None:
-                    old_moisture = float(destination_stock.moisture if destination_stock.moisture is not None else moisture)
-                    destination_stock.moisture = (((old_weight * old_moisture) + (weight * moisture)) / new_total) if new_total else moisture
-                destination_stock.weight = new_total
-                destination_stock.stock_status = stock_status_for_location(destination.location_type)
+                # At dispatch, remove coffee from the sending location. The receiving
+                # station adds the actual received weight only when it confirms receipt.
                 source.weight = max(0, float(source.weight or 0) - weight)
 
                 movement = CoffeeMovement(
@@ -1535,7 +1550,7 @@ def station_transfers():
 
             db.session.commit()
             log_action("CREATE", "Station Transfer", document.id, f"{document.transfer_no}: {len(prepared)} lines, {total_weight:,.2f} kg")
-            flash(f"{document.transfer_no} saved with {len(prepared)} coffee lines totalling {total_weight:,.2f} kg.")
+            flash(f"{document.transfer_no} dispatched with {len(prepared)} coffee lines totalling {total_weight:,.2f} kg. It is awaiting receipt at {document.to_station.name}.")
             return redirect(url_for("station_transfer_document_print", id=document.id))
         except (ValueError, TypeError) as exc:
             db.session.rollback()
@@ -1556,6 +1571,85 @@ def station_transfers():
         documents=documents, legacy_rows=legacy_rows,
         next_transfer=next_code(StationTransferDocument, "transfer_no", "TRF", 6)
     )
+
+
+@app.route("/station-transfer-documents/<int:id>/receive", methods=["GET", "POST"])
+@permission_required("transfers")
+def station_transfer_document_receive(id):
+    document = StationTransferDocument.query.get_or_404(id)
+    if document.status != "In Transit":
+        flash("This transfer has already been received or is not awaiting receipt.")
+        return redirect(url_for("station_transfers"))
+
+    if request.method == "POST":
+        received_weights = request.form.getlist("received_weight[]")
+        received_moistures = request.form.getlist("received_moisture[]")
+        received_bags = request.form.getlist("received_bags[]")
+        if not (len(received_weights) == len(document.items) == len(received_moistures) == len(received_bags)):
+            flash("Enter receiving details for every coffee line.")
+            return redirect(url_for("station_transfer_document_receive", id=id))
+        try:
+            prepared = []
+            for index, item in enumerate(document.items):
+                received_weight = float(received_weights[index] or 0)
+                if received_weight < 0:
+                    raise ValueError(f"Line {index + 1}: received weight cannot be negative.")
+                received_moisture = float(received_moistures[index]) if received_moistures[index] else item.movement.moisture
+                bag_count = int(received_bags[index]) if received_bags[index] else None
+                prepared.append((item, received_weight, received_moisture, bag_count))
+
+            for item, received_weight, received_moisture, bag_count in prepared:
+                movement = item.movement
+                destination = movement.to_location
+                destination_stock = CoffeeStock.query.filter_by(
+                    drying_id=movement.drying_id, location_id=destination.id
+                ).first()
+                old_weight = float(destination_stock.weight or 0) if destination_stock else 0
+                if not destination_stock:
+                    destination_stock = CoffeeStock(
+                        drying_id=movement.drying_id, batch_id=movement.batch_id, grade=movement.grade,
+                        location_id=destination.id, weight=0, moisture=received_moisture,
+                        stock_status=stock_status_for_location(destination.location_type)
+                    )
+                    db.session.add(destination_stock)
+                new_total = old_weight + received_weight
+                if received_moisture is not None and received_weight > 0:
+                    old_moisture = float(destination_stock.moisture if destination_stock.moisture is not None else received_moisture)
+                    destination_stock.moisture = (((old_weight * old_moisture) + (received_weight * received_moisture)) / new_total) if new_total else received_moisture
+                destination_stock.weight = new_total
+                destination_stock.stock_status = stock_status_for_location(destination.location_type)
+                item.received_weight = received_weight
+                item.received_moisture = received_moisture
+                item.received_bags = bag_count
+                item.weight_difference = received_weight - float(movement.weight or 0)
+                batch = movement.batch
+                if batch:
+                    batch.status = "Received at " + document.to_station.name
+
+            document.received_date = datetime.strptime(request.form["received_date"], "%Y-%m-%d").date()
+            document.arrival_time = request.form.get("arrival_time") or document.arrival_time
+            document.received_by = (request.form.get("received_by") or "").strip()
+            document.receipt_notes = request.form.get("receipt_notes")
+            document.status = "Received"
+            if not document.received_by:
+                raise ValueError("Enter the name of the person receiving the coffee.")
+            db.session.commit()
+            total_sent = sum(float(x.movement.weight or 0) for x in document.items)
+            total_received = sum(float(x.received_weight or 0) for x in document.items)
+            log_action("RECEIVE", "Station Transfer", document.id, f"{document.transfer_no}: sent {total_sent:,.2f} kg, received {total_received:,.2f} kg")
+            flash(f"{document.transfer_no} received successfully. Difference: {total_received - total_sent:,.2f} kg.")
+            return redirect(url_for("station_transfer_document_print", id=document.id))
+        except (ValueError, TypeError) as exc:
+            db.session.rollback()
+            flash(str(exc))
+            return redirect(url_for("station_transfer_document_receive", id=id))
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Station transfer receipt failed")
+            flash("The transfer could not be received. No destination inventory was changed.")
+            return redirect(url_for("station_transfer_document_receive", id=id))
+
+    return render_template("station_transfer_receive.html", row=document)
 
 
 @app.route("/station-transfer-documents/<int:id>/print")

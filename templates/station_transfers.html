@@ -33,9 +33,8 @@
     <label>Driver name<input name="driver_name"></label>
     <label>Driver phone<input name="driver_phone"></label>
     <label>Dispatch time<input type="time" name="dispatch_time"></label>
-    <label>Arrival time<input type="time" name="arrival_time"></label>
+    <label>Expected arrival time<input type="time" name="arrival_time"></label>
     <label>Dispatched by<input name="dispatched_by"></label>
-    <label>Received by<input name="received_by"></label>
     <label>Authorized by<input name="authorized_by"></label>
     <label class="form-wide">Remarks<textarea name="remarks" rows="2" placeholder="Relocation reason, weather condition or handling instructions"></textarea></label>
     <div class="form-wide transfer-total"><strong>Total transfer weight: <span id="totalWeight">0.00</span> kg</strong></div>
@@ -45,9 +44,9 @@
 
 <section class="panel" style="margin-top:18px">
   <div class="panel-heading"><div><span class="eyebrow">Multi-batch documents</span><h2>Recent transfer forms</h2></div></div>
-  <div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>From</th><th>To</th><th>Lines</th><th>Total weight</th><th>Vehicle</th><th>Status</th><th>Form</th></tr></thead><tbody>
-  {% for r in documents %}<tr><td><strong>{{ r.transfer_no }}</strong></td><td>{{ r.transfer_date }}</td><td>{{ r.from_station.name }}</td><td>{{ r.to_station.name }}</td><td>{{ r.items|length }}</td><td>{{ '{:,.2f}'.format(r.items|sum(attribute='movement.weight')) }} kg</td><td>{{ r.vehicle_no or '—' }}</td><td>{{ r.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('station_transfer_document_print', id=r.id) }}">Print</a></td></tr>
-  {% else %}<tr><td colspan="9" class="empty">No multi-batch station transfers yet.</td></tr>{% endfor %}
+  <div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>From</th><th>To</th><th>Lines</th><th>Total weight</th><th>Vehicle</th><th>Status</th><th>Difference</th><th>Actions</th></tr></thead><tbody>
+  {% for r in documents %}<tr><td><strong>{{ r.transfer_no }}</strong></td><td>{{ r.transfer_date }}</td><td>{{ r.from_station.name }}</td><td>{{ r.to_station.name }}</td><td>{{ r.items|length }}</td><td>{{ '{:,.2f}'.format(r.items|sum(attribute='movement.weight')) }} kg</td><td>{{ r.vehicle_no or '—' }}</td><td><span class="status-badge">{{ r.status }}</span></td><td>{% if r.status == 'Received' %}{{ '{:+,.2f}'.format(r.items|sum(attribute='weight_difference')) }} kg{% else %}—{% endif %}</td><td>{% if r.status == 'In Transit' %}<a class="primary-button small-button" href="{{ url_for('station_transfer_document_receive', id=r.id) }}">Receive</a>{% endif %} <a class="small-button" target="_blank" href="{{ url_for('station_transfer_document_print', id=r.id) }}">Print</a></td></tr>
+  {% else %}<tr><td colspan="10" class="empty">No multi-batch station transfers yet.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 

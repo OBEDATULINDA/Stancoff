@@ -77,3 +77,4 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
 .nav-group-links a{position:relative;padding-left:18px}
 .nav-group-links a::before{content:'';position:absolute;left:8px;top:50%;width:3px;height:3px;border-radius:50%;background:#78998e;transform:translateY(-50%)}
 .nav-group-links a.active::before{background:#fff}
+.negative{color:#b42318;font-weight:700}.positive{color:#16794f;font-weight:700}.status-badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#e8f1ee;color:#1f6b57;font-size:12px;font-weight:700}

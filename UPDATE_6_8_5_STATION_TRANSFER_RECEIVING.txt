@@ -1,0 +1,20 @@
+STANCOFF UPDATE 6.8.5 - STATION TRANSFER RECEIVING
+
+What changed
+- New station transfers are saved as In Transit.
+- The sending station inventory is reduced at dispatch.
+- The receiving station clicks Receive and enters actual received weight, moisture and bags for each batch line.
+- The app calculates received weight minus dispatched weight for every line and for the whole transfer.
+- Only actual received weight is added to the receiving station inventory.
+- One printable form shows dispatched, received and difference figures.
+
+Data safety
+- Existing transfer records remain unchanged.
+- Existing PostgreSQL tables and data are not deleted.
+- New columns are added automatically when the app starts.
+
+Installation
+1. Upload all files in Stancoff-main to the existing GitHub repository.
+2. Replace matching files.
+3. Commit and let Render deploy.
+4. Do not delete PostgreSQL or change DATABASE_URL.
