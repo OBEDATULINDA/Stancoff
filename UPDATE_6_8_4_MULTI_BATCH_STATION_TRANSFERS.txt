@@ -1,0 +1,18 @@
+STANCOFF UPDATE 6.8.4 - MULTI-BATCH STATION TRANSFERS
+
+FIXED
+- Station transfer saving error caused by subtracting an undefined wet_weight variable.
+- Normal station transfers now subtract the actual entered transfer weight.
+- Database changes are rolled back completely if any line fails validation.
+
+ADDED
+- One station transfer can contain several batches and grades.
+- Add or remove coffee lines before saving.
+- Each line selects source stock, receiving location, weight, moisture and bags.
+- All lines must move between the same sending and receiving stations.
+- One combined printable movement form lists every batch and grade.
+- Earlier single-batch station transfer records remain visible and printable.
+
+DATA SAFETY
+New tables are created automatically. Existing purchases, batches, inventory,
+movements, transfers, users and PostgreSQL records are not deleted.

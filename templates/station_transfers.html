@@ -1,24 +1,86 @@
 {% extends "base.html" %}
 {% block title %}Station Transfers · Stancoff{% endblock %}
 {% block page_title %}Station transfers{% endblock %}
-{% block page_subtitle %}Move drying or stored coffee safely from one station to another{% endblock %}
+{% block page_subtitle %}Move several batches and grades between stations on one transfer document{% endblock %}
 {% block content %}
-<section class="panel processing-intro"><div><span class="eyebrow">Inter-station movement</span><h2>{{ next_transfer }}</h2><p>The same batch and grade are retained. Inventory leaves the sending location and appears at the receiving location.</p></div><a class="secondary-button" href="{{ url_for('inventory') }}">View inventory</a></section>
-<form method="post" class="processing-form panel" id="transferForm">
-<label>Coffee to transfer<select name="source_stock_id" id="sourceStock" required><option value="">Select coffee</option>{% for s in stocks %}<option value="{{ s.id }}" data-weight="{{ s.weight }}" data-station="{{ s.location.station_id }}">{{ s.batch.batch_no }} · {{ s.grade }} · {{ s.location.station.name }} / {{ s.location.name }} · {{ '{:,.2f}'.format(s.weight) }} kg</option>{% endfor %}</select></label>
-<label>Receiving location<select name="to_location_id" id="destination" required><option value="">Select destination</option>{% for l in destinations %}<option value="{{ l.id }}" data-station="{{ l.station_id }}">{{ l.station.name }} / {{ l.name }} · {{ l.location_type }}</option>{% endfor %}</select></label>
-<label>Transfer date<input type="date" name="transfer_date" id="transferDate" required></label>
-<label>Weight (kg)<input type="number" min="0.01" step="0.01" name="weight" id="weight" required></label>
-<label>Moisture %<input type="number" min="0" max="100" step="0.01" name="moisture"></label>
-<label>Number of bags<input type="number" min="0" name="number_of_bags"></label>
-<label>Vehicle registration<input name="vehicle_no"></label><label>Driver name<input name="driver_name"></label><label>Driver phone<input name="driver_phone"></label>
-<label>Dispatch time<input type="time" name="dispatch_time"></label><label>Arrival time<input type="time" name="arrival_time"></label>
-<label>Dispatched by<input name="dispatched_by"></label><label>Received by<input name="received_by"></label><label>Authorized by<input name="authorized_by"></label>
-<label class="form-wide">Remarks<textarea name="remarks" rows="2" placeholder="Relocation to Rwimi, weather condition, handling instructions..."></textarea></label>
-<div class="form-wide"><button class="primary-button">Save transfer and print note</button></div></form>
-<section class="panel" style="margin-top:18px"><div class="panel-heading"><div><span class="eyebrow">Traceability</span><h2>Transfer history</h2></div></div><div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Grade</th><th>From</th><th>To</th><th>Weight</th><th>Vehicle</th><th>Status</th><th>Note</th></tr></thead><tbody>
-{% for r in rows %}<tr><td><strong>{{ r.transfer_no }}</strong></td><td>{{ r.movement.movement_date }}</td><td>{{ r.movement.batch.batch_no }}</td><td>{{ r.movement.grade }}</td><td>{{ r.from_station.name }} / {{ r.movement.from_location.name }}</td><td>{{ r.to_station.name }} / {{ r.movement.to_location.name }}</td><td>{{ '{:,.2f}'.format(r.movement.weight) }} kg</td><td>{{ r.vehicle_no or '—' }}</td><td>{{ r.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('station_transfer_print', id=r.id) }}">Print</a></td></tr>{% else %}<tr><td colspan="10" class="empty">No station transfers yet.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel processing-intro">
+  <div><span class="eyebrow">Inter-station movement</span><h2>{{ next_transfer }}</h2><p>Add several coffee lines to one vehicle movement and print one combined transfer form.</p></div>
+  <a class="secondary-button" href="{{ url_for('inventory') }}">View inventory</a>
+</section>
+
+<form method="post" class="panel" id="transferForm">
+  <div class="panel-heading"><div><span class="eyebrow">Coffee lines</span><h2>Batches and grades being transferred</h2></div><button type="button" class="secondary-button" id="addLine">+ Add another batch</button></div>
+  <div class="table-scroll">
+    <table id="transferLines">
+      <thead><tr><th>Coffee to transfer</th><th>Receiving location</th><th>Weight kg</th><th>Moisture %</th><th>Bags</th><th></th></tr></thead>
+      <tbody>
+        <tr class="transfer-line">
+          <td><select name="source_stock_id[]" class="source-stock" required><option value="">Select coffee</option>{% for s in stocks %}<option value="{{ s.id }}" data-weight="{{ s.weight }}" data-station="{{ s.location.station_id }}">{{ s.batch.batch_no }} · {{ s.grade }} · {{ s.location.station.name }} / {{ s.location.name }} · {{ '{:,.2f}'.format(s.weight) }} kg</option>{% endfor %}</select></td>
+          <td><select name="to_location_id[]" class="destination" required><option value="">Select destination</option>{% for l in destinations %}<option value="{{ l.id }}" data-station="{{ l.station_id }}">{{ l.station.name }} / {{ l.name }} · {{ l.location_type }}</option>{% endfor %}</select></td>
+          <td><input type="number" min="0.01" step="0.01" name="weight[]" class="line-weight" required></td>
+          <td><input type="number" min="0" max="100" step="0.01" name="moisture[]"></td>
+          <td><input type="number" min="0" name="number_of_bags[]"></td>
+          <td><button type="button" class="danger remove-line" title="Remove line">×</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-note">All lines on one form must move from the same sending station to the same receiving station. They may use different drying yards, stores, batches, grades and destination locations.</p>
+
+  <div class="processing-form" style="margin-top:18px">
+    <label>Transfer date<input type="date" name="transfer_date" id="transferDate" required></label>
+    <label>Vehicle registration<input name="vehicle_no"></label>
+    <label>Driver name<input name="driver_name"></label>
+    <label>Driver phone<input name="driver_phone"></label>
+    <label>Dispatch time<input type="time" name="dispatch_time"></label>
+    <label>Arrival time<input type="time" name="arrival_time"></label>
+    <label>Dispatched by<input name="dispatched_by"></label>
+    <label>Received by<input name="received_by"></label>
+    <label>Authorized by<input name="authorized_by"></label>
+    <label class="form-wide">Remarks<textarea name="remarks" rows="2" placeholder="Relocation reason, weather condition or handling instructions"></textarea></label>
+    <div class="form-wide transfer-total"><strong>Total transfer weight: <span id="totalWeight">0.00</span> kg</strong></div>
+    <div class="form-wide"><button class="primary-button">Save all lines and print one transfer form</button></div>
+  </div>
+</form>
+
+<section class="panel" style="margin-top:18px">
+  <div class="panel-heading"><div><span class="eyebrow">Multi-batch documents</span><h2>Recent transfer forms</h2></div></div>
+  <div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>From</th><th>To</th><th>Lines</th><th>Total weight</th><th>Vehicle</th><th>Status</th><th>Form</th></tr></thead><tbody>
+  {% for r in documents %}<tr><td><strong>{{ r.transfer_no }}</strong></td><td>{{ r.transfer_date }}</td><td>{{ r.from_station.name }}</td><td>{{ r.to_station.name }}</td><td>{{ r.items|length }}</td><td>{{ '{:,.2f}'.format(r.items|sum(attribute='movement.weight')) }} kg</td><td>{{ r.vehicle_no or '—' }}</td><td>{{ r.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('station_transfer_document_print', id=r.id) }}">Print</a></td></tr>
+  {% else %}<tr><td colspan="9" class="empty">No multi-batch station transfers yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+{% if legacy_rows %}<section class="panel" style="margin-top:18px"><div class="panel-heading"><div><span class="eyebrow">Earlier records</span><h2>Single-batch transfer history</h2></div></div><div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Grade</th><th>From</th><th>To</th><th>Weight</th><th>Note</th></tr></thead><tbody>
+{% for r in legacy_rows %}<tr><td>{{ r.transfer_no }}</td><td>{{ r.movement.movement_date }}</td><td>{{ r.movement.batch.batch_no }}</td><td>{{ r.movement.grade }}</td><td>{{ r.from_station.name }} / {{ r.movement.from_location.name }}</td><td>{{ r.to_station.name }} / {{ r.movement.to_location.name }}</td><td>{{ '{:,.2f}'.format(r.movement.weight) }} kg</td><td><a class="small-button" target="_blank" href="{{ url_for('station_transfer_print', id=r.id) }}">Print</a></td></tr>{% endfor %}
+</tbody></table></div></section>{% endif %}
 {% endblock %}
+
 {% block scripts %}<script>
-const src=document.getElementById('sourceStock'), dst=document.getElementById('destination'), qty=document.getElementById('weight');document.getElementById('transferDate').valueAsDate=new Date();src.addEventListener('change',()=>{const o=src.selectedOptions[0];if(o&&o.dataset.weight)qty.value=o.dataset.weight;});document.getElementById('transferForm').addEventListener('submit',e=>{const a=src.selectedOptions[0],b=dst.selectedOptions[0];if(a&&b&&a.dataset.station===b.dataset.station){e.preventDefault();alert('Choose a receiving location at a different station.');}if(a&&Number(qty.value)>Number(a.dataset.weight)){e.preventDefault();alert('The transfer weight cannot exceed available stock.');}});
+const body=document.querySelector('#transferLines tbody');
+const firstLine=body.querySelector('.transfer-line');
+document.getElementById('transferDate').valueAsDate=new Date();
+function bindLine(row){
+  const src=row.querySelector('.source-stock'), dst=row.querySelector('.destination'), qty=row.querySelector('.line-weight');
+  src.addEventListener('change',()=>{const o=src.selectedOptions[0];if(o&&o.dataset.weight)qty.value=Number(o.dataset.weight).toFixed(2);filterDestinations(row);updateTotal();});
+  qty.addEventListener('input',updateTotal);
+  row.querySelector('.remove-line').addEventListener('click',()=>{if(body.children.length>1){row.remove();updateTotal();}});
+  dst.addEventListener('change',()=>validateStations(false));
+}
+function filterDestinations(row){
+  const station=row.querySelector('.source-stock').selectedOptions[0]?.dataset.station;
+  row.querySelectorAll('.destination option').forEach(o=>{if(!o.value)return;o.hidden=(o.dataset.station===station);});
+  const selected=row.querySelector('.destination').selectedOptions[0];if(selected&&selected.hidden)row.querySelector('.destination').value='';
+}
+function updateTotal(){let n=0;document.querySelectorAll('.line-weight').forEach(x=>n+=Number(x.value||0));document.getElementById('totalWeight').textContent=n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+function validateStations(showAlert=true){
+  let from=null,to=null,ok=true;
+  document.querySelectorAll('.transfer-line').forEach((row,i)=>{const s=row.querySelector('.source-stock').selectedOptions[0],d=row.querySelector('.destination').selectedOptions[0];if(!s?.value||!d?.value)return;if(s.dataset.station===d.dataset.station){ok=false;if(showAlert)alert(`Line ${i+1}: choose a receiving location at another station.`);}if(from===null){from=s.dataset.station;to=d.dataset.station;}else if(from!==s.dataset.station||to!==d.dataset.station){ok=false;if(showAlert)alert('All lines on one form must use the same sending station and receiving station.');}});return ok;
+}
+bindLine(firstLine);
+document.getElementById('addLine').addEventListener('click',()=>{const row=firstLine.cloneNode(true);row.querySelectorAll('input').forEach(x=>x.value='');row.querySelectorAll('select').forEach(x=>x.value='');row.querySelectorAll('option').forEach(o=>o.hidden=false);body.appendChild(row);bindLine(row);});
+document.getElementById('transferForm').addEventListener('submit',e=>{
+  if(!validateStations(true)){e.preventDefault();return;}
+  const seen=new Set();for(const src of document.querySelectorAll('.source-stock')){if(seen.has(src.value)){e.preventDefault();alert('The same coffee balance cannot be selected twice.');return;}seen.add(src.value);const qty=Number(src.closest('tr').querySelector('.line-weight').value||0);if(qty>Number(src.selectedOptions[0]?.dataset.weight||0)){e.preventDefault();alert('A transfer line exceeds its available stock.');return;}}
+});
 </script>{% endblock %}

@@ -219,6 +219,38 @@ class StationTransfer(db.Model):
     from_station = db.relationship("Station", foreign_keys=[from_station_id])
     to_station = db.relationship("Station", foreign_keys=[to_station_id])
 
+class StationTransferDocument(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    transfer_no = db.Column(db.String(30), unique=True, nullable=False)
+    transfer_date = db.Column(db.Date, nullable=False)
+    from_station_id = db.Column(db.Integer, db.ForeignKey("station.id"), nullable=False)
+    to_station_id = db.Column(db.Integer, db.ForeignKey("station.id"), nullable=False)
+    vehicle_no = db.Column(db.String(80))
+    driver_name = db.Column(db.String(150))
+    driver_phone = db.Column(db.String(60))
+    dispatch_time = db.Column(db.String(20))
+    arrival_time = db.Column(db.String(20))
+    dispatched_by = db.Column(db.String(120))
+    received_by = db.Column(db.String(120))
+    authorized_by = db.Column(db.String(120))
+    remarks = db.Column(db.Text)
+    status = db.Column(db.String(20), nullable=False, default="Completed")
+    created_by = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    from_station = db.relationship("Station", foreign_keys=[from_station_id])
+    to_station = db.relationship("Station", foreign_keys=[to_station_id])
+    items = db.relationship("StationTransferItem", back_populates="document", cascade="all, delete-orphan", order_by="StationTransferItem.id")
+
+
+class StationTransferItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey("station_transfer_document.id"), nullable=False)
+    movement_id = db.Column(db.Integer, db.ForeignKey("coffee_movement.id"), nullable=False, unique=True)
+    number_of_bags = db.Column(db.Integer)
+    document = db.relationship("StationTransferDocument", back_populates="items")
+    movement = db.relationship("CoffeeMovement")
+
+
 class Sale(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sale_no = db.Column(db.String(30), unique=True, nullable=False)
@@ -1408,58 +1440,137 @@ def station_toggle(id):
 def station_transfers():
     ensure_initial_stock()
     if request.method == "POST":
-        source = CoffeeStock.query.get_or_404(int(request.form["source_stock_id"]))
-        destination = Location.query.get_or_404(int(request.form["to_location_id"]))
-        if not source.location.station_id or not destination.station_id or source.location.station_id == destination.station_id:
-            flash("Station transfers must move coffee between two different stations.")
+        source_ids = request.form.getlist("source_stock_id[]")
+        destination_ids = request.form.getlist("to_location_id[]")
+        weights = request.form.getlist("weight[]")
+        moistures = request.form.getlist("moisture[]")
+        bags = request.form.getlist("number_of_bags[]")
+
+        if not source_ids or not (len(source_ids) == len(destination_ids) == len(weights) == len(moistures) == len(bags)):
+            flash("Add at least one complete coffee line to the transfer.")
             return redirect(url_for("station_transfers"))
-        weight = float(request.form.get("weight") or 0)
-        if weight <= 0 or weight > float(source.weight or 0) + 0.0001:
-            flash(f"Transfer weight cannot exceed {source.weight:,.2f} kg.")
+        if len(set(source_ids)) != len(source_ids):
+            flash("The same inventory balance cannot be selected twice on one transfer form.")
             return redirect(url_for("station_transfers"))
-        moisture = float(request.form["moisture"]) if request.form.get("moisture") else source.moisture
-        destination_stock = CoffeeStock.query.filter_by(drying_id=source.drying_id, location_id=destination.id).first()
-        old_weight = float(destination_stock.weight or 0) if destination_stock else 0
-        if not destination_stock:
-            destination_stock = CoffeeStock(drying_id=source.drying_id, batch_id=source.batch_id, grade=source.grade, location_id=destination.id, weight=0, moisture=moisture)
-            db.session.add(destination_stock)
-        destination_stock.weight = old_weight + weight
-        destination_stock.moisture = moisture
-        destination_stock.stock_status = stock_status_for_location(destination.location_type)
-        source.weight = max(0, float(source.weight or 0) - wet_weight)
-        movement = CoffeeMovement(
-            movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6), drying_id=source.drying_id,
-            batch_id=source.batch_id, grade=source.grade, from_location_id=source.location_id,
-            to_location_id=destination.id, movement_date=datetime.strptime(request.form["transfer_date"], "%Y-%m-%d").date(),
-            weight=weight, moisture=moisture, movement_type="Station Transfer",
-            reason=request.form.get("remarks"), moved_by=request.form.get("dispatched_by"), created_by=session.get("username"))
-        db.session.add(movement)
-        db.session.flush()
-        transfer = StationTransfer(
-            transfer_no=next_code(StationTransfer, "transfer_no", "TRF", 6), movement_id=movement.id,
-            from_station_id=source.location.station_id, to_station_id=destination.station_id,
-            number_of_bags=int(request.form["number_of_bags"]) if request.form.get("number_of_bags") else None,
-            vehicle_no=request.form.get("vehicle_no"), driver_name=request.form.get("driver_name"),
-            driver_phone=request.form.get("driver_phone"), dispatch_time=request.form.get("dispatch_time"),
-            arrival_time=request.form.get("arrival_time"), dispatched_by=request.form.get("dispatched_by"),
-            received_by=request.form.get("received_by"), authorized_by=request.form.get("authorized_by"))
-        db.session.add(transfer)
-        batch = db.session.get(Batch, source.batch_id)
-        if batch: batch.status = "Transferred to " + destination.station.name
-        db.session.commit()
-        log_action("CREATE", "Station Transfer", transfer.id, transfer.transfer_no)
-        flash(f"{transfer.transfer_no} saved. {weight:,.2f} kg moved to {destination.station.name}.")
-        return redirect(url_for("station_transfer_print", id=transfer.id))
+
+        prepared = []
+        from_station_id = None
+        to_station_id = None
+        try:
+            for index, source_id in enumerate(source_ids):
+                source = db.session.get(CoffeeStock, int(source_id))
+                destination = db.session.get(Location, int(destination_ids[index]))
+                if not source or not destination:
+                    raise ValueError(f"Coffee line {index + 1} contains an invalid stock or destination.")
+                if not source.location.station_id or not destination.station_id:
+                    raise ValueError(f"Coffee line {index + 1} must use locations linked to stations.")
+                if source.location.station_id == destination.station_id:
+                    raise ValueError(f"Coffee line {index + 1} must move to a different station.")
+                if from_station_id is None:
+                    from_station_id = source.location.station_id
+                    to_station_id = destination.station_id
+                elif source.location.station_id != from_station_id or destination.station_id != to_station_id:
+                    raise ValueError("All coffee lines on one transfer form must move between the same sending and receiving stations.")
+
+                weight = float(weights[index] or 0)
+                available = float(source.weight or 0)
+                if weight <= 0 or weight > available + 0.0001:
+                    raise ValueError(f"Line {index + 1}: transfer weight must be above zero and cannot exceed {available:,.2f} kg.")
+                moisture = float(moistures[index]) if moistures[index] else source.moisture
+                bag_count = int(bags[index]) if bags[index] else None
+                prepared.append((source, destination, weight, moisture, bag_count))
+
+            document = StationTransferDocument(
+                transfer_no=next_code(StationTransferDocument, "transfer_no", "TRF", 6),
+                transfer_date=datetime.strptime(request.form["transfer_date"], "%Y-%m-%d").date(),
+                from_station_id=from_station_id,
+                to_station_id=to_station_id,
+                vehicle_no=request.form.get("vehicle_no"),
+                driver_name=request.form.get("driver_name"),
+                driver_phone=request.form.get("driver_phone"),
+                dispatch_time=request.form.get("dispatch_time"),
+                arrival_time=request.form.get("arrival_time"),
+                dispatched_by=request.form.get("dispatched_by"),
+                received_by=request.form.get("received_by"),
+                authorized_by=request.form.get("authorized_by"),
+                remarks=request.form.get("remarks"),
+                created_by=session.get("username"),
+            )
+            db.session.add(document)
+            db.session.flush()
+
+            total_weight = 0
+            for source, destination, weight, moisture, bag_count in prepared:
+                destination_stock = CoffeeStock.query.filter_by(drying_id=source.drying_id, location_id=destination.id).first()
+                old_weight = float(destination_stock.weight or 0) if destination_stock else 0
+                if not destination_stock:
+                    destination_stock = CoffeeStock(
+                        drying_id=source.drying_id, batch_id=source.batch_id, grade=source.grade,
+                        location_id=destination.id, weight=0, moisture=moisture
+                    )
+                    db.session.add(destination_stock)
+                new_total = old_weight + weight
+                if moisture is not None:
+                    old_moisture = float(destination_stock.moisture if destination_stock.moisture is not None else moisture)
+                    destination_stock.moisture = (((old_weight * old_moisture) + (weight * moisture)) / new_total) if new_total else moisture
+                destination_stock.weight = new_total
+                destination_stock.stock_status = stock_status_for_location(destination.location_type)
+                source.weight = max(0, float(source.weight or 0) - weight)
+
+                movement = CoffeeMovement(
+                    movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6),
+                    drying_id=source.drying_id, batch_id=source.batch_id, grade=source.grade,
+                    from_location_id=source.location_id, to_location_id=destination.id,
+                    movement_date=document.transfer_date, weight=weight, moisture=moisture,
+                    movement_type="Station Transfer", reason=document.remarks,
+                    moved_by=document.dispatched_by, created_by=session.get("username")
+                )
+                db.session.add(movement)
+                db.session.flush()
+                db.session.add(StationTransferItem(document_id=document.id, movement_id=movement.id, number_of_bags=bag_count))
+                batch = db.session.get(Batch, source.batch_id)
+                if batch:
+                    batch.status = "Transferred to " + destination.station.name
+                total_weight += weight
+
+            db.session.commit()
+            log_action("CREATE", "Station Transfer", document.id, f"{document.transfer_no}: {len(prepared)} lines, {total_weight:,.2f} kg")
+            flash(f"{document.transfer_no} saved with {len(prepared)} coffee lines totalling {total_weight:,.2f} kg.")
+            return redirect(url_for("station_transfer_document_print", id=document.id))
+        except (ValueError, TypeError) as exc:
+            db.session.rollback()
+            flash(str(exc))
+            return redirect(url_for("station_transfers"))
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Station transfer save failed")
+            flash("The station transfer could not be saved. No inventory was changed. Please review the lines and try again.")
+            return redirect(url_for("station_transfers"))
+
     stocks = CoffeeStock.query.join(Location).filter(CoffeeStock.weight > 0.0001, Location.station_id.isnot(None)).order_by(CoffeeStock.updated_at.desc()).all()
     destinations = Location.query.join(Station).filter(Location.status == "Active", Station.status == "Active").order_by(Station.name, Location.location_type, Location.name).all()
-    rows = StationTransfer.query.order_by(StationTransfer.id.desc()).limit(200).all()
-    return render_template("station_transfers.html", stocks=stocks, destinations=destinations, rows=rows, next_transfer=next_code(StationTransfer, "transfer_no", "TRF", 6))
+    documents = StationTransferDocument.query.order_by(StationTransferDocument.id.desc()).limit(200).all()
+    legacy_rows = StationTransfer.query.order_by(StationTransfer.id.desc()).limit(100).all()
+    return render_template(
+        "station_transfers.html", stocks=stocks, destinations=destinations,
+        documents=documents, legacy_rows=legacy_rows,
+        next_transfer=next_code(StationTransferDocument, "transfer_no", "TRF", 6)
+    )
+
+
+@app.route("/station-transfer-documents/<int:id>/print")
+@permission_required("transfers")
+def station_transfer_document_print(id):
+    row = StationTransferDocument.query.get_or_404(id)
+    return render_template("station_transfer_document.html", row=row)
+
 
 @app.route("/station-transfers/<int:id>/print")
 @permission_required("transfers")
 def station_transfer_print(id):
     row = StationTransfer.query.get_or_404(id)
     return render_template("station_transfer_note.html", row=row)
+
 
 @app.route("/locations", methods=["GET", "POST"])
 @permission_required("locations")
