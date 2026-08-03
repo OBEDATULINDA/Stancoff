@@ -51,7 +51,7 @@
 </section>
 
 {% if legacy_rows %}<section class="panel" style="margin-top:18px"><div class="panel-heading"><div><span class="eyebrow">Earlier records</span><h2>Single-batch transfer history</h2></div></div><div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Grade</th><th>From</th><th>To</th><th>Weight</th><th>Note</th></tr></thead><tbody>
-{% for r in legacy_rows %}<tr><td>{{ r.transfer_no }}</td><td>{{ r.movement.movement_date }}</td><td>{{ r.movement.batch.batch_no }}</td><td>{{ r.movement.grade }}</td><td>{{ r.from_station.name }} / {{ r.movement.from_location.name }}</td><td>{{ r.to_station.name }} / {{ r.movement.to_location.name }}</td><td>{{ '{:,.2f}'.format(r.movement.weight) }} kg</td><td><a class="small-button" target="_blank" href="{{ url_for('station_transfer_print', id=r.id) }}">Print</a></td></tr>{% endfor %}
+{% for r in legacy_rows %}<tr><td>{{ r.transfer_no }}</td><td>{{ r.movement.movement_date }}</td><td>{{ r.movement.batch.batch_no }}</td><td>{{ r.movement.grade }}</td><td>{{ r.from_station.name }} / {{ r.movement.from_location.name }}</td><td>{{ r.to_station.name }} / {{ r.movement.to_location.name }}</td><td>{{ '{:,.2f}'.format(r.movement.weight) }} kg</td><td>{% if not r.received_date and r.status != 'Received' %}<a class="primary-button small-button" href="{{ url_for('legacy_station_transfer_receive', id=r.id) }}">Receive</a>{% else %}<span class="status-badge">Received</span>{% endif %} <a class="small-button" target="_blank" href="{{ url_for('station_transfer_print', id=r.id) }}">Print</a></td></tr>{% endfor %}
 </tbody></table></div></section>{% endif %}
 {% endblock %}
 

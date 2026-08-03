@@ -213,6 +213,12 @@ class StationTransfer(db.Model):
     dispatched_by = db.Column(db.String(120))
     received_by = db.Column(db.String(120))
     authorized_by = db.Column(db.String(120))
+    received_date = db.Column(db.Date)
+    received_weight = db.Column(db.Float)
+    received_moisture = db.Column(db.Float)
+    received_bags = db.Column(db.Integer)
+    weight_difference = db.Column(db.Float)
+    receipt_notes = db.Column(db.Text)
     status = db.Column(db.String(20), nullable=False, default="Completed")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     movement = db.relationship("CoffeeMovement")
@@ -415,6 +421,19 @@ def ensure_multistation_schema():
         if "source_weight" not in movement_columns:
             db.session.execute(text("ALTER TABLE coffee_movement ADD COLUMN source_weight FLOAT"))
             db.session.commit()
+    if "station_transfer" in table_names:
+        legacy_columns = {c["name"] for c in inspector.get_columns("station_transfer")}
+        for column_name, column_type in {
+            "received_date": "DATE",
+            "received_weight": "FLOAT",
+            "received_moisture": "FLOAT",
+            "received_bags": "INTEGER",
+            "weight_difference": "FLOAT",
+            "receipt_notes": "TEXT",
+        }.items():
+            if column_name not in legacy_columns:
+                db.session.execute(text(f"ALTER TABLE station_transfer ADD COLUMN {column_name} {column_type}"))
+                db.session.commit()
     if "station_transfer_document" in table_names:
         document_columns = {c["name"] for c in inspector.get_columns("station_transfer_document")}
         for column_name, column_type in {
@@ -1571,6 +1590,83 @@ def station_transfers():
         documents=documents, legacy_rows=legacy_rows,
         next_transfer=next_code(StationTransferDocument, "transfer_no", "TRF", 6)
     )
+
+
+@app.route("/station-transfers/<int:id>/receive", methods=["GET", "POST"])
+@permission_required("transfers")
+def legacy_station_transfer_receive(id):
+    row = StationTransfer.query.get_or_404(id)
+    if row.received_date or row.status == "Received":
+        flash("This earlier transfer has already been received.")
+        return redirect(url_for("station_transfers"))
+
+    movement = row.movement
+    destination_stock = CoffeeStock.query.filter_by(
+        drying_id=movement.drying_id, location_id=movement.to_location_id
+    ).first()
+
+    if request.method == "POST":
+        try:
+            received_weight = float(request.form.get("received_weight") or 0)
+            if received_weight < 0:
+                raise ValueError("Received weight cannot be negative.")
+            received_moisture = float(request.form["received_moisture"]) if request.form.get("received_moisture") else movement.moisture
+            received_bags = int(request.form["received_bags"]) if request.form.get("received_bags") else None
+            received_by = (request.form.get("received_by") or "").strip()
+            if not received_by:
+                raise ValueError("Enter the name of the person receiving the coffee.")
+            received_date = datetime.strptime(request.form["received_date"], "%Y-%m-%d").date()
+
+            dispatched_weight = float(movement.weight or 0)
+            difference = received_weight - dispatched_weight
+
+            # Earlier transfers were credited to destination inventory immediately.
+            # Adjust only by the difference so the coffee is not counted twice.
+            if not destination_stock:
+                destination_stock = CoffeeStock(
+                    drying_id=movement.drying_id,
+                    batch_id=movement.batch_id,
+                    grade=movement.grade,
+                    location_id=movement.to_location_id,
+                    weight=0,
+                    moisture=received_moisture,
+                    stock_status=stock_status_for_location(movement.to_location.location_type),
+                )
+                db.session.add(destination_stock)
+                db.session.flush()
+
+            revised_weight = float(destination_stock.weight or 0) + difference
+            if revised_weight < -0.0001:
+                raise ValueError(
+                    "The received shortage is greater than the coffee currently available at the destination. "
+                    "Some of this coffee may already have moved onward."
+                )
+            destination_stock.weight = max(0, revised_weight)
+            if received_moisture is not None:
+                destination_stock.moisture = received_moisture
+
+            row.received_date = received_date
+            row.received_weight = received_weight
+            row.received_moisture = received_moisture
+            row.received_bags = received_bags
+            row.weight_difference = difference
+            row.received_by = received_by
+            row.receipt_notes = request.form.get("receipt_notes")
+            row.arrival_time = request.form.get("arrival_time") or row.arrival_time
+            row.status = "Received"
+            db.session.commit()
+            log_action("RECEIVE", "Station Transfer", row.id, f"{row.transfer_no}: sent {dispatched_weight:,.2f} kg, received {received_weight:,.2f} kg")
+            flash(f"{row.transfer_no} received successfully. Difference: {difference:+,.2f} kg.")
+            return redirect(url_for("station_transfer_print", id=row.id))
+        except (ValueError, TypeError) as exc:
+            db.session.rollback()
+            flash(str(exc))
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Earlier station transfer receipt failed")
+            flash("The earlier transfer could not be received. No inventory adjustment was saved.")
+
+    return render_template("legacy_station_transfer_receive.html", row=row)
 
 
 @app.route("/station-transfer-documents/<int:id>/receive", methods=["GET", "POST"])
