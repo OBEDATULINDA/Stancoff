@@ -1598,6 +1598,152 @@ def inventory():
     )
 
 
+@app.route("/inventory/movement/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("inventory")
+def inventory_movement_edit(id):
+    movement = CoffeeMovement.query.get_or_404(id)
+    if movement.status == "Voided":
+        flash("A voided movement cannot be edited.")
+        return redirect(url_for("inventory"))
+
+    destination_stock = CoffeeStock.query.filter_by(
+        drying_id=movement.drying_id, location_id=movement.to_location_id
+    ).first()
+    linked_transfer = StationTransfer.query.filter_by(movement_id=movement.id).first()
+    later_movement = CoffeeMovement.query.filter(
+        CoffeeMovement.drying_id == movement.drying_id,
+        CoffeeMovement.from_location_id == movement.to_location_id,
+        CoffeeMovement.status == "Active",
+        CoffeeMovement.id > movement.id,
+    ).first()
+    later_dispatch = None
+    if destination_stock:
+        later_dispatch = Dispatch.query.filter(
+            Dispatch.stock_id == destination_stock.id,
+            Dispatch.status == "Active",
+            Dispatch.created_at > movement.created_at,
+        ).first()
+
+    protected_type = (movement.movement_type or "").startswith("Finished Drying")
+    can_change_stock = not linked_transfer and not later_movement and not later_dispatch and not protected_type
+
+    if request.method == "POST":
+        try:
+            movement_date = datetime.strptime(request.form["movement_date"], "%Y-%m-%d").date()
+        except (KeyError, ValueError):
+            flash("Enter a valid movement date.")
+            return redirect(url_for("inventory_movement_edit", id=id))
+
+        moisture = float(request.form["moisture"]) if request.form.get("moisture") else None
+        reason = (request.form.get("reason") or "").strip()
+        moved_by = (request.form.get("moved_by") or "").strip()
+
+        # Metadata may always be corrected on an active movement.
+        movement.movement_date = movement_date
+        movement.moisture = moisture
+        movement.reason = reason
+        movement.moved_by = moved_by
+
+        if can_change_stock:
+            try:
+                new_destination_id = int(request.form["to_location_id"])
+                new_weight = float(request.form.get("weight") or 0)
+            except (KeyError, TypeError, ValueError):
+                flash("Enter a valid destination and movement weight.")
+                return redirect(url_for("inventory_movement_edit", id=id))
+
+            new_destination = Location.query.get_or_404(new_destination_id)
+            if new_destination.id == movement.from_location_id:
+                flash("The destination must be different from the source location.")
+                return redirect(url_for("inventory_movement_edit", id=id))
+            if new_weight <= 0:
+                flash("Movement weight must be greater than zero.")
+                return redirect(url_for("inventory_movement_edit", id=id))
+            if not destination_stock or float(destination_stock.weight or 0) + 0.0001 < float(movement.weight or 0):
+                flash("Weight or destination cannot be changed because the original destination no longer holds enough coffee to reverse this movement.")
+                return redirect(url_for("inventory_movement_edit", id=id))
+
+            source_stock = CoffeeStock.query.filter_by(
+                drying_id=movement.drying_id, location_id=movement.from_location_id
+            ).first()
+            if not source_stock:
+                source_stock = CoffeeStock(
+                    drying_id=movement.drying_id,
+                    batch_id=movement.batch_id,
+                    grade=movement.grade,
+                    location_id=movement.from_location_id,
+                    weight=0,
+                    moisture=movement.moisture,
+                    stock_status=stock_status_for_location(movement.from_location.location_type),
+                )
+                db.session.add(source_stock)
+                db.session.flush()
+
+            # Reverse the original movement first.
+            destination_stock.weight = max(0, float(destination_stock.weight or 0) - float(movement.weight or 0))
+            source_stock.weight = float(source_stock.weight or 0) + float(movement.weight or 0)
+
+            if new_weight > float(source_stock.weight or 0) + 0.0001:
+                db.session.rollback()
+                flash(f"The revised weight cannot exceed the available source balance of {source_stock.weight:,.2f} kg.")
+                return redirect(url_for("inventory_movement_edit", id=id))
+
+            revised_destination_stock = CoffeeStock.query.filter_by(
+                drying_id=movement.drying_id, location_id=new_destination.id
+            ).first()
+            old_revised_weight = float(revised_destination_stock.weight or 0) if revised_destination_stock else 0
+            if not revised_destination_stock:
+                revised_destination_stock = CoffeeStock(
+                    drying_id=movement.drying_id,
+                    batch_id=movement.batch_id,
+                    grade=movement.grade,
+                    location_id=new_destination.id,
+                    weight=0,
+                    moisture=moisture,
+                    stock_status=stock_status_for_location(new_destination.location_type),
+                )
+                db.session.add(revised_destination_stock)
+
+            new_total = old_revised_weight + new_weight
+            if moisture is not None:
+                old_m = float(revised_destination_stock.moisture if revised_destination_stock.moisture is not None else moisture)
+                revised_destination_stock.moisture = ((old_revised_weight * old_m) + (new_weight * moisture)) / new_total if new_total else moisture
+            revised_destination_stock.weight = new_total
+            revised_destination_stock.stock_status = stock_status_for_location(new_destination.location_type)
+            source_stock.weight = max(0, float(source_stock.weight or 0) - new_weight)
+            source_stock.stock_status = stock_status_for_location(movement.from_location.location_type)
+
+            movement.to_location_id = new_destination.id
+            movement.weight = new_weight
+            movement.movement_type = {
+                "Drying Area": "Return to Drying",
+                "Temporary Storage": "Temporary Storage",
+                "Final Warehouse": "Final Storage",
+            }.get(new_destination.location_type, "Transfer")
+
+        db.session.commit()
+        log_action("EDIT", "Inventory Movement", movement.id, movement.movement_no)
+        if can_change_stock:
+            flash("Movement and inventory balances updated successfully.")
+        else:
+            flash("Movement details updated. Weight and destination were protected because linked activity already exists.")
+        return redirect(url_for("inventory"))
+
+    locations_list = Location.query.filter_by(status="Active").order_by(
+        Location.station_id, Location.location_type, Location.name
+    ).all()
+    return render_template(
+        "movement_edit.html",
+        movement=movement,
+        locations=locations_list,
+        can_change_stock=can_change_stock,
+        linked_transfer=linked_transfer,
+        later_movement=later_movement,
+        later_dispatch=later_dispatch,
+        protected_type=protected_type,
+    )
+
+
 @app.route("/inventory/movement/<int:id>/print")
 @permission_required("inventory")
 def inventory_movement_print(id):
