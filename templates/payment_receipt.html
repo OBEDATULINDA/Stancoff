@@ -24,13 +24,15 @@
   <button class="no-print" onclick="window.print()">Print receipt</button>
   <div class="box">
     <h2>STANCOFF COMPANY LIMITED</h2>
-    <h3>CASUAL PAYMENT RECEIPT</h3>
+    <h3>WORKFORCE PAYMENT RECEIPT</h3>
     <p class="subtitle">Payment acknowledgement</p>
 
     <table>
       <tr><td>Receipt reference</td><td>{{ row.payment_ref }}</td></tr>
       <tr><td>Casual worker</td><td>{{ row.casual.code }} - {{ row.casual.name }}</td></tr>
-      <tr><td>Attendance period</td><td>{{ row.period_start.strftime('%d %b %Y') }} to {{ row.period_end.strftime('%d %b %Y') }}</td></tr>
+      <tr><td>Pay type</td><td>{{ row.pay_type or row.casual.pay_frequency or 'Daily' }}</td></tr>
+      <tr><td>Payment period</td><td>{{ row.period_start.strftime('%d %b %Y') }} to {{ row.period_end.strftime('%d %b %Y') }}</td></tr>
+      <tr><td>Rate applied</td><td>UGX {{ "{:,.0f}".format(row.rate_applied or 0) }}</td></tr>
       <tr><td>Date of payment</td><td>{{ row.payment_date.strftime('%d %b %Y') }}</td></tr>
       <tr><td>Full days worked</td><td>{{ full_days }}</td></tr>
       <tr><td>Half days worked</td><td>{{ half_days }}</td></tr>
@@ -43,8 +45,7 @@
 
     <div class="ack">
       <strong>Payee acknowledgement:</strong><br>
-      I, <strong>{{ row.casual.name }}</strong>, acknowledge that I have received the net amount shown above as payment for
-      <strong>{{ "%.1f"|format(days_equivalent) }}</strong> day(s) worked during the stated attendance period.
+      I, <strong>{{ row.casual.name }}</strong>, acknowledge that I have received the net amount shown above as <strong>{{ (row.pay_type or row.casual.pay_frequency or "Daily")|lower }}</strong> payment for the stated period. Attendance recorded for the period was <strong>{{ "%.1f"|format(days_equivalent) }}</strong> day(s).
     </div>
 
     <div class="signatures">

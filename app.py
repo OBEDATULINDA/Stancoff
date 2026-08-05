@@ -314,13 +314,15 @@ class Casual(db.Model):
     name = db.Column(db.String(150), nullable=False)
     sex = db.Column(db.String(20))
     phone = db.Column(db.String(50))
+    pay_frequency = db.Column(db.String(20), nullable=False, default="Daily")
     status = db.Column(db.String(20), default="Active")
 
 class CasualRate(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     casual_id = db.Column(db.Integer, db.ForeignKey("casual.id"), nullable=False)
     effective_date = db.Column(db.Date, nullable=False)
-    daily_rate = db.Column(db.Float, nullable=False)
+    daily_rate = db.Column(db.Float, nullable=False)  # Stores the rate amount for Daily, Weekly, or Monthly pay.
+    pay_type = db.Column(db.String(20), nullable=False, default="Daily")
     notes = db.Column(db.Text)
     casual = db.relationship("Casual")
 
@@ -347,6 +349,9 @@ class Payment(db.Model):
     net_paid = db.Column(db.Float, nullable=False)
     payment_date = db.Column(db.Date, nullable=False)
     method = db.Column(db.String(30))
+    pay_type = db.Column(db.String(20), nullable=False, default="Daily")
+    rate_applied = db.Column(db.Float)
+    attendance_days = db.Column(db.Float, default=0)
     status = db.Column(db.String(20), default="Paid")
     void_reason = db.Column(db.Text)
     casual = db.relationship("Casual")
@@ -401,11 +406,30 @@ def get_price(d):
     return PriceHistory.query.filter(PriceHistory.effective_date <= d).order_by(
         PriceHistory.effective_date.desc(), PriceHistory.id.desc()).first()
 
-def get_rate(casual_id, d):
-    return CasualRate.query.filter(
+def get_rate(casual_id, d, pay_type=None):
+    query = CasualRate.query.filter(
         CasualRate.casual_id == casual_id,
         CasualRate.effective_date <= d
-    ).order_by(CasualRate.effective_date.desc(), CasualRate.id.desc()).first()
+    )
+    if pay_type:
+        query = query.filter(CasualRate.pay_type == pay_type)
+    return query.order_by(CasualRate.effective_date.desc(), CasualRate.id.desc()).first()
+
+
+def attendance_amount(casual, rate_row, work_type):
+    """Attendance creates earnings only for daily-paid workers."""
+    if casual.pay_frequency != "Daily":
+        return 0.0
+    return float(rate_row.daily_rate) if work_type == "Full Day" else float(rate_row.daily_rate) / 2
+
+
+def payment_period_units(pay_type, start, end):
+    days = (end - start).days + 1
+    if pay_type == "Weekly":
+        return max(1, (days + 6) // 7)
+    if pay_type == "Monthly":
+        return max(1, (end.year - start.year) * 12 + end.month - start.month + 1)
+    return 1
 
 def ensure_multistation_schema():
     """Add multi-station support without deleting or recreating existing data."""
@@ -443,6 +467,27 @@ def ensure_multistation_schema():
             if column_name not in document_columns:
                 db.session.execute(text(f"ALTER TABLE station_transfer_document ADD COLUMN {column_name} {column_type}"))
                 db.session.commit()
+    if "casual" in table_names:
+        casual_columns = {c["name"] for c in inspector.get_columns("casual")}
+        if "pay_frequency" not in casual_columns:
+            db.session.execute(text("ALTER TABLE casual ADD COLUMN pay_frequency VARCHAR(20) DEFAULT 'Daily'"))
+            db.session.commit()
+    if "casual_rate" in table_names:
+        rate_columns = {c["name"] for c in inspector.get_columns("casual_rate")}
+        if "pay_type" not in rate_columns:
+            db.session.execute(text("ALTER TABLE casual_rate ADD COLUMN pay_type VARCHAR(20) DEFAULT 'Daily'"))
+            db.session.commit()
+    if "payment" in table_names:
+        payment_columns = {c["name"] for c in inspector.get_columns("payment")}
+        for column_name, column_type in {
+            "pay_type": "VARCHAR(20) DEFAULT 'Daily'",
+            "rate_applied": "FLOAT",
+            "attendance_days": "FLOAT DEFAULT 0",
+        }.items():
+            if column_name not in payment_columns:
+                db.session.execute(text(f"ALTER TABLE payment ADD COLUMN {column_name} {column_type}"))
+                db.session.commit()
+
     if "station_transfer_item" in table_names:
         item_columns = {c["name"] for c in inspector.get_columns("station_transfer_item")}
         for column_name, column_type in {
@@ -2258,9 +2303,13 @@ def sale_void(id):
 @permission_required("casuals")
 def casuals():
     if request.method == "POST":
+        pay_frequency = request.form.get("pay_frequency", "Daily")
+        if pay_frequency not in {"Daily", "Weekly", "Monthly"}:
+            pay_frequency = "Daily"
         c = Casual(code=request.form["code"], name=request.form["name"], sex=request.form["sex"],
-                   phone=request.form.get("phone"), status=request.form.get("status","Active"))
-        db.session.add(c); db.session.commit(); log_action("CREATE","Casuals",c.id)
+                   phone=request.form.get("phone"), pay_frequency=pay_frequency,
+                   status=request.form.get("status","Active"))
+        db.session.add(c); db.session.commit(); log_action("CREATE","Workforce",c.id, f"{c.name}; {pay_frequency}")
         return redirect(url_for("casuals"))
     return render_template("casuals.html", rows=Casual.query.order_by(Casual.id.desc()).all(),
                            next_code=next_code(Casual,"code","CAS",3))
@@ -2269,13 +2318,19 @@ def casuals():
 @permission_required("rates")
 def casual_rates():
     if request.method == "POST":
+        casual = Casual.query.get_or_404(int(request.form["casual_id"]))
+        pay_type = request.form.get("pay_type", casual.pay_frequency or "Daily")
+        if pay_type not in {"Daily", "Weekly", "Monthly"}:
+            pay_type = "Daily"
         r = CasualRate(
-            casual_id=int(request.form["casual_id"]),
+            casual_id=casual.id,
             effective_date=datetime.strptime(request.form["effective_date"], "%Y-%m-%d").date(),
             daily_rate=float(request.form["daily_rate"]),
+            pay_type=pay_type,
             notes=request.form.get("notes")
         )
-        db.session.add(r); db.session.commit(); log_action("CREATE","Casual Rates",r.id)
+        casual.pay_frequency = pay_type
+        db.session.add(r); db.session.commit(); log_action("CREATE","Pay Rates",r.id, f"{casual.name}; {pay_type}; UGX {r.daily_rate:,.0f}")
         return redirect(url_for("casual_rates"))
     return render_template("casual_rates.html", rows=CasualRate.query.order_by(CasualRate.effective_date.desc()).all(),
                            casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all())
@@ -2305,12 +2360,13 @@ def attendance():
                 f"{d.strftime('%d %b %Y')}. Edit the existing entry instead."
             )
             return redirect(url_for("attendance", worker_id=cid, date_from=d.isoformat(), date_to=d.isoformat()))
-        rr = get_rate(cid, d)
+        casual = Casual.query.get_or_404(cid)
+        rr = get_rate(cid, d, casual.pay_frequency)
         if not rr:
             flash("Add a rate for this worker before recording attendance.")
             return redirect(url_for("attendance"))
         work_type = request.form["work_type"]
-        amount = rr.daily_rate if work_type == "Full Day" else rr.daily_rate / 2
+        amount = attendance_amount(casual, rr, work_type)
         a = Attendance(
             work_date=d,
             casual_id=cid,
@@ -2442,14 +2498,14 @@ def attendance_daily_save():
         if find_existing_attendance(casual_id, work_date):
             skipped += 1
             continue
-        rate_row = get_rate(casual_id, work_date)
+        rate_row = get_rate(casual_id, work_date, casual.pay_frequency)
         if not rate_row:
             missing_rates.append(casual.name)
             continue
         work_type = request.form.get(f"work_type_{casual_id}", "Full Day")
         if work_type not in {"Full Day", "Half Day"}:
             work_type = "Full Day"
-        amount = rate_row.daily_rate if work_type == "Full Day" else rate_row.daily_rate / 2
+        amount = attendance_amount(casual, rate_row, work_type)
         entry = Attendance(
             work_date=work_date,
             casual_id=casual_id,
@@ -2487,7 +2543,9 @@ def recalculate_payment(payment_ref):
     if not payment or payment.status == "Voided":
         return
     paid_entries = Attendance.query.filter_by(payment_ref=payment_ref, status="Paid").all()
-    payment.gross_pay = sum(x.amount for x in paid_entries)
+    payment.attendance_days = sum(1 if x.work_type == "Full Day" else 0.5 for x in paid_entries)
+    if (payment.pay_type or "Daily") == "Daily":
+        payment.gross_pay = sum(float(x.amount or 0) for x in paid_entries)
     payment.net_paid = max(0, payment.gross_pay - (payment.deduction or 0))
 
 
@@ -2510,7 +2568,8 @@ def attendance_edit(id):
                 f"{work_date.strftime('%d %b %Y')}. Edit that existing record instead."
             )
             return redirect(url_for("attendance_edit", id=id))
-        rr = get_rate(casual_id, work_date)
+        casual = Casual.query.get_or_404(casual_id)
+        rr = get_rate(casual_id, work_date, casual.pay_frequency)
         if not rr:
             flash("Add a rate for this worker before saving the correction.")
             return redirect(url_for("attendance_edit", id=id))
@@ -2519,7 +2578,7 @@ def attendance_edit(id):
         row.work_done = request.form.get("work_done")
         row.work_type = request.form["work_type"]
         row.rate = rr.daily_rate
-        row.amount = rr.daily_rate if row.work_type == "Full Day" else rr.daily_rate / 2
+        row.amount = attendance_amount(casual, rr, row.work_type)
         recalculate_payment(old_payment_ref)
         db.session.commit()
         new = f"{row.work_date}; {row.casual.name}; {row.work_type}; UGX {row.amount:,.0f}; {row.work_done or ''}"
@@ -2568,6 +2627,27 @@ def attendance_delete(id):
     return redirect(url_for("attendance"))
 
 
+@app.route("/casual/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("casuals")
+def casual_edit(id):
+    casual = Casual.query.get_or_404(id)
+    if request.method == "POST":
+        old = f"{casual.name}; {casual.pay_frequency}; {casual.status}"
+        pay_frequency = request.form.get("pay_frequency", casual.pay_frequency or "Daily")
+        if pay_frequency not in {"Daily", "Weekly", "Monthly"}:
+            pay_frequency = "Daily"
+        casual.name = request.form["name"].strip()
+        casual.sex = request.form.get("sex")
+        casual.phone = request.form.get("phone")
+        casual.pay_frequency = pay_frequency
+        casual.status = request.form.get("status", "Active")
+        db.session.commit()
+        log_action("EDIT", "Workforce", casual.id, f"Before: {old} | After: {casual.name}; {pay_frequency}; {casual.status}")
+        flash("Worker details updated.")
+        return redirect(url_for("casual_profile", id=id))
+    return render_template("casual_edit.html", casual=casual)
+
+
 @app.route("/casual/<int:id>")
 @permission_required("casuals")
 def casual_profile(id):
@@ -2599,7 +2679,7 @@ def casual_status(id):
 @app.route("/payments/calculate")
 @permission_required("payments")
 def payment_calculate():
-    """Return an automatic preview of unpaid attendance for a selected period."""
+    """Preview Daily, Weekly, or Monthly pay for a selected worker and period."""
     cid = request.args.get("casual_id", type=int)
     start_text = request.args.get("period_start", "")
     end_text = request.args.get("period_end", "")
@@ -2613,83 +2693,117 @@ def payment_calculate():
     if end < start:
         return {"ok": False, "message": "The period end cannot be before the start."}, 400
 
-    entries = Attendance.query.filter(
+    casual = Casual.query.get_or_404(cid)
+    pay_type = casual.pay_frequency or "Daily"
+    rate_row = get_rate(cid, start, pay_type)
+    if not rate_row:
+        return {"ok": False, "message": f"Add a {pay_type.lower()} rate for this worker first."}, 400
+
+    duplicate = Payment.query.filter(
+        Payment.casual_id == cid,
+        Payment.status != "Voided",
+        Payment.period_start <= end,
+        Payment.period_end >= start,
+    ).first()
+    if duplicate:
+        return {"ok": False, "message": f"This period overlaps payment {duplicate.payment_ref}. Edit or void that payment first."}, 400
+
+    entries_query = Attendance.query.filter(
         Attendance.casual_id == cid,
         Attendance.work_date >= start,
         Attendance.work_date <= end,
         Attendance.status == "Unpaid",
-    ).order_by(Attendance.work_date).all()
-    gross = sum(float(x.amount or 0) for x in entries)
+    ).order_by(Attendance.work_date)
+    entries = entries_query.all()
     full_days = sum(1 for x in entries if x.work_type == "Full Day")
     half_days = sum(1 for x in entries if x.work_type == "Half Day")
+    days_equivalent = full_days + half_days * 0.5
+    units = payment_period_units(pay_type, start, end)
+    if pay_type == "Daily":
+        gross = sum(float(x.amount or 0) for x in entries)
+        can_pay = bool(entries)
+        explanation = "Calculated from unpaid attendance."
+    else:
+        gross = float(rate_row.daily_rate) * units
+        can_pay = True
+        explanation = f"{units} {pay_type.lower()} pay period(s) × UGX {rate_row.daily_rate:,.0f}. Attendance is shown for review."
+
     return {
         "ok": True,
+        "pay_type": pay_type,
+        "rate_applied": float(rate_row.daily_rate),
+        "period_units": units,
         "entry_count": len(entries),
         "full_days": full_days,
         "half_days": half_days,
-        "days_equivalent": full_days + (half_days * 0.5),
+        "days_equivalent": days_equivalent,
         "gross_pay": gross,
-        "entries": [
-            {
-                "date": x.work_date.isoformat(),
-                "work_type": x.work_type,
-                "work_done": x.work_done or "-",
-                "amount": float(x.amount or 0),
-            } for x in entries
-        ],
+        "can_pay": can_pay,
+        "explanation": explanation,
+        "entries": [{
+            "date": x.work_date.isoformat(), "work_type": x.work_type,
+            "work_done": x.work_done or "-", "amount": float(x.amount or 0),
+        } for x in entries],
     }
 
 
-@app.route("/payments", methods=["GET","POST"])
+@app.route("/payments", methods=["GET", "POST"])
 @permission_required("payments")
 def payments():
     if request.method == "POST":
         cid = int(request.form["casual_id"])
+        casual = Casual.query.get_or_404(cid)
+        pay_type = casual.pay_frequency or "Daily"
         start = datetime.strptime(request.form["period_start"], "%Y-%m-%d").date()
         end = datetime.strptime(request.form["period_end"], "%Y-%m-%d").date()
         if end < start:
             flash("The period end cannot be before the period start.")
             return redirect(url_for("payments"))
-        entries = Attendance.query.filter(
-            Attendance.casual_id == cid,
-            Attendance.work_date >= start,
-            Attendance.work_date <= end,
-            Attendance.status == "Unpaid",
-        ).all()
-        if not entries:
-            flash("There is no unpaid attendance for this worker in the selected period.")
+        duplicate = Payment.query.filter(
+            Payment.casual_id == cid, Payment.status != "Voided",
+            Payment.period_start <= end, Payment.period_end >= start,
+        ).first()
+        if duplicate:
+            flash(f"The selected period overlaps payment {duplicate.payment_ref}.")
             return redirect(url_for("payments"))
-        gross = sum(x.amount for x in entries)
+        rate_row = get_rate(cid, start, pay_type)
+        if not rate_row:
+            flash(f"Add a {pay_type.lower()} rate for this worker first.")
+            return redirect(url_for("payments"))
+        entries = Attendance.query.filter(
+            Attendance.casual_id == cid, Attendance.work_date >= start,
+            Attendance.work_date <= end, Attendance.status == "Unpaid",
+        ).all()
+        attendance_days = sum(1 if x.work_type == "Full Day" else 0.5 for x in entries)
+        if pay_type == "Daily":
+            if not entries:
+                flash("There is no unpaid attendance for this daily-paid worker in the selected period.")
+                return redirect(url_for("payments"))
+            gross = sum(float(x.amount or 0) for x in entries)
+        else:
+            gross = float(rate_row.daily_rate) * payment_period_units(pay_type, start, end)
         deduction = float(request.form.get("deduction") or 0)
         p = Payment(
-            payment_ref=next_code(Payment, "payment_ref", "PAY", 6),
-            casual_id=cid,
-            period_start=start,
-            period_end=end,
-            gross_pay=gross,
-            deduction=deduction,
+            payment_ref=next_code(Payment, "payment_ref", "PAY", 6), casual_id=cid,
+            period_start=start, period_end=end, gross_pay=gross, deduction=deduction,
             net_paid=max(0, gross-deduction),
             payment_date=datetime.strptime(request.form["payment_date"], "%Y-%m-%d").date(),
-            method=request.form["method"],
+            method=request.form["method"], pay_type=pay_type,
+            rate_applied=float(rate_row.daily_rate), attendance_days=attendance_days,
         )
         db.session.add(p)
         for x in entries:
-            x.status = "Paid"
-            x.payment_ref = p.payment_ref
+            x.status = "Paid"; x.payment_ref = p.payment_ref
         db.session.commit()
-        log_action("CREATE", "Payments", p.id,
-                   f"{p.payment_ref}; {p.casual.name}; UGX {p.net_paid:,.0f}")
+        log_action("CREATE", "Payroll", p.id, f"{p.payment_ref}; {p.casual.name}; {pay_type}; UGX {p.net_paid:,.0f}")
         flash("Payment saved. You can now print the receipt.")
         return redirect(url_for("payments"))
     return render_template(
-        "payments.html",
-        rows=Payment.query.order_by(Payment.id.desc()).all(),
+        "payments.html", rows=Payment.query.order_by(Payment.id.desc()).all(),
         casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all(),
-        prefill={
-            "casual_id": request.args.get("casual_id", type=int),
-            "period_start": request.args.get("period_start", ""),
-            "period_end": request.args.get("period_end", ""),
-        },
+        prefill={"casual_id": request.args.get("casual_id", type=int),
+                 "period_start": request.args.get("period_start", ""),
+                 "period_end": request.args.get("period_end", "")},
     )
 
 
@@ -2746,6 +2860,8 @@ def payment_receipt(id):
     full_days = sum(1 for entry in attendance_entries if entry.work_type == "Full Day")
     half_days = sum(1 for entry in attendance_entries if entry.work_type == "Half Day")
     days_equivalent = full_days + (half_days * 0.5)
+    if not attendance_entries and row.attendance_days:
+        days_equivalent = float(row.attendance_days)
     return render_template(
         "payment_receipt.html",
         row=row,

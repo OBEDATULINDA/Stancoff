@@ -1,0 +1,13 @@
+STANCOFF VERSION 7.0 – WORKFORCE & PAYROLL
+
+Added:
+- Daily, Weekly and Monthly pay frequencies
+- Editable worker pay frequency
+- Pay rate history by pay type
+- Automatic payroll preview based on worker pay frequency
+- Fixed weekly and monthly pay with attendance shown for review
+- Duplicate overlapping payment protection
+- Updated workforce payment receipt
+
+Existing workers and rates are automatically treated as Daily until changed.
+No existing PostgreSQL records are deleted.
