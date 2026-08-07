@@ -1,0 +1,17 @@
+STANCOFF VERSION 7.1
+
+CHANGES
+1. Weekly attendance cards replaced with monthly attendance cards.
+2. Each worker/month card shows a calendar with full-day (1), half-day (1/2),
+   paid/unpaid status, equivalent days, attendance value, and unpaid attendance.
+3. Rate History now has an Edit button.
+4. Rate-history edits are audit-logged.
+5. Editing a rate-history row does not rewrite the rate/amount already saved
+   on older attendance or completed payment records.
+
+DATABASE SAFETY
+No tables are dropped or recreated. Existing PostgreSQL data remains in place.
+
+DEPLOYMENT
+Upload the contents of Stancoff-main to the existing GitHub repository and
+allow Render to redeploy. Do not delete PostgreSQL or change DATABASE_URL.

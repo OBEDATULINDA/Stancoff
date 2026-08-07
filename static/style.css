@@ -78,3 +78,72 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
 .nav-group-links a::before{content:'';position:absolute;left:8px;top:50%;width:3px;height:3px;border-radius:50%;background:#78998e;transform:translateY(-50%)}
 .nav-group-links a.active::before{background:#fff}
 .negative{color:#b42318;font-weight:700}.positive{color:#16794f;font-weight:700}.status-badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#e8f1ee;color:#1f6b57;font-size:12px;font-weight:700}
+
+
+/* Version 7.1 - Monthly attendance cards */
+.monthly-card-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(390px,1fr));
+  gap:16px;
+}
+.monthly-card{
+  background:#fff;
+  border:1px solid var(--line,#dfe7e3);
+  border-radius:14px;
+  padding:16px;
+  box-shadow:0 8px 24px rgba(22,55,46,.06);
+}
+.month-title{
+  font-size:18px;
+  font-weight:750;
+  margin:14px 0 10px;
+}
+.month-calendar{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  gap:5px;
+}
+.month-weekday{
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  color:#6d7c76;
+  text-align:center;
+  padding:4px 0;
+}
+.month-day{
+  min-height:58px;
+  border:1px solid #e3ebe7;
+  border-radius:8px;
+  padding:5px;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  background:#fafcfb;
+}
+.month-day.worked{
+  background:#eef7f3;
+  border-color:#b9d7cb;
+}
+.month-day.empty-day{
+  border-color:transparent;
+  background:transparent;
+}
+.month-day .day-number{
+  font-size:11px;
+  color:#6d7c76;
+}
+.month-day strong{
+  font-size:15px;
+  color:#173f35;
+}
+.month-day small{
+  font-size:9px;
+  color:#6d7c76;
+}
+@media(max-width:600px){
+  .monthly-card-grid{grid-template-columns:1fr}
+  .monthly-card{padding:11px}
+  .month-calendar{gap:3px}
+  .month-day{min-height:50px;padding:4px}
+}

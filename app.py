@@ -1,5 +1,6 @@
 
 import os
+import calendar
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -2332,8 +2333,59 @@ def casual_rates():
         casual.pay_frequency = pay_type
         db.session.add(r); db.session.commit(); log_action("CREATE","Pay Rates",r.id, f"{casual.name}; {pay_type}; UGX {r.daily_rate:,.0f}")
         return redirect(url_for("casual_rates"))
-    return render_template("casual_rates.html", rows=CasualRate.query.order_by(CasualRate.effective_date.desc()).all(),
+    return render_template("casual_rates.html", rows=CasualRate.query.order_by(CasualRate.effective_date.desc(), CasualRate.id.desc()).all(),
                            casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all())
+
+@app.route("/casual-rate/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("rates")
+def casual_rate_edit(id):
+    row = CasualRate.query.get_or_404(id)
+    if request.method == "POST":
+        casual = Casual.query.get_or_404(int(request.form["casual_id"]))
+        pay_type = request.form.get("pay_type", row.pay_type or casual.pay_frequency or "Daily")
+        if pay_type not in {"Daily", "Weekly", "Monthly"}:
+            pay_type = "Daily"
+
+        effective_date = datetime.strptime(request.form["effective_date"], "%Y-%m-%d").date()
+        amount = float(request.form["daily_rate"])
+        if amount < 0:
+            flash("The rate amount cannot be negative.")
+            return redirect(url_for("casual_rate_edit", id=id))
+
+        duplicate = CasualRate.query.filter(
+            CasualRate.casual_id == casual.id,
+            CasualRate.effective_date == effective_date,
+            CasualRate.id != row.id,
+        ).first()
+        if duplicate:
+            flash("That worker already has another rate entry with the same effective date. Edit that record or choose another date.")
+            return redirect(url_for("casual_rate_edit", id=id))
+
+        old = (
+            f"Worker {row.casual.name}; Date {row.effective_date}; "
+            f"Type {row.pay_type or 'Daily'}; Rate UGX {row.daily_rate:,.0f}; Notes {row.notes or '-'}"
+        )
+        row.casual_id = casual.id
+        row.effective_date = effective_date
+        row.pay_type = pay_type
+        row.daily_rate = amount
+        row.notes = request.form.get("notes")
+        casual.pay_frequency = pay_type
+        db.session.commit()
+
+        new = (
+            f"Worker {row.casual.name}; Date {row.effective_date}; "
+            f"Type {row.pay_type}; Rate UGX {row.daily_rate:,.0f}; Notes {row.notes or '-'}"
+        )
+        log_action("EDIT", "Pay Rates", row.id, f"Before: {old} | After: {new}")
+        flash("Rate history entry updated. Existing attendance and completed payments keep the rate values already stored on those records.")
+        return redirect(url_for("casual_rates"))
+
+    return render_template(
+        "casual_rate_edit.html",
+        row=row,
+        casuals=Casual.query.order_by(Casual.name).all(),
+    )
 
 def find_existing_attendance(casual_id, work_date, exclude_id=None):
     """Find a non-voided attendance entry for one worker on one date."""
@@ -2397,53 +2449,47 @@ def attendance():
         query = query.filter(Attendance.work_date <= datetime.strptime(date_to, "%Y-%m-%d").date())
     rows = query.order_by(Attendance.work_date.desc(), Attendance.id.desc()).all()
 
-    # Seven-day cards are calculated from each worker's own attendance cycle.
-    # The first non-voided attendance date becomes that worker's cycle start,
-    # so workers are not forced into a Monday-to-Sunday calendar week.
-    weekly = {}
+    # Monthly attendance cards group each worker's attendance by calendar month.
+    # This gives one clear monthly view regardless of whether the worker is paid
+    # daily, weekly or monthly.
+    monthly = {}
     card_rows = Attendance.query.filter(Attendance.status != "Voided").order_by(
         Attendance.work_date.asc(), Attendance.id.asc()
     ).all()
-    cycle_starts = {}
-    for row in card_rows:
-        cycle_starts.setdefault(row.casual_id, row.work_date)
 
     for row in card_rows:
-        anchor = cycle_starts[row.casual_id]
-        cycle_number = (row.work_date - anchor).days // 7
-        week_start = anchor + timedelta(days=cycle_number * 7)
-        day_index = (row.work_date - week_start).days
-        key = (row.casual_id, week_start)
-        item = weekly.setdefault(key, {
+        month_start = row.work_date.replace(day=1)
+        _, days_in_month = calendar.monthrange(row.work_date.year, row.work_date.month)
+        month_end = row.work_date.replace(day=days_in_month)
+        key = (row.casual_id, month_start)
+        item = monthly.setdefault(key, {
             "casual": row.casual,
-            "start": week_start,
-            "end": week_start + timedelta(days=6),
+            "start": month_start,
+            "end": month_end,
+            "month_label": month_start.strftime("%B %Y"),
             "days": 0.0,
             "amount": 0.0,
             "unpaid_amount": 0.0,
             "paid": 0,
             "unpaid": 0,
-            "day_entries": {i: [] for i in range(7)},
-            "day_labels": [
-                (week_start + timedelta(days=i)).strftime("%a") for i in range(7)
-            ],
-            "day_dates": [
-                (week_start + timedelta(days=i)).strftime("%d %b") for i in range(7)
-            ],
+            "day_entries": {i: [] for i in range(1, days_in_month + 1)},
+            "weeks": calendar.monthcalendar(row.work_date.year, row.work_date.month),
         })
         day_value = 1 if row.work_type == "Full Day" else 0.5
         item["days"] += day_value
         item["amount"] += float(row.amount or 0)
-        item["day_entries"][day_index].append(row)
+        item["day_entries"][row.work_date.day].append(row)
         if row.status == "Paid":
             item["paid"] += 1
         else:
             item["unpaid"] += 1
             item["unpaid_amount"] += float(row.amount or 0)
 
-    weekly_cards = sorted(
-        weekly.values(), key=lambda x: (x["start"], x["casual"].name), reverse=True
-    )[:40]
+    monthly_cards = sorted(
+        monthly.values(),
+        key=lambda x: (x["start"], x["casual"].name),
+        reverse=True,
+    )[:36]
 
     daily_date_text = request.args.get("daily_date", datetime.utcnow().date().isoformat())
     try:
@@ -2463,7 +2509,7 @@ def attendance():
     return render_template(
         "attendance.html",
         rows=rows,
-        weekly_cards=weekly_cards,
+        monthly_cards=monthly_cards,
         casuals=active_casuals,
         all_casuals=Casual.query.order_by(Casual.name).all(),
         filters={"worker_id": worker_id, "status": status, "date_from": date_from, "date_to": date_to},

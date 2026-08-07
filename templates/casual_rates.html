@@ -6,5 +6,5 @@
 <label>Pay type<select name="pay_type"><option>Daily</option><option>Weekly</option><option>Monthly</option></select></label>
 <label>Rate amount (UGX)<input type="number" name="daily_rate" min="0" step="0.01" required></label>
 <input name="notes" placeholder="Reason or notes"><button>Save rate</button></form></div>
-<div class="section-card"><h2>Rate history</h2><div class="table-wrap"><table><tr><th>Date</th><th>Worker</th><th>Pay type</th><th>Rate</th><th>Notes</th></tr>
-{% for r in rows %}<tr><td>{{r.effective_date}}</td><td>{{r.casual.code}} - {{r.casual.name}}</td><td>{{r.pay_type or 'Daily'}}</td><td>UGX {{"{:,.0f}".format(r.daily_rate)}}</td><td>{{r.notes}}</td></tr>{% endfor %}</table></div></div>{% endblock %}
+<div class="section-card"><h2>Rate history</h2><p class="help-text">Editing a historical rate does not rewrite rates already stored on past attendance or completed payments.</p><div class="table-wrap"><table><tr><th>Date</th><th>Worker</th><th>Pay type</th><th>Rate</th><th>Notes</th><th>Action</th></tr>
+{% for r in rows %}<tr><td>{{r.effective_date}}</td><td>{{r.casual.code}} - {{r.casual.name}}</td><td>{{r.pay_type or 'Daily'}}</td><td>UGX {{"{:,.0f}".format(r.daily_rate)}}</td><td>{{r.notes or '-'}}</td><td><a class="button small" href="/casual-rate/{{r.id}}/edit">Edit</a></td></tr>{% endfor %}</table></div></div>{% endblock %}

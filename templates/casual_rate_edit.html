@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block page_title %}Edit Pay Rate{% endblock %}
+{% block page_subtitle %}Correct a rate-history entry without changing completed payroll records{% endblock %}
+{% block content %}
+<div class="section-card">
+  <h2>Edit rate history</h2>
+  <p class="help-text">Use this when a rate, effective date, pay type or note was entered incorrectly. Past attendance and completed payments keep the amounts already saved on those records.</p>
+  <form method="post" class="form">
+    <label>Worker
+      <select name="casual_id" required>
+        {% for c in casuals %}
+        <option value="{{c.id}}" {% if c.id==row.casual_id %}selected{% endif %}>{{c.code}} - {{c.name}}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Effective date
+      <input type="date" name="effective_date" value="{{row.effective_date}}" required>
+    </label>
+    <label>Pay type
+      <select name="pay_type" required>
+        {% for p in ['Daily','Weekly','Monthly'] %}
+        <option {% if (row.pay_type or 'Daily')==p %}selected{% endif %}>{{p}}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Rate amount (UGX)
+      <input type="number" name="daily_rate" min="0" step="0.01" value="{{row.daily_rate}}" required>
+    </label>
+    <label>Notes
+      <input name="notes" value="{{row.notes or ''}}">
+    </label>
+    <button>Save changes</button>
+    <a class="button secondary" href="/casual-rates">Cancel</a>
+  </form>
+</div>
+{% endblock %}
