@@ -1,13 +1,20 @@
 
 import os
+import io
 import calendar
 from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, session, abort, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, desc, inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
+import xlsxwriter
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-in-production")
@@ -3023,6 +3030,330 @@ def audit_enhanced():
     rows = query.order_by(AuditLog.id.desc()).limit(1000).all()
     return render_template("audit.html", rows=rows,
                            filters={"module": module, "action": action, "username": username})
+
+
+
+
+def _processed_report_filters():
+    start_text = (request.args.get("start_date") or "").strip()
+    end_text = (request.args.get("end_date") or "").strip()
+    station_id = (request.args.get("station_id") or "").strip()
+    batch_no = (request.args.get("batch_no") or "").strip()
+    process_type = (request.args.get("process_type") or "").strip()
+    return {
+        "start_date": start_text,
+        "end_date": end_text,
+        "station_id": station_id,
+        "batch_no": batch_no,
+        "process_type": process_type,
+    }
+
+
+def _dry_output_for_record(drying_row):
+    """Return final dry output already produced for one drying record.
+
+    Finish Drying movements are the source of truth because they preserve partial
+    completions. Older records that pre-date Finish Drying fall back to the dry
+    weight saved directly on the drying record.
+    """
+    finished = db.session.query(func.coalesce(func.sum(CoffeeMovement.weight), 0.0)).filter(
+        CoffeeMovement.drying_id == drying_row.id,
+        CoffeeMovement.status == "Active",
+        CoffeeMovement.movement_type.like("Finished Drying%"),
+    ).scalar() or 0.0
+    finished = float(finished)
+    if finished > 0:
+        return finished
+    if drying_row.dry_weight is not None and drying_row.drying_status in {"Completed", "Partially Completed"}:
+        return float(drying_row.dry_weight or 0)
+    return 0.0
+
+
+def build_processed_coffee_report(filters):
+    query = Processing.query.filter(Processing.status == "Active")
+
+    if filters.get("start_date"):
+        try:
+            query = query.filter(Processing.processing_date >= datetime.strptime(filters["start_date"], "%Y-%m-%d").date())
+        except ValueError:
+            pass
+    if filters.get("end_date"):
+        try:
+            query = query.filter(Processing.processing_date <= datetime.strptime(filters["end_date"], "%Y-%m-%d").date())
+        except ValueError:
+            pass
+    if filters.get("station_id"):
+        try:
+            query = query.filter(Processing.station_id == int(filters["station_id"]))
+        except (ValueError, TypeError):
+            pass
+    if filters.get("batch_no"):
+        query = query.join(Batch, Processing.batch_id == Batch.id).filter(
+            func.lower(Batch.batch_no).contains(filters["batch_no"].lower())
+        )
+    if filters.get("process_type"):
+        if "batch" not in [d.get("entity") for d in getattr(query, "column_descriptions", [])]:
+            query = query.join(Batch, Processing.batch_id == Batch.id)
+        query = query.filter(Batch.process_type == filters["process_type"])
+
+    rows = []
+    for p in query.order_by(Processing.processing_date.asc(), Processing.id.asc()).all():
+        drying_rows = Drying.query.filter_by(processing_id=p.id, status="Active").order_by(Drying.id.asc()).all()
+        grade_dry = {"Grade A": 0.0, "Grade B": 0.0, "Grade C": 0.0}
+        grade_drying_input = {"Grade A": 0.0, "Grade B": 0.0, "Grade C": 0.0}
+        final_moistures = []
+        drying_statuses = []
+        last_drying_date = None
+
+        for d in drying_rows:
+            grade_drying_input[d.grade] = grade_drying_input.get(d.grade, 0.0) + float(d.input_weight or 0)
+            dry_output = _dry_output_for_record(d)
+            grade_dry[d.grade] = grade_dry.get(d.grade, 0.0) + dry_output
+            if d.moisture is not None:
+                final_moistures.append(float(d.moisture))
+            drying_statuses.append(d.drying_status)
+            if d.end_date and (last_drying_date is None or d.end_date > last_drying_date):
+                last_drying_date = d.end_date
+
+        drying_input = sum(grade_drying_input.values())
+        dry_total = sum(grade_dry.values())
+        drying_loss = max(0.0, drying_input - dry_total)
+        drying_outturn = (dry_total / drying_input * 100) if drying_input else 0.0
+        overall_outturn = (dry_total / float(p.input_weight or 0) * 100) if p.input_weight else 0.0
+        overall_loss = max(0.0, float(p.input_weight or 0) - dry_total)
+        moisture = (sum(final_moistures) / len(final_moistures)) if final_moistures else None
+
+        if drying_rows and all(s == "Completed" for s in drying_statuses):
+            status = "Drying Completed"
+        elif any(s == "Partially Completed" for s in drying_statuses):
+            status = "Partially Completed"
+        elif drying_rows:
+            status = "Drying"
+        else:
+            status = "Processed - Not Yet Drying"
+
+        rows.append({
+            "processing_no": p.processing_no,
+            "processing_date": p.processing_date,
+            "station": p.station.name if p.station else "Not assigned",
+            "batch_no": p.batch.batch_no,
+            "process_type": p.batch.process_type,
+            "initial_weight": float(p.input_weight or 0),
+            "grade_a_sorted": float(p.grade_a_weight or 0),
+            "grade_b_sorted": float(p.grade_b_weight or 0),
+            "grade_c_sorted": float(p.grade_c_weight or 0),
+            "sorted_total": float(p.total_sorted_weight or 0),
+            "processing_loss": float(p.processing_loss or 0),
+            "processing_outturn": float(p.outturn_percent or 0),
+            "drying_input": drying_input,
+            "grade_a_dry": grade_dry.get("Grade A", 0.0),
+            "grade_b_dry": grade_dry.get("Grade B", 0.0),
+            "grade_c_dry": grade_dry.get("Grade C", 0.0),
+            "dry_total": dry_total,
+            "drying_loss": drying_loss,
+            "drying_outturn": drying_outturn,
+            "overall_loss": overall_loss,
+            "overall_outturn": overall_outturn,
+            "final_moisture": moisture,
+            "drying_completed_date": last_drying_date,
+            "status": status,
+        })
+
+    total_initial = sum(r["initial_weight"] for r in rows)
+    total_sorted = sum(r["sorted_total"] for r in rows)
+    total_dry = sum(r["dry_total"] for r in rows)
+    total_processing_loss = sum(r["processing_loss"] for r in rows)
+    total_drying_loss = sum(r["drying_loss"] for r in rows)
+    summary = {
+        "records": len(rows),
+        "initial_weight": total_initial,
+        "sorted_weight": total_sorted,
+        "dry_weight": total_dry,
+        "processing_loss": total_processing_loss,
+        "drying_loss": total_drying_loss,
+        "overall_loss": max(0.0, total_initial - total_dry),
+        "processing_outturn": (total_sorted / total_initial * 100) if total_initial else 0.0,
+        "drying_outturn": (total_dry / total_sorted * 100) if total_sorted else 0.0,
+        "overall_outturn": (total_dry / total_initial * 100) if total_initial else 0.0,
+        "grade_a_dry": sum(r["grade_a_dry"] for r in rows),
+        "grade_b_dry": sum(r["grade_b_dry"] for r in rows),
+        "grade_c_dry": sum(r["grade_c_dry"] for r in rows),
+    }
+    return rows, summary
+
+
+@app.route("/reports/processing")
+@permission_required("reports")
+def processing_reports():
+    filters = _processed_report_filters()
+    rows, summary = build_processed_coffee_report(filters)
+    return render_template(
+        "processing_reports.html",
+        rows=rows,
+        summary=summary,
+        filters=filters,
+        stations=Station.query.order_by(Station.name).all(),
+        process_types=[r[0] for r in db.session.query(Batch.process_type).distinct().order_by(Batch.process_type).all()],
+    )
+
+
+@app.route("/reports/processing/excel")
+@permission_required("reports")
+def processing_reports_excel():
+    filters = _processed_report_filters()
+    rows, summary = build_processed_coffee_report(filters)
+
+    output = io.BytesIO()
+    wb = xlsxwriter.Workbook(output, {"in_memory": True})
+    ws = wb.add_worksheet("Processed Coffee")
+    summary_ws = wb.add_worksheet("Summary")
+
+    title_fmt = wb.add_format({"bold": True, "font_size": 16, "align": "center", "valign": "vcenter"})
+    header_fmt = wb.add_format({"bold": True, "bg_color": "#173F35", "font_color": "#FFFFFF", "border": 1, "text_wrap": True, "align": "center"})
+    number_fmt = wb.add_format({"num_format": "#,##0.00", "border": 1})
+    pct_fmt = wb.add_format({"num_format": "0.00%", "border": 1})
+    text_fmt = wb.add_format({"border": 1})
+    date_fmt = wb.add_format({"num_format": "dd-mmm-yyyy", "border": 1})
+    kpi_label = wb.add_format({"bold": True, "bg_color": "#E8F1EE", "border": 1})
+    kpi_value = wb.add_format({"bold": True, "num_format": "#,##0.00", "border": 1})
+
+    headers = [
+        "Processing No", "Processing Date", "Station", "Batch", "Process",
+        "Initial kg", "Grade A Sorted kg", "Grade B Sorted kg", "Grade C Sorted kg",
+        "Total Sorted kg", "Processing Loss kg", "Processing Outturn %", "Drying Input kg",
+        "Grade A Dry kg", "Grade B Dry kg", "Grade C Dry kg", "Total Dry kg",
+        "Drying Loss kg", "Drying Outturn %", "Overall Loss kg", "Overall Outturn %",
+        "Final Moisture %", "Drying Completed", "Status"
+    ]
+    ws.merge_range(0, 0, 0, len(headers)-1, "STANCOFF COMPANY LIMITED – PROCESSED COFFEE REPORT", title_fmt)
+    for c, h in enumerate(headers):
+        ws.write(2, c, h, header_fmt)
+
+    for r_idx, r in enumerate(rows, start=3):
+        values = [
+            r["processing_no"], r["processing_date"], r["station"], r["batch_no"], r["process_type"],
+            r["initial_weight"], r["grade_a_sorted"], r["grade_b_sorted"], r["grade_c_sorted"],
+            r["sorted_total"], r["processing_loss"], r["processing_outturn"] / 100,
+            r["drying_input"], r["grade_a_dry"], r["grade_b_dry"], r["grade_c_dry"], r["dry_total"],
+            r["drying_loss"], r["drying_outturn"] / 100, r["overall_loss"], r["overall_outturn"] / 100,
+            (r["final_moisture"] / 100 if r["final_moisture"] is not None else None),
+            r["drying_completed_date"], r["status"]
+        ]
+        for c, value in enumerate(values):
+            if c in {1, 22} and value:
+                ws.write_datetime(r_idx, c, datetime.combine(value, datetime.min.time()), date_fmt)
+            elif c in {11, 18, 20, 21} and value is not None:
+                ws.write_number(r_idx, c, float(value), pct_fmt)
+            elif c in {5,6,7,8,9,10,12,13,14,15,16,17,19}:
+                ws.write_number(r_idx, c, float(value or 0), number_fmt)
+            else:
+                ws.write(r_idx, c, value if value is not None else "", text_fmt)
+
+    ws.freeze_panes(3, 5)
+    ws.autofilter(2, 0, max(2, 2+len(rows)), len(headers)-1)
+    ws.set_column(0, 0, 16)
+    ws.set_column(1, 1, 14)
+    ws.set_column(2, 4, 18)
+    ws.set_column(5, 21, 15)
+    ws.set_column(22, 23, 18)
+
+    summary_ws.merge_range("A1:D1", "STANCOFF COMPANY LIMITED – PROCESSING SUMMARY", title_fmt)
+    summary_rows = [
+        ("Records", summary["records"]),
+        ("Total Initial Weight (kg)", summary["initial_weight"]),
+        ("Total Sorted Weight (kg)", summary["sorted_weight"]),
+        ("Total Dry Weight (kg)", summary["dry_weight"]),
+        ("Processing Loss (kg)", summary["processing_loss"]),
+        ("Drying Loss (kg)", summary["drying_loss"]),
+        ("Overall Loss (kg)", summary["overall_loss"]),
+        ("Processing Outturn (%)", summary["processing_outturn"]),
+        ("Drying Outturn (%)", summary["drying_outturn"]),
+        ("Overall Dry Outturn (%)", summary["overall_outturn"]),
+        ("Grade A Dry (kg)", summary["grade_a_dry"]),
+        ("Grade B Dry (kg)", summary["grade_b_dry"]),
+        ("Grade C Dry (kg)", summary["grade_c_dry"]),
+    ]
+    for i, (label, value) in enumerate(summary_rows, start=2):
+        summary_ws.write(i, 0, label, kpi_label)
+        if "Outturn" in label:
+            summary_ws.write_number(i, 1, float(value)/100, wb.add_format({"bold": True, "num_format": "0.00%", "border": 1}))
+        else:
+            summary_ws.write_number(i, 1, float(value), kpi_value)
+    summary_ws.set_column("A:A", 30)
+    summary_ws.set_column("B:B", 18)
+    wb.close()
+    output.seek(0)
+
+    filename = f"Stancoff_Processed_Coffee_Report_{datetime.utcnow().date().isoformat()}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/reports/processing/pdf")
+@permission_required("reports")
+def processing_reports_pdf():
+    filters = _processed_report_filters()
+    rows, summary = build_processed_coffee_report(filters)
+    output = io.BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=landscape(A4), rightMargin=22, leftMargin=22, topMargin=24, bottomMargin=24)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=16, leading=19, alignment=TA_CENTER, textColor=colors.HexColor("#173F35"))
+    small = ParagraphStyle("Small", parent=styles["BodyText"], fontSize=7, leading=9)
+    story = [Paragraph("STANCOFF COMPANY LIMITED", title_style), Paragraph("Processed Coffee Report", title_style), Spacer(1, 10)]
+
+    filter_parts = []
+    if filters.get("start_date"): filter_parts.append(f"From: {filters['start_date']}")
+    if filters.get("end_date"): filter_parts.append(f"To: {filters['end_date']}")
+    if filters.get("station_id"):
+        s = db.session.get(Station, int(filters["station_id"]))
+        if s: filter_parts.append(f"Station: {s.name}")
+    if filters.get("batch_no"): filter_parts.append(f"Batch: {filters['batch_no']}")
+    if filters.get("process_type"): filter_parts.append(f"Process: {filters['process_type']}")
+    story.append(Paragraph(" | ".join(filter_parts) if filter_parts else "All processed coffee", styles["BodyText"]))
+    story.append(Spacer(1, 8))
+
+    summary_data = [
+        ["Initial kg", "Sorted kg", "Dry kg", "Process Outturn", "Dry Outturn", "Overall Outturn", "Overall Loss kg"],
+        [f"{summary['initial_weight']:,.2f}", f"{summary['sorted_weight']:,.2f}", f"{summary['dry_weight']:,.2f}",
+         f"{summary['processing_outturn']:.2f}%", f"{summary['drying_outturn']:.2f}%", f"{summary['overall_outturn']:.2f}%", f"{summary['overall_loss']:,.2f}"]
+    ]
+    st = Table(summary_data, repeatRows=1, colWidths=[95]*7)
+    st.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#173F35")), ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"), ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("GRID", (0,0), (-1,-1), 0.4, colors.HexColor("#B8C7C1")), ("FONTSIZE", (0,0), (-1,-1), 8),
+        ("BACKGROUND", (0,1), (-1,1), colors.HexColor("#F1F6F4")), ("BOTTOMPADDING", (0,0), (-1,-1), 6), ("TOPPADDING", (0,0), (-1,-1), 6)
+    ]))
+    story.extend([st, Spacer(1, 12)])
+
+    headers = ["Date","Station","Batch","Process","Initial","Sorted","Proc %","A Dry","B Dry","C Dry","Dry Total","Dry %","Overall %","Status"]
+    data = [headers]
+    for r in rows:
+        data.append([
+            r["processing_date"].strftime("%d-%b-%Y"), Paragraph(r["station"], small), r["batch_no"], r["process_type"],
+            f"{r['initial_weight']:,.1f}", f"{r['sorted_total']:,.1f}", f"{r['processing_outturn']:.1f}%",
+            f"{r['grade_a_dry']:,.1f}", f"{r['grade_b_dry']:,.1f}", f"{r['grade_c_dry']:,.1f}",
+            f"{r['dry_total']:,.1f}", f"{r['drying_outturn']:.1f}%", f"{r['overall_outturn']:.1f}%", Paragraph(r["status"], small)
+        ])
+    if not rows:
+        data.append(["No records found"] + [""]*(len(headers)-1))
+
+    widths = [52,72,48,55,48,48,42,45,45,45,50,42,45,75]
+    table = Table(data, repeatRows=1, colWidths=widths)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#173F35")), ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"), ("FONTSIZE", (0,0), (-1,-1), 6.6),
+        ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#C7D3CE")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("ALIGN", (4,1), (12,-1), "RIGHT"), ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F7FAF8")]),
+        ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4)
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(f"Generated on {datetime.utcnow().strftime('%d %b %Y %H:%M')} UTC", small))
+    doc.build(story)
+    output.seek(0)
+    filename = f"Stancoff_Processed_Coffee_Report_{datetime.utcnow().date().isoformat()}.pdf"
+    return send_file(output, as_attachment=True, download_name=filename, mimetype="application/pdf")
 
 
 @app.errorhandler(403)

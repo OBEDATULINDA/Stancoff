@@ -1,0 +1,16 @@
+STANCOFF VERSION 7.3 – PROCESSING REPORTS
+
+ADDED
+- Processed Coffee Reports page under Coffee Operations.
+- Filters: date range, station, batch and process type.
+- Initial processing weight, sorted weight, processing loss/outturn.
+- Grade A/B/C dry outputs.
+- Total dry output, drying loss/outturn and overall dry outturn.
+- Excel export with Detailed and Summary sheets.
+- PDF export for printing/sharing.
+
+DATA SAFETY
+This update adds report code only. It does not add/drop/change database tables or existing records.
+
+DEPLOYMENT
+Upload the contents of Stancoff-main to the same GitHub repository and let Render redeploy. The new XlsxWriter and reportlab dependencies will install automatically from requirements.txt.

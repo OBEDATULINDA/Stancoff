@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Processing Reports · Stancoff{% endblock %}
+{% block page_title %}Processed Coffee Reports{% endblock %}
+{% block page_subtitle %}Initial weight, sorted grades, dry output, losses and outturns{% endblock %}
+{% block content %}
+<div class="section-card">
+  <form method="get" class="form report-filter-form">
+    <label>From date<input type="date" name="start_date" value="{{filters.start_date}}"></label>
+    <label>To date<input type="date" name="end_date" value="{{filters.end_date}}"></label>
+    <label>Station<select name="station_id"><option value="">All stations</option>{% for s in stations %}<option value="{{s.id}}" {% if filters.station_id|string==s.id|string %}selected{% endif %}>{{s.code}} · {{s.name}}</option>{% endfor %}</select></label>
+    <label>Batch<input name="batch_no" value="{{filters.batch_no}}" placeholder="e.g. STA025"></label>
+    <label>Process<select name="process_type"><option value="">All processes</option>{% for p in process_types %}<option {% if filters.process_type==p %}selected{% endif %}>{{p}}</option>{% endfor %}</select></label>
+    <button>Apply filters</button>
+    <a class="button secondary" href="/reports/processing">Clear</a>
+  </form>
+  <div class="report-actions">
+    <a class="button" href="{{ url_for('processing_reports_excel', **filters) }}">Download Excel</a>
+    <a class="button secondary" href="{{ url_for('processing_reports_pdf', **filters) }}">Download PDF</a>
+  </div>
+</div>
+
+<div class="metric-grid report-metrics">
+  <article class="metric-card"><span>Initial coffee processed</span><strong>{{'{:,.2f}'.format(summary.initial_weight)}} kg</strong></article>
+  <article class="metric-card"><span>Total sorted weight</span><strong>{{'{:,.2f}'.format(summary.sorted_weight)}} kg</strong><small>{{'{:.2f}'.format(summary.processing_outturn)}}% processing outturn</small></article>
+  <article class="metric-card"><span>Total dry coffee</span><strong>{{'{:,.2f}'.format(summary.dry_weight)}} kg</strong><small>{{'{:.2f}'.format(summary.overall_outturn)}}% overall dry outturn</small></article>
+  <article class="metric-card"><span>Total weight loss</span><strong>{{'{:,.2f}'.format(summary.overall_loss)}} kg</strong></article>
+</div>
+
+<div class="section-card">
+  <h2>Grade dry output</h2>
+  <div class="grade-summary-grid">
+    <div><span>Grade A</span><strong>{{'{:,.2f}'.format(summary.grade_a_dry)}} kg</strong></div>
+    <div><span>Grade B</span><strong>{{'{:,.2f}'.format(summary.grade_b_dry)}} kg</strong></div>
+    <div><span>Grade C</span><strong>{{'{:,.2f}'.format(summary.grade_c_dry)}} kg</strong></div>
+    <div><span>Drying outturn</span><strong>{{'{:.2f}'.format(summary.drying_outturn)}}%</strong></div>
+  </div>
+</div>
+
+<div class="section-card">
+  <div class="section-heading-row"><div><h2>Processed coffee detail</h2><p class="help-text">Overall outturn = final dry coffee ÷ initial processing weight.</p></div><strong>{{summary.records}} records</strong></div>
+  <div class="table-wrap"><table class="report-table">
+    <thead><tr><th>Date</th><th>Station</th><th>Batch</th><th>Process</th><th>Initial kg</th><th>Sorted kg</th><th>Processing loss</th><th>Proc. outturn</th><th>A dry</th><th>B dry</th><th>C dry</th><th>Dry kg</th><th>Drying loss</th><th>Drying outturn</th><th>Overall outturn</th><th>Moisture</th><th>Status</th></tr></thead>
+    <tbody>{% for r in rows %}<tr>
+      <td>{{r.processing_date}}</td><td>{{r.station}}</td><td><strong>{{r.batch_no}}</strong></td><td>{{r.process_type}}</td>
+      <td>{{'{:,.2f}'.format(r.initial_weight)}}</td><td>{{'{:,.2f}'.format(r.sorted_total)}}</td><td>{{'{:,.2f}'.format(r.processing_loss)}}</td><td>{{'{:.2f}'.format(r.processing_outturn)}}%</td>
+      <td>{{'{:,.2f}'.format(r.grade_a_dry)}}</td><td>{{'{:,.2f}'.format(r.grade_b_dry)}}</td><td>{{'{:,.2f}'.format(r.grade_c_dry)}}</td><td><strong>{{'{:,.2f}'.format(r.dry_total)}}</strong></td>
+      <td>{{'{:,.2f}'.format(r.drying_loss)}}</td><td>{{'{:.2f}'.format(r.drying_outturn)}}%</td><td><strong>{{'{:.2f}'.format(r.overall_outturn)}}%</strong></td><td>{{'{:.2f}%'.format(r.final_moisture) if r.final_moisture is not none else '—'}}</td><td>{{r.status}}</td>
+    </tr>{% else %}<tr><td colspan="17" class="empty">No processed coffee matches these filters.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

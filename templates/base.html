@@ -20,7 +20,7 @@
     <nav class="side-nav">
       <a href="/" class="{% if request.path=='/' %}active{% endif %}">Dashboard</a>
 
-      {% set coffee_open = request.path.startswith('/suppliers') or request.path.startswith('/batches') or request.path.startswith('/purchases') or request.path.startswith('/processing') or request.path.startswith('/drying') or request.path.startswith('/inventory') or request.path.startswith('/locations') or request.path.startswith('/stations') or request.path.startswith('/station-transfers') or request.path.startswith('/sales') or request.path.startswith('/dispatch') or request.path.startswith('/prices') %}
+      {% set coffee_open = request.path.startswith('/suppliers') or request.path.startswith('/batches') or request.path.startswith('/purchases') or request.path.startswith('/processing') or request.path.startswith('/drying') or request.path.startswith('/inventory') or request.path.startswith('/locations') or request.path.startswith('/stations') or request.path.startswith('/station-transfers') or request.path.startswith('/sales') or request.path.startswith('/dispatch') or request.path.startswith('/prices') or request.path.startswith('/reports/processing') %}
       {% if current_role in ['Admin','Manager','Receiving Clerk','Processing Supervisor','Storekeeper'] %}
       <details class="nav-group" data-nav-group="coffee" {% if coffee_open %}open{% endif %}>
         <summary>Coffee operations</summary>
@@ -43,6 +43,9 @@
           {% endif %}
           {% if current_role in ['Admin','Manager'] %}
           <a href="/prices" class="{% if request.path.startswith('/prices') %}active{% endif %}">Price history</a>
+          {% endif %}
+          {% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
+          <a href="/reports/processing" class="{% if request.path.startswith('/reports/processing') %}active{% endif %}">Processing Reports</a>
           {% endif %}
         </div>
       </details>
