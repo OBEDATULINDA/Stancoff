@@ -3050,23 +3050,22 @@ def _processed_report_filters():
 
 
 def _dry_output_for_record(drying_row):
-    """Return final dry output already produced for one drying record.
+    """Return the final dry weight for one drying record.
 
-    Finish Drying movements are the source of truth because they preserve partial
-    completions. Older records that pre-date Finish Drying fall back to the dry
-    weight saved directly on the drying record.
+    The saved Drying.dry_weight is the primary source of truth because it is the
+    final dry coffee weight recorded for that grade. Finish Drying movement totals
+    are used only as a fallback for records where no final dry weight has yet been
+    saved.
     """
+    if drying_row.dry_weight is not None and float(drying_row.dry_weight or 0) > 0:
+        return float(drying_row.dry_weight or 0)
+
     finished = db.session.query(func.coalesce(func.sum(CoffeeMovement.weight), 0.0)).filter(
         CoffeeMovement.drying_id == drying_row.id,
         CoffeeMovement.status == "Active",
         CoffeeMovement.movement_type.like("Finished Drying%"),
     ).scalar() or 0.0
-    finished = float(finished)
-    if finished > 0:
-        return finished
-    if drying_row.dry_weight is not None and drying_row.drying_status in {"Completed", "Partially Completed"}:
-        return float(drying_row.dry_weight or 0)
-    return 0.0
+    return float(finished or 0)
 
 
 def build_processed_coffee_report(filters):
@@ -3175,6 +3174,9 @@ def build_processed_coffee_report(filters):
         "processing_outturn": (total_sorted / total_initial * 100) if total_initial else 0.0,
         "drying_outturn": (total_dry / total_sorted * 100) if total_sorted else 0.0,
         "overall_outturn": (total_dry / total_initial * 100) if total_initial else 0.0,
+        "grade_a_wet": sum(r["grade_a_sorted"] for r in rows),
+        "grade_b_wet": sum(r["grade_b_sorted"] for r in rows),
+        "grade_c_wet": sum(r["grade_c_sorted"] for r in rows),
         "grade_a_dry": sum(r["grade_a_dry"] for r in rows),
         "grade_b_dry": sum(r["grade_b_dry"] for r in rows),
         "grade_c_dry": sum(r["grade_c_dry"] for r in rows),
@@ -3219,7 +3221,7 @@ def processing_reports_excel():
 
     headers = [
         "Processing No", "Processing Date", "Station", "Batch", "Process",
-        "Initial kg", "Grade A Sorted kg", "Grade B Sorted kg", "Grade C Sorted kg",
+        "Initial kg", "Grade A Wet kg", "Grade B Wet kg", "Grade C Wet kg",
         "Total Sorted kg", "Processing Loss kg", "Processing Outturn %", "Drying Input kg",
         "Grade A Dry kg", "Grade B Dry kg", "Grade C Dry kg", "Total Dry kg",
         "Drying Loss kg", "Drying Outturn %", "Overall Loss kg", "Overall Outturn %",
@@ -3269,6 +3271,9 @@ def processing_reports_excel():
         ("Processing Outturn (%)", summary["processing_outturn"]),
         ("Drying Outturn (%)", summary["drying_outturn"]),
         ("Overall Dry Outturn (%)", summary["overall_outturn"]),
+        ("Grade A Wet (kg)", summary["grade_a_wet"]),
+        ("Grade B Wet (kg)", summary["grade_b_wet"]),
+        ("Grade C Wet (kg)", summary["grade_c_wet"]),
         ("Grade A Dry (kg)", summary["grade_a_dry"]),
         ("Grade B Dry (kg)", summary["grade_b_dry"]),
         ("Grade C Dry (kg)", summary["grade_c_dry"]),
@@ -3326,25 +3331,26 @@ def processing_reports_pdf():
     ]))
     story.extend([st, Spacer(1, 12)])
 
-    headers = ["Date","Station","Batch","Process","Initial","Sorted","Proc %","A Dry","B Dry","C Dry","Dry Total","Dry %","Overall %","Status"]
+    headers = ["Date","Station","Batch","Process","Initial","A Wet","B Wet","C Wet","Sorted","Proc %","A Dry","B Dry","C Dry","Dry Total","Dry %","Overall %","Status"]
     data = [headers]
     for r in rows:
         data.append([
             r["processing_date"].strftime("%d-%b-%Y"), Paragraph(r["station"], small), r["batch_no"], r["process_type"],
-            f"{r['initial_weight']:,.1f}", f"{r['sorted_total']:,.1f}", f"{r['processing_outturn']:.1f}%",
+            f"{r['initial_weight']:,.1f}", f"{r['grade_a_sorted']:,.1f}", f"{r['grade_b_sorted']:,.1f}", f"{r['grade_c_sorted']:,.1f}",
+            f"{r['sorted_total']:,.1f}", f"{r['processing_outturn']:.1f}%",
             f"{r['grade_a_dry']:,.1f}", f"{r['grade_b_dry']:,.1f}", f"{r['grade_c_dry']:,.1f}",
             f"{r['dry_total']:,.1f}", f"{r['drying_outturn']:.1f}%", f"{r['overall_outturn']:.1f}%", Paragraph(r["status"], small)
         ])
     if not rows:
         data.append(["No records found"] + [""]*(len(headers)-1))
 
-    widths = [52,72,48,55,48,48,42,45,45,45,50,42,45,75]
+    widths = [45,62,43,48,42,38,38,38,42,38,38,38,38,45,38,40,67]
     table = Table(data, repeatRows=1, colWidths=widths)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#173F35")), ("TEXTCOLOR", (0,0), (-1,0), colors.white),
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"), ("FONTSIZE", (0,0), (-1,-1), 6.6),
         ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#C7D3CE")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("ALIGN", (4,1), (12,-1), "RIGHT"), ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F7FAF8")]),
+        ("ALIGN", (4,1), (15,-1), "RIGHT"), ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F7FAF8")]),
         ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4)
     ]))
     story.append(table)

@@ -1,0 +1,15 @@
+STANCOFF VERSION 7.3.1
+
+CHANGES
+1. Processing report now includes wet Grade A, Grade B and Grade C columns.
+2. Dry Grade A, B and C remain separate columns.
+3. The report now treats Drying.dry_weight as the primary final dry weight.
+4. Finish Drying movement totals are used only as a fallback if a drying record has no saved final dry weight.
+5. Excel and PDF reports include wet-grade columns.
+6. Summary sheet/page includes wet-grade totals and dry-grade totals.
+
+WHY THIS FIXES WRONG BATCH VOLUMES
+A report could previously prefer accumulated Finish Drying movement quantities even when a final dry weight had already been saved on the drying record. The final saved dry weight is now the report's source of truth.
+
+DATABASE SAFETY
+No database tables or stored records are changed. This update changes report calculation/display logic only.
