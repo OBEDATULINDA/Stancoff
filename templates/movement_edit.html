@@ -36,7 +36,8 @@
     {% if not can_change_stock %}<input type="hidden" name="to_location_id" value="{{ movement.to_location_id }}">{% endif %}
   </label>
   <label>Movement date<input type="date" name="movement_date" value="{{ movement.movement_date.isoformat() }}" required></label>
-  <label>Weight moved (kg)<input type="number" min="0.01" step="0.01" name="weight" value="{{ movement.weight }}" {% if not can_change_stock %}readonly{% endif %} required></label>
+  <label>Source weight (kg)<input type="number" min="0.01" step="0.01" name="source_weight" value="{{ movement.source_weight if movement.source_weight is not none else movement.weight }}" {% if not can_change_stock %}readonly{% endif %} required></label>
+  <label>New / current destination weight (kg)<input type="number" min="0.01" step="0.01" name="weight" value="{{ movement.weight }}" {% if not can_change_stock %}readonly{% endif %} required></label>
   <label>Moisture %<input type="number" min="0" max="100" step="0.01" name="moisture" value="{{ movement.moisture if movement.moisture is not none else '' }}"></label>
   <label>Moved by<input name="moved_by" value="{{ movement.moved_by or '' }}"></label>
   <label class="form-wide">Reason / notes<textarea name="reason" rows="3">{{ movement.reason or '' }}</textarea></label>

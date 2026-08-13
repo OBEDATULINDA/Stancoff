@@ -98,6 +98,7 @@ class Processing(db.Model):
     processing_no = db.Column(db.String(30), unique=True, nullable=False)
     processing_date = db.Column(db.Date, nullable=False)
     batch_id = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False, unique=True)
+    station_id = db.Column(db.Integer, db.ForeignKey("station.id"))
     input_weight = db.Column(db.Float, nullable=False)
     grade_a_weight = db.Column(db.Float, nullable=False, default=0)
     grade_b_weight = db.Column(db.Float, nullable=False, default=0)
@@ -114,6 +115,7 @@ class Processing(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     batch = db.relationship("Batch")
+    station = db.relationship("Station", foreign_keys=[station_id])
 
 class Drying(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -440,6 +442,11 @@ def ensure_multistation_schema():
         columns = {c["name"] for c in inspector.get_columns("location")}
         if "station_id" not in columns:
             db.session.execute(text("ALTER TABLE location ADD COLUMN station_id INTEGER"))
+            db.session.commit()
+    if "processing" in table_names:
+        processing_columns = {c["name"] for c in inspector.get_columns("processing")}
+        if "station_id" not in processing_columns:
+            db.session.execute(text("ALTER TABLE processing ADD COLUMN station_id INTEGER"))
             db.session.commit()
     if "coffee_movement" in table_names:
         movement_columns = {c["name"] for c in inspector.get_columns("coffee_movement")}
@@ -943,6 +950,11 @@ def purchase_delete(id):
 def processing():
     if request.method == "POST":
         batch_id = int(request.form["batch_id"])
+        station_id = int(request.form.get("station_id") or 0)
+        station = db.session.get(Station, station_id)
+        if not station or station.status != "Active":
+            flash("Select an active station where processing is taking place.")
+            return redirect(url_for("processing"))
         if Processing.query.filter_by(batch_id=batch_id).first():
             flash("This batch already has a processing record. Open it and use Edit.")
             return redirect(url_for("processing"))
@@ -969,6 +981,7 @@ def processing():
             processing_no=next_code(Processing, "processing_no", "PRO", 6),
             processing_date=datetime.strptime(request.form["processing_date"], "%Y-%m-%d").date(),
             batch_id=batch_id,
+            station_id=station.id,
             input_weight=input_weight,
             grade_a_weight=grade_a,
             grade_b_weight=grade_b,
@@ -1003,7 +1016,8 @@ def processing():
         rows=Processing.query.order_by(Processing.id.desc()).all(),
         batches=batches,
         purchase_totals=purchase_totals,
-        next_processing=next_code(Processing, "processing_no", "PRO", 6)
+        next_processing=next_code(Processing, "processing_no", "PRO", 6),
+        stations=Station.query.filter_by(status="Active").order_by(Station.name).all(),
     )
 
 @app.route("/processing/<int:id>/edit", methods=["GET", "POST"])
@@ -1018,6 +1032,11 @@ def processing_edit(id):
         return redirect(url_for("processing"))
 
     if request.method == "POST":
+        station_id = int(request.form.get("station_id") or 0)
+        station = db.session.get(Station, station_id)
+        if not station or station.status != "Active":
+            flash("Select an active processing station.")
+            return redirect(url_for("processing_edit", id=id))
         input_weight = float(request.form["input_weight"] or 0)
         grade_a = float(request.form.get("grade_a_weight") or 0)
         grade_b = float(request.form.get("grade_b_weight") or 0)
@@ -1029,6 +1048,7 @@ def processing_edit(id):
             return redirect(url_for("processing_edit", id=id))
 
         record.processing_date = datetime.strptime(request.form["processing_date"], "%Y-%m-%d").date()
+        record.station_id = station.id
         record.input_weight = input_weight
         record.grade_a_weight = grade_a
         record.grade_b_weight = grade_b
@@ -1044,7 +1064,11 @@ def processing_edit(id):
         flash("Processing record updated.")
         return redirect(url_for("processing"))
 
-    return render_template("processing_edit.html", row=record)
+    return render_template(
+        "processing_edit.html",
+        row=record,
+        stations=Station.query.filter_by(status="Active").order_by(Station.name).all(),
+    )
 
 @app.route("/processing/<int:id>/void", methods=["POST"])
 @permission_required("processing")
@@ -1114,6 +1138,15 @@ def drying():
             flash("Dry weight cannot be negative or greater than the input weight.")
             return redirect(url_for("drying"))
 
+        drying_location_id = int(request.form.get("drying_location_id") or 0)
+        drying_location = db.session.get(Location, drying_location_id)
+        if not drying_location or drying_location.status != "Active" or drying_location.location_type != "Drying Area":
+            flash("Select an active drying area.")
+            return redirect(url_for("drying"))
+        if process.station_id and drying_location.station_id != process.station_id:
+            flash("The drying area must belong to the same station where this processing record started.")
+            return redirect(url_for("drying"))
+
         start_date = datetime.strptime(request.form["start_date"], "%Y-%m-%d").date()
         end_text = request.form.get("end_date")
         end_date = datetime.strptime(end_text, "%Y-%m-%d").date() if end_text else None
@@ -1136,7 +1169,7 @@ def drying():
             drying_loss=loss,
             outturn_percent=outturn,
             moisture=float(request.form["moisture"]) if request.form.get("moisture") else None,
-            drying_location=request.form.get("drying_location"),
+            drying_location=drying_location.name,
             dried_by=request.form.get("dried_by"),
             drying_status=drying_status,
             notes=request.form.get("notes"),
@@ -1168,7 +1201,12 @@ def drying():
         processes=active_processes,
         grade_weights=grade_weights,
         finishable_ids=finishable_ids,
-        next_drying=next_code(Drying, "drying_no", "DRY", 6)
+        next_drying=next_code(Drying, "drying_no", "DRY", 6),
+        drying_locations=Location.query.join(Station).filter(
+            Location.status == "Active",
+            Location.location_type == "Drying Area",
+            Station.status == "Active",
+        ).order_by(Station.name, Location.name).all(),
     )
 
 
@@ -1337,15 +1375,27 @@ def finish_drying(id):
         log_action("CREATE", "Finish Drying", movement.id, movement.movement_no)
         flash(f"{dry_weight:,.2f} kg dry coffee stored from {wet_weight:,.2f} kg wet coffee at {destination.station.name} · {destination.name}.")
         if transfer:
-            return redirect(url_for("station_transfer_print", id=transfer.id))
-        return redirect(url_for("inventory_movement_print", id=movement.id))
+            flash(f"Transfer {transfer.transfer_no} was created. You can print its moving form from Station Transfers.")
+        else:
+            flash(f"Movement {movement.movement_no} was saved. You can print its moving form from Storage & Inventory.")
+        return redirect(url_for("drying"))
 
+    current_total_weight = db.session.query(func.coalesce(func.sum(CoffeeStock.weight), 0.0)).filter(
+        CoffeeStock.drying_id == row.id,
+        CoffeeStock.weight > 0.0001,
+    ).scalar() or 0.0
+    current_outturn = (
+        float(current_total_weight) / float(row.input_weight or 0) * 100
+        if row.input_weight else 0
+    )
     return render_template(
         "finish_drying.html",
         row=row,
         source_stocks=source_stocks,
         destinations=destinations,
         today=datetime.utcnow().date().isoformat(),
+        current_total_weight=float(current_total_weight),
+        current_outturn=current_outturn,
     )
 
 
@@ -1435,9 +1485,19 @@ def ensure_initial_stock():
         if existing or movement:
             continue
         location_name = (row.drying_location or "Unspecified Drying Area").strip()
-        location = Location.query.filter(func.lower(Location.name) == location_name.lower()).first()
+        station_id = row.processing.station_id if row.processing and row.processing.station_id else None
+        location_query = Location.query.filter(func.lower(Location.name) == location_name.lower())
+        if station_id:
+            location_query = location_query.filter(Location.station_id == station_id)
+        location = location_query.first()
         if not location:
-            location = Location(name=location_name, location_type="Drying Area", status="Active", station_id=Station.query.order_by(Station.id).first().id)
+            fallback_station = db.session.get(Station, station_id) if station_id else Station.query.order_by(Station.id).first()
+            location = Location(
+                name=location_name,
+                location_type="Drying Area",
+                status="Active",
+                station_id=fallback_station.id if fallback_station else None,
+            )
             db.session.add(location)
             db.session.flush()
         starting_weight = float(row.dry_weight if row.drying_status == "Completed" and row.dry_weight is not None else row.input_weight or 0)
@@ -1595,7 +1655,7 @@ def station_transfers():
             for source, destination, weight, moisture, bag_count in prepared:
                 # At dispatch, remove coffee from the sending location. The receiving
                 # station adds the actual received weight only when it confirms receipt.
-                source.weight = max(0, float(source.weight or 0) - weight)
+                source.weight = max(0, float(source.weight or 0) - source_weight)
 
                 movement = CoffeeMovement(
                     movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6),
@@ -1854,15 +1914,19 @@ def inventory():
         destination_id = int(request.form["to_location_id"])
         source = CoffeeStock.query.get_or_404(source_id)
         destination = Location.query.get_or_404(destination_id)
-        weight = float(request.form.get("weight") or 0)
+        source_weight = float(request.form.get("source_weight") or 0)
+        current_weight = float(request.form.get("current_weight") or 0)
         if source.weight <= 0:
             flash("The selected source has no available coffee.")
             return redirect(url_for("inventory"))
         if source.location_id == destination.id:
             flash("Choose a different destination.")
             return redirect(url_for("inventory"))
-        if weight <= 0 or weight > source.weight + 0.0001:
-            flash(f"Movement weight must be greater than zero and cannot exceed {source.weight:,.2f} kg.")
+        if source_weight <= 0 or source_weight > source.weight + 0.0001:
+            flash(f"Weight leaving the current location must be greater than zero and cannot exceed {source.weight:,.2f} kg.")
+            return redirect(url_for("inventory"))
+        if current_weight <= 0 or current_weight > source_weight + 0.0001:
+            flash("The new/current weight must be greater than zero and cannot exceed the weight leaving the source.")
             return redirect(url_for("inventory"))
 
         moisture = float(request.form["moisture"]) if request.form.get("moisture") else source.moisture
@@ -1880,10 +1944,10 @@ def inventory():
                 moisture=moisture,
             )
             db.session.add(destination_stock)
-        new_total = old_destination_weight + weight
+        new_total = old_destination_weight + current_weight
         if moisture is not None:
             old_m = float(destination_stock.moisture or moisture)
-            destination_stock.moisture = ((old_destination_weight * old_m) + (weight * moisture)) / new_total if new_total else moisture
+            destination_stock.moisture = ((old_destination_weight * old_m) + (current_weight * moisture)) / new_total if new_total else moisture
         destination_stock.weight = new_total
         destination_stock.stock_status = stock_status_for_location(destination.location_type)
 
@@ -1903,7 +1967,8 @@ def inventory():
             from_location_id=source.location_id,
             to_location_id=destination.id,
             movement_date=datetime.strptime(request.form["movement_date"], "%Y-%m-%d").date(),
-            weight=weight,
+            weight=current_weight,
+            source_weight=source_weight,
             moisture=moisture,
             movement_type=movement_type,
             reason=request.form.get("reason"),
@@ -1916,7 +1981,12 @@ def inventory():
             batch.status = movement_type
         db.session.commit()
         log_action("CREATE", "Inventory Movement", movement.id, movement.movement_no)
-        flash(f"Movement saved. {weight:,.2f} kg moved to {destination.name}.")
+        movement_outturn = (current_weight / source_weight * 100) if source_weight else 0
+        flash(
+            f"Movement saved. {source_weight:,.2f} kg left the source and "
+            f"{current_weight:,.2f} kg is now recorded at {destination.name} "
+            f"({movement_outturn:.1f}% movement outturn)."
+        )
         return redirect(url_for("inventory"))
 
     stocks = CoffeeStock.query.filter(CoffeeStock.weight > 0.0001).order_by(CoffeeStock.updated_at.desc()).all()
@@ -1932,6 +2002,15 @@ def inventory():
         station_name = stock.location.station.name if stock.location.station else "Unassigned"
         station_totals.setdefault(station_name, 0.0)
         station_totals[station_name] += float(stock.weight or 0)
+    current_outturns = {}
+    for stock in stocks:
+        drying_total = db.session.query(func.coalesce(func.sum(CoffeeStock.weight), 0.0)).filter(
+            CoffeeStock.drying_id == stock.drying_id,
+            CoffeeStock.weight > 0.0001,
+        ).scalar() or 0.0
+        input_weight = float(stock.drying.input_weight or 0) if stock.drying else 0
+        current_outturns[stock.drying_id] = (float(drying_total) / input_weight * 100) if input_weight else 0
+
     return render_template(
         "inventory.html",
         stocks=stocks,
@@ -1942,6 +2021,7 @@ def inventory():
         location_totals=location_totals,
         station_totals=station_totals,
         next_movement=next_code(CoffeeMovement, "movement_no", "MOV", 6),
+        current_outturns=current_outturns,
     )
 
 
@@ -1994,6 +2074,7 @@ def inventory_movement_edit(id):
         if can_change_stock:
             try:
                 new_destination_id = int(request.form["to_location_id"])
+                new_source_weight = float(request.form.get("source_weight") or 0)
                 new_weight = float(request.form.get("weight") or 0)
             except (KeyError, TypeError, ValueError):
                 flash("Enter a valid destination and movement weight.")
@@ -2003,8 +2084,11 @@ def inventory_movement_edit(id):
             if new_destination.id == movement.from_location_id:
                 flash("The destination must be different from the source location.")
                 return redirect(url_for("inventory_movement_edit", id=id))
-            if new_weight <= 0:
-                flash("Movement weight must be greater than zero.")
+            if new_source_weight <= 0:
+                flash("Source weight must be greater than zero.")
+                return redirect(url_for("inventory_movement_edit", id=id))
+            if new_weight <= 0 or new_weight > new_source_weight + 0.0001:
+                flash("The new/current destination weight must be greater than zero and cannot exceed the source weight.")
                 return redirect(url_for("inventory_movement_edit", id=id))
             if not destination_stock or float(destination_stock.weight or 0) + 0.0001 < float(movement.weight or 0):
                 flash("Weight or destination cannot be changed because the original destination no longer holds enough coffee to reverse this movement.")
@@ -2027,12 +2111,13 @@ def inventory_movement_edit(id):
                 db.session.flush()
 
             # Reverse the original movement first.
+            original_source_weight = float(movement.source_weight if movement.source_weight is not None else movement.weight or 0)
             destination_stock.weight = max(0, float(destination_stock.weight or 0) - float(movement.weight or 0))
-            source_stock.weight = float(source_stock.weight or 0) + float(movement.weight or 0)
+            source_stock.weight = float(source_stock.weight or 0) + original_source_weight
 
-            if new_weight > float(source_stock.weight or 0) + 0.0001:
+            if new_source_weight > float(source_stock.weight or 0) + 0.0001:
                 db.session.rollback()
-                flash(f"The revised weight cannot exceed the available source balance of {source_stock.weight:,.2f} kg.")
+                flash(f"The revised source weight cannot exceed the available source balance of {source_stock.weight:,.2f} kg.")
                 return redirect(url_for("inventory_movement_edit", id=id))
 
             revised_destination_stock = CoffeeStock.query.filter_by(
@@ -2057,10 +2142,11 @@ def inventory_movement_edit(id):
                 revised_destination_stock.moisture = ((old_revised_weight * old_m) + (new_weight * moisture)) / new_total if new_total else moisture
             revised_destination_stock.weight = new_total
             revised_destination_stock.stock_status = stock_status_for_location(new_destination.location_type)
-            source_stock.weight = max(0, float(source_stock.weight or 0) - new_weight)
+            source_stock.weight = max(0, float(source_stock.weight or 0) - new_source_weight)
             source_stock.stock_status = stock_status_for_location(movement.from_location.location_type)
 
             movement.to_location_id = new_destination.id
+            movement.source_weight = new_source_weight
             movement.weight = new_weight
             movement.movement_type = {
                 "Drying Area": "Return to Drying",
@@ -2125,8 +2211,9 @@ def inventory_movement_void(id):
             stock_status=stock_status_for_location(movement.from_location.location_type)
         )
         db.session.add(source_stock)
+    original_source_weight = float(movement.source_weight if movement.source_weight is not None else movement.weight or 0)
     destination_stock.weight = max(0, destination_stock.weight - movement.weight)
-    source_stock.weight += movement.weight
+    source_stock.weight += original_source_weight
     source_stock.moisture = movement.moisture
     movement.status = "Voided"
     movement.void_reason = reason

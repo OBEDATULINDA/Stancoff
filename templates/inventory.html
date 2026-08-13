@@ -20,7 +20,12 @@
     <label>Move coffee from<select name="source_stock_id" id="sourceStock" required><option value="">Select current coffee</option>{% for s in stocks %}<option value="{{ s.id }}" data-weight="{{ s.weight }}" data-location="{{ s.location_id }}">{{ s.batch.batch_no }} · {{ s.grade }} · {{ s.location.station.name if s.location.station else 'Unassigned' }} / {{ s.location.name }} · {{ '{:,.2f}'.format(s.weight) }} kg</option>{% endfor %}</select></label>
     <label>Move coffee to<select name="to_location_id" id="destination" required><option value="">Select destination</option>{% for l in locations %}<option value="{{ l.id }}">{{ l.station.name if l.station else 'Unassigned' }} / {{ l.name }} · {{ l.location_type }}</option>{% endfor %}</select></label>
     <label>Movement date<input type="date" name="movement_date" id="movementDate" required></label>
-    <label>Weight to move (kg)<input type="number" min="0.01" step="0.01" name="weight" id="moveWeight" required></label>
+    <label>Weight leaving current location (kg)<input type="number" min="0.01" step="0.01" name="source_weight" id="sourceWeight" required></label>
+    <label>New / current weight at destination (kg)<input type="number" min="0.01" step="0.01" name="current_weight" id="currentWeight" required><small>If there was no weight change, enter the same weight. If semi-dry coffee lost weight, enter the new measured weight.</small></label>
+    <div class="calculation-box form-wide">
+      <div><span>Weight difference</span><strong id="movementLoss">0.00 kg</strong></div>
+      <div><span>Current movement outturn</span><strong id="movementOutturn">100.00%</strong></div>
+    </div>
     <label>Moisture %<input type="number" min="0" max="100" step="0.01" name="moisture" placeholder="Optional"></label>
     <label>Moved by<input name="moved_by" placeholder="Responsible person"></label>
     <label class="form-wide">Reason / notes<textarea name="reason" rows="2" placeholder="Example: rain expected, night storage, drying complete"></textarea></label>
@@ -29,22 +34,47 @@
 </section>
 <section class="panel" style="margin-top:18px">
   <div class="panel-heading"><div><span class="eyebrow">Current position</span><h2>Live inventory</h2></div></div>
-  <div class="table-scroll"><table><thead><tr><th>Batch</th><th>Grade</th><th>Station</th><th>Current location</th><th>Type</th><th>Weight</th><th>Moisture</th><th>Status</th><th>History</th></tr></thead><tbody>
-  {% for s in stocks %}<tr><td><strong>{{ s.batch.batch_no }}</strong></td><td>{{ s.grade }}</td><td>{{ s.location.station.name if s.location.station else 'Unassigned' }}</td><td>{{ s.location.name }}</td><td>{{ s.location.location_type }}</td><td>{{ '{:,.2f}'.format(s.weight) }} kg</td><td>{{ '{:.2f}%'.format(s.moisture) if s.moisture is not none else '—' }}</td><td>{{ s.stock_status }}</td><td><a class="small-button" href="{{ url_for('inventory_batch_history', batch_id=s.batch_id) }}">View batch</a></td></tr>
-  {% else %}<tr><td colspan="9" class="empty">No drying coffee is available for inventory yet.</td></tr>{% endfor %}
+  <div class="table-scroll"><table><thead><tr><th>Batch</th><th>Grade</th><th>Station</th><th>Current location</th><th>Type</th><th>Weight</th><th>Current outturn</th><th>Moisture</th><th>Status</th><th>History</th></tr></thead><tbody>
+  {% for s in stocks %}<tr><td><strong>{{ s.batch.batch_no }}</strong></td><td>{{ s.grade }}</td><td>{{ s.location.station.name if s.location.station else 'Unassigned' }}</td><td>{{ s.location.name }}</td><td>{{ s.location.location_type }}</td><td>{{ '{:,.2f}'.format(s.weight) }} kg</td><td>{{ '{:.1f}%'.format(current_outturns.get(s.drying_id,0)) }}</td><td>{{ '{:.2f}%'.format(s.moisture) if s.moisture is not none else '—' }}</td><td>{{ s.stock_status }}</td><td><a class="small-button" href="{{ url_for('inventory_batch_history', batch_id=s.batch_id) }}">View batch</a></td></tr>
+  {% else %}<tr><td colspan="10" class="empty">No drying coffee is available for inventory yet.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 <section class="panel" style="margin-top:18px">
   <div class="panel-heading"><div><span class="eyebrow">Audit trail</span><h2>Movement history</h2></div></div>
-  <div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Grade</th><th>From station/location</th><th>To station/location</th><th>Weight</th><th>Moisture</th><th>Type</th><th>Status</th><th>Moving form</th><th>Action</th></tr></thead><tbody>
-  {% for m in movements %}<tr class="{% if m.status=='Voided' %}voided-row{% endif %}"><td><strong>{{ m.movement_no }}</strong></td><td>{{ m.movement_date }}</td><td>{{ m.batch.batch_no }}</td><td>{{ m.grade }}</td><td>{{ m.from_location.station.name if m.from_location.station else 'Unassigned' }} / {{ m.from_location.name }}</td><td>{{ m.to_location.station.name if m.to_location.station else 'Unassigned' }} / {{ m.to_location.name }}</td><td>{{ '{:,.2f}'.format(m.weight) }} kg</td><td>{{ '{:.2f}%'.format(m.moisture) if m.moisture is not none else '—' }}</td><td>{{ m.movement_type }}</td><td>{{ m.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('inventory_movement_print', id=m.id) }}">Print</a></td><td>{% if m.status!='Voided' %}<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><a class="small-button" href="{{ url_for('inventory_movement_edit', id=m.id) }}">Edit</a><form method="post" action="{{ url_for('inventory_movement_void', id=m.id) }}" class="inline-void" onsubmit="return confirm('Reverse and void this movement?')"><input name="void_reason" required placeholder="Reason"><button class="small-button danger">Void</button></form></div>{% else %}<small>{{ m.void_reason }}</small>{% endif %}</td></tr>
-  {% else %}<tr><td colspan="12" class="empty">No movements recorded yet.</td></tr>{% endfor %}
+  <div class="table-scroll"><table><thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Grade</th><th>From station/location</th><th>To station/location</th><th>Source kg</th><th>New kg</th><th>Movement outturn</th><th>Moisture</th><th>Type</th><th>Status</th><th>Moving form</th><th>Action</th></tr></thead><tbody>
+  {% for m in movements %}<tr class="{% if m.status=='Voided' %}voided-row{% endif %}"><td><strong>{{ m.movement_no }}</strong></td><td>{{ m.movement_date }}</td><td>{{ m.batch.batch_no }}</td><td>{{ m.grade }}</td><td>{{ m.from_location.station.name if m.from_location.station else 'Unassigned' }} / {{ m.from_location.name }}</td><td>{{ m.to_location.station.name if m.to_location.station else 'Unassigned' }} / {{ m.to_location.name }}</td><td>{{ '{:,.2f}'.format(m.source_weight if m.source_weight is not none else m.weight) }} kg</td><td>{{ '{:,.2f}'.format(m.weight) }} kg</td><td>{{ '{:.1f}%'.format((m.weight / (m.source_weight if m.source_weight is not none else m.weight) * 100) if (m.source_weight if m.source_weight is not none else m.weight) else 0) }}</td><td>{{ '{:.2f}%'.format(m.moisture) if m.moisture is not none else '—' }}</td><td>{{ m.movement_type }}</td><td>{{ m.status }}</td><td><a class="small-button" target="_blank" href="{{ url_for('inventory_movement_print', id=m.id) }}">Print</a></td><td>{% if m.status!='Voided' %}<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><a class="small-button" href="{{ url_for('inventory_movement_edit', id=m.id) }}">Edit</a><form method="post" action="{{ url_for('inventory_movement_void', id=m.id) }}" class="inline-void" onsubmit="return confirm('Reverse and void this movement?')"><input name="void_reason" required placeholder="Reason"><button class="small-button danger">Void</button></form></div>{% else %}<small>{{ m.void_reason }}</small>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="14" class="empty">No movements recorded yet.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 {% endblock %}
 {% block scripts %}<script>
-const source=document.getElementById('sourceStock'), weight=document.getElementById('moveWeight'), destination=document.getElementById('destination');
+const source=document.getElementById('sourceStock');
+const sourceWeight=document.getElementById('sourceWeight');
+const currentWeight=document.getElementById('currentWeight');
+const destination=document.getElementById('destination');
 document.getElementById('movementDate').valueAsDate=new Date();
-source.addEventListener('change',()=>{const o=source.selectedOptions[0]; if(o&&o.dataset.weight) weight.value=o.dataset.weight;});
-document.getElementById('movementForm').addEventListener('submit',e=>{const o=source.selectedOptions[0]; if(!o)return; const max=Number(o.dataset.weight||0), qty=Number(weight.value||0); if(qty>max){e.preventDefault();alert('You cannot move more than the available weight.');} if(destination.value===o.dataset.location){e.preventDefault();alert('Choose a different destination.');}});
+
+function refreshMovementCalc(){
+  const sent=Number(sourceWeight.value||0), current=Number(currentWeight.value||0);
+  const loss=Math.max(0,sent-current);
+  const outturn=sent>0 ? current/sent*100 : 0;
+  document.getElementById('movementLoss').textContent=loss.toFixed(2)+' kg';
+  document.getElementById('movementOutturn').textContent=outturn.toFixed(2)+'%';
+}
+source.addEventListener('change',()=>{
+  const o=source.selectedOptions[0];
+  if(o&&o.dataset.weight){
+    sourceWeight.value=o.dataset.weight;
+    currentWeight.value=o.dataset.weight;
+    refreshMovementCalc();
+  }
+});
+[sourceWeight,currentWeight].forEach(x=>x.addEventListener('input',refreshMovementCalc));
+document.getElementById('movementForm').addEventListener('submit',e=>{
+  const o=source.selectedOptions[0]; if(!o)return;
+  const max=Number(o.dataset.weight||0), sent=Number(sourceWeight.value||0), current=Number(currentWeight.value||0);
+  if(sent>max){e.preventDefault();alert('You cannot move more than the available weight.');return;}
+  if(current<=0||current>sent){e.preventDefault();alert('The new/current destination weight must be above zero and cannot exceed the source weight.');return;}
+  if(destination.value===o.dataset.location){e.preventDefault();alert('Choose a different destination.');}
+});
 </script>{% endblock %}
