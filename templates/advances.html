@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block page_title %}Salary Advances{% endblock %}
+{% block page_subtitle %}Record advances for monthly-paid workers{% endblock %}
+{% block content %}
+<div class="section-card">
+  <h2>Record salary advance</h2>
+  <p class="help-text">The normal advance date is two weeks after the employee’s own monthly cycle starts. It is deducted automatically from that cycle’s salary.</p>
+  <form method="post" class="form">
+    <label>Worker<select name="casual_id" id="advance-worker" required>
+      <option value="">Select worker</option>
+      {% for c in workers %}<option value="{{c.id}}">{{c.code}} - {{c.name}} · {{c.pay_frequency or 'Daily'}}</option>{% endfor %}
+    </select></label>
+    <label>Cycle start<input name="cycle_start" id="advance-start" type="date" readonly required></label>
+    <label>Cycle end<input name="cycle_end" id="advance-end" type="date" readonly required></label>
+    <label>Normal advance due<input id="advance-due" type="date" readonly></label>
+    <label>Advance date<input name="advance_date" type="date" value="{{today}}" required></label>
+    <label>Advance amount (UGX)<input name="amount" type="number" min="1" step="1" required></label>
+    <label>Notes<input name="notes" placeholder="Optional"></label>
+    <button>Save advance</button>
+  </form>
+</div>
+<div class="section-card">
+  <h2>Advance history</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Ref</th><th>Worker</th><th>Cycle</th><th>Date</th><th>Amount</th><th>Status</th><th>Deducted in</th><th>Action</th></tr>
+    {% for r in rows %}<tr>
+      <td>{{r.advance_ref}}</td><td>{{r.casual.code}} - {{r.casual.name}}</td><td>{{r.cycle_start}} to {{r.cycle_end}}</td>
+      <td>{{r.advance_date}}</td><td>UGX {{"{:,.0f}".format(r.amount)}}</td><td>{{r.status}}</td>
+      <td>{{r.deducted_payment.payment_ref if r.deducted_payment else '—'}}</td>
+      <td>{% if r.status=='Active' and not r.deducted_payment_id %}<form method="post" action="/advance/{{r.id}}/void" onsubmit="return confirm('Void this advance?')"><input name="reason" placeholder="Reason" required><button class="danger small">Void</button></form>{% else %}—{% endif %}</td>
+    </tr>{% else %}<tr><td colspan="8" class="empty">No advances recorded.</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('advance-worker').addEventListener('change',async function(){
+  if(!this.value)return;
+  const r=await fetch('/advances/cycle/'+this.value), d=await r.json();
+  if(d.pay_frequency!=='Monthly') alert('This worker is not set to Monthly pay.');
+  document.getElementById('advance-start').value=d.cycle_start;
+  document.getElementById('advance-end').value=d.cycle_end;
+  document.getElementById('advance-due').value=d.advance_due;
+});
+</script>
+{% endblock %}

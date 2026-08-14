@@ -151,3 +151,13 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
 
 /* Version 7.3 - Processing reports */
 .report-filter-form{align-items:end}.report-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.grade-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.grade-summary-grid>div{background:#f7faf8;border:1px solid var(--line,#dfe7e3);border-radius:10px;padding:14px}.grade-summary-grid span{display:block;color:#6d7c76;font-size:12px}.grade-summary-grid strong{display:block;margin-top:6px;font-size:20px}.report-table{min-width:1600px}.report-table td:nth-child(n+5):nth-child(-n+16){text-align:right;font-variant-numeric:tabular-nums}@media(max-width:760px){.grade-summary-grid{grid-template-columns:1fr 1fr}.report-actions .button{flex:1;text-align:center}}
+
+.cycle-date-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin-top:10px}
+.cycle-day{min-height:60px;border:1px solid #e3ebe7;border-radius:8px;padding:5px;display:flex;flex-direction:column;justify-content:space-between;background:#fafcfb}
+.cycle-day.worked{background:#eef7f3;border-color:#b9d7cb}
+.cycle-weekday{font-size:9px;text-transform:uppercase;color:#6d7c76}
+.cycle-day .day-number{font-size:10px;color:#6d7c76}
+.workforce-notice-list{display:grid;gap:8px}
+.workforce-notice{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid #e1e8e4;border-radius:9px;background:#fafcfb}
+.workforce-notice small{display:block;color:#6d7c76;margin-top:3px}
+@media(max-width:650px){.cycle-date-grid{grid-template-columns:repeat(4,1fr)}.workforce-notice{grid-template-columns:1fr}}

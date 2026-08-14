@@ -356,6 +356,7 @@ class Payment(db.Model):
     period_end = db.Column(db.Date, nullable=False)
     gross_pay = db.Column(db.Float, nullable=False)
     deduction = db.Column(db.Float, default=0)
+    advance_deduction = db.Column(db.Float, default=0)
     net_paid = db.Column(db.Float, nullable=False)
     payment_date = db.Column(db.Date, nullable=False)
     method = db.Column(db.String(30))
@@ -365,6 +366,22 @@ class Payment(db.Model):
     status = db.Column(db.String(20), default="Paid")
     void_reason = db.Column(db.Text)
     casual = db.relationship("Casual")
+
+
+
+class SalaryAdvance(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    advance_ref = db.Column(db.String(30), unique=True, nullable=False)
+    casual_id = db.Column(db.Integer, db.ForeignKey("casual.id"), nullable=False)
+    cycle_start = db.Column(db.Date, nullable=False)
+    cycle_end = db.Column(db.Date, nullable=False)
+    advance_date = db.Column(db.Date, nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    deducted_payment_id = db.Column(db.Integer, db.ForeignKey("payment.id"))
+    casual = db.relationship("Casual")
+    deducted_payment = db.relationship("Payment", foreign_keys=[deducted_payment_id])
 
 def log_action(action, module, record_id=None, details=None):
     if "user_id" not in session:
@@ -400,6 +417,45 @@ def permission_required(permission):
             return fn(*args, **kwargs)
         return wrapper
     return decorator
+
+
+def add_months_safe(d, months=1):
+    month_index = d.month - 1 + months
+    year = d.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return d.replace(year=year, month=month, day=day)
+
+def worker_first_date(casual_id):
+    first = Attendance.query.filter(
+        Attendance.casual_id == casual_id,
+        Attendance.status != "Voided",
+    ).order_by(Attendance.work_date.asc(), Attendance.id.asc()).first()
+    return first.work_date if first else datetime.utcnow().date()
+
+def rolling_month_cycle(anchor, target):
+    if target < anchor:
+        return anchor, add_months_safe(anchor, 1) - timedelta(days=1)
+    start = anchor
+    while True:
+        next_start = add_months_safe(start, 1)
+        if target < next_start:
+            return start, next_start - timedelta(days=1)
+        start = next_start
+
+def worker_pay_cycle(casual, target=None):
+    target = target or datetime.utcnow().date()
+    anchor = worker_first_date(casual.id)
+    pay_type = casual.pay_frequency or "Daily"
+    if pay_type == "Monthly":
+        return rolling_month_cycle(anchor, target)
+    days_since = max(0, (target - anchor).days)
+    start = anchor + timedelta(days=(days_since // 7) * 7)
+    return start, start + timedelta(days=6)
+
+def worker_advance_due(casual, target=None):
+    cycle_start, cycle_end = worker_pay_cycle(casual, target)
+    return cycle_start + timedelta(days=13), cycle_start, cycle_end
 
 def next_code(model, field, prefix, width):
     row = model.query.order_by(model.id.desc()).first()
@@ -498,6 +554,7 @@ def ensure_multistation_schema():
             "pay_type": "VARCHAR(20) DEFAULT 'Daily'",
             "rate_applied": "FLOAT",
             "attendance_days": "FLOAT DEFAULT 0",
+            "advance_deduction": "FLOAT DEFAULT 0",
         }.items():
             if column_name not in payment_columns:
                 db.session.execute(text(f"ALTER TABLE payment ADD COLUMN {column_name} {column_type}"))
@@ -722,6 +779,44 @@ def dashboard():
         },
     }
 
+    workforce_notices = []
+    notice_today = datetime.utcnow().date()
+    for worker in Casual.query.filter_by(status="Active").order_by(Casual.name).all():
+        cycle_start, cycle_end = worker_pay_cycle(worker, notice_today)
+        days_to_payment = (cycle_end - notice_today).days
+        if 0 <= days_to_payment <= 5:
+            workforce_notices.append({
+                "type": "Payment",
+                "worker": worker.name,
+                "due": cycle_end,
+                "message": f"Payment for {worker.name} is due " + (
+                    "today." if days_to_payment == 0 else f"in {days_to_payment} day(s)."
+                ),
+                "url": url_for("payments", casual_id=worker.id,
+                               period_start=cycle_start.isoformat(),
+                               period_end=cycle_end.isoformat()),
+            })
+
+        if (worker.pay_frequency or "Daily") == "Monthly":
+            advance_due, advance_start, advance_end = worker_advance_due(worker, notice_today)
+            days_to_advance = (advance_due - notice_today).days
+            has_advance = SalaryAdvance.query.filter(
+                SalaryAdvance.casual_id == worker.id,
+                SalaryAdvance.cycle_start == advance_start,
+                SalaryAdvance.cycle_end == advance_end,
+                SalaryAdvance.status == "Active",
+            ).first()
+            if not has_advance and 0 <= days_to_advance <= 2:
+                workforce_notices.append({
+                    "type": "Advance",
+                    "worker": worker.name,
+                    "due": advance_due,
+                    "message": f"Advance for {worker.name} is due " + (
+                        "today." if days_to_advance == 0 else f"in {days_to_advance} day(s)."
+                    ),
+                    "url": url_for("advances"),
+                })
+
     return render_template(
         "dashboard.html",
         period=period,
@@ -731,6 +826,7 @@ def dashboard():
         top_suppliers=top_suppliers,
         alerts=alerts,
         charts=charts,
+        workforce_notices=workforce_notices,
     )
 
 @app.route("/users", methods=["GET","POST"])
@@ -2543,36 +2639,42 @@ def attendance():
         query = query.filter(Attendance.work_date <= datetime.strptime(date_to, "%Y-%m-%d").date())
     rows = query.order_by(Attendance.work_date.desc(), Attendance.id.desc()).all()
 
-    # Monthly attendance cards group each worker's attendance by calendar month.
-    # This gives one clear monthly view regardless of whether the worker is paid
-    # daily, weekly or monthly.
+    # Monthly cards follow each worker's own start date.
     monthly = {}
     card_rows = Attendance.query.filter(Attendance.status != "Voided").order_by(
         Attendance.work_date.asc(), Attendance.id.asc()
     ).all()
+    anchors = {}
+    for row in card_rows:
+        anchors.setdefault(row.casual_id, row.work_date)
 
     for row in card_rows:
-        month_start = row.work_date.replace(day=1)
-        _, days_in_month = calendar.monthrange(row.work_date.year, row.work_date.month)
-        month_end = row.work_date.replace(day=days_in_month)
-        key = (row.casual_id, month_start)
+        cycle_start, cycle_end = rolling_month_cycle(anchors[row.casual_id], row.work_date)
+        key = (row.casual_id, cycle_start)
         item = monthly.setdefault(key, {
             "casual": row.casual,
-            "start": month_start,
-            "end": month_end,
-            "month_label": month_start.strftime("%B %Y"),
+            "start": cycle_start,
+            "end": cycle_end,
+            "month_label": f"{cycle_start.strftime('%d %b %Y')} – {cycle_end.strftime('%d %b %Y')}",
             "days": 0.0,
             "amount": 0.0,
             "unpaid_amount": 0.0,
             "paid": 0,
             "unpaid": 0,
-            "day_entries": {i: [] for i in range(1, days_in_month + 1)},
-            "weeks": calendar.monthcalendar(row.work_date.year, row.work_date.month),
+            "cycle_dates": [],
+            "date_entries": {},
         })
-        day_value = 1 if row.work_type == "Full Day" else 0.5
-        item["days"] += day_value
+        if not item["cycle_dates"]:
+            d = cycle_start
+            while d <= cycle_end:
+                item["cycle_dates"].append(d)
+                item["date_entries"][d.isoformat()] = []
+                d += timedelta(days=1)
+
+        value = 1 if row.work_type == "Full Day" else 0.5
+        item["days"] += value
         item["amount"] += float(row.amount or 0)
-        item["day_entries"][row.work_date.day].append(row)
+        item["date_entries"][row.work_date.isoformat()].append(row)
         if row.status == "Paid":
             item["paid"] += 1
         else:
@@ -2583,7 +2685,7 @@ def attendance():
         monthly.values(),
         key=lambda x: (x["start"], x["casual"].name),
         reverse=True,
-    )[:36]
+    )[:48]
 
     daily_date_text = request.args.get("daily_date", datetime.utcnow().date().isoformat())
     try:
@@ -2686,7 +2788,7 @@ def recalculate_payment(payment_ref):
     payment.attendance_days = sum(1 if x.work_type == "Full Day" else 0.5 for x in paid_entries)
     if (payment.pay_type or "Daily") == "Daily":
         payment.gross_pay = sum(float(x.amount or 0) for x in paid_entries)
-    payment.net_paid = max(0, payment.gross_pay - (payment.deduction or 0))
+    payment.net_paid = max(0, payment.gross_pay - (payment.deduction or 0) - (payment.advance_deduction or 0))
 
 
 @app.route("/attendance/<int:id>/edit", methods=["GET", "POST"])
@@ -2816,6 +2918,86 @@ def casual_status(id):
     return redirect(url_for("casual_profile", id=id))
 
 
+
+@app.route("/advances", methods=["GET", "POST"])
+@permission_required("payments")
+def advances():
+    workers = Casual.query.filter_by(status="Active").order_by(Casual.name).all()
+    today = datetime.utcnow().date()
+
+    if request.method == "POST":
+        casual = Casual.query.get_or_404(int(request.form["casual_id"]))
+        if (casual.pay_frequency or "Daily") != "Monthly":
+            flash("Salary advances are for monthly-paid workers.")
+            return redirect(url_for("advances"))
+
+        cycle_start = datetime.strptime(request.form["cycle_start"], "%Y-%m-%d").date()
+        cycle_end = datetime.strptime(request.form["cycle_end"], "%Y-%m-%d").date()
+        advance_date = datetime.strptime(request.form["advance_date"], "%Y-%m-%d").date()
+        amount = float(request.form.get("amount") or 0)
+        if amount <= 0:
+            flash("Advance amount must be greater than zero.")
+            return redirect(url_for("advances"))
+
+        existing = SalaryAdvance.query.filter(
+            SalaryAdvance.casual_id == casual.id,
+            SalaryAdvance.cycle_start == cycle_start,
+            SalaryAdvance.cycle_end == cycle_end,
+            SalaryAdvance.status == "Active",
+        ).first()
+        if existing:
+            flash("An active advance already exists for this worker's current monthly cycle.")
+            return redirect(url_for("advances"))
+
+        row = SalaryAdvance(
+            advance_ref=next_code(SalaryAdvance, "advance_ref", "ADV", 6),
+            casual_id=casual.id,
+            cycle_start=cycle_start,
+            cycle_end=cycle_end,
+            advance_date=advance_date,
+            amount=amount,
+            notes=request.form.get("notes"),
+        )
+        db.session.add(row)
+        db.session.commit()
+        log_action("CREATE", "Salary Advances", row.id,
+                   f"{row.advance_ref}; {casual.name}; UGX {row.amount:,.0f}")
+        flash("Salary advance saved. It will be deducted automatically from the matching monthly salary.")
+        return redirect(url_for("advances"))
+
+    return render_template(
+        "advances.html",
+        workers=workers,
+        rows=SalaryAdvance.query.order_by(SalaryAdvance.id.desc()).all(),
+        today=today.isoformat(),
+    )
+
+@app.route("/advances/cycle/<int:casual_id>")
+@permission_required("payments")
+def advance_cycle(casual_id):
+    casual = Casual.query.get_or_404(casual_id)
+    due, cycle_start, cycle_end = worker_advance_due(casual)
+    return {
+        "pay_frequency": casual.pay_frequency or "Daily",
+        "cycle_start": cycle_start.isoformat(),
+        "cycle_end": cycle_end.isoformat(),
+        "advance_due": due.isoformat(),
+    }
+
+@app.route("/advance/<int:id>/void", methods=["POST"])
+@permission_required("payments")
+def advance_void(id):
+    row = SalaryAdvance.query.get_or_404(id)
+    if row.deducted_payment_id:
+        flash("This advance has already been deducted from a salary payment.")
+        return redirect(url_for("advances"))
+    row.status = "Voided"
+    db.session.commit()
+    log_action("VOID", "Salary Advances", row.id, request.form.get("reason") or "Voided")
+    flash("Advance voided.")
+    return redirect(url_for("advances"))
+
+
 @app.route("/payments/calculate")
 @permission_required("payments")
 def payment_calculate():
@@ -2824,7 +3006,18 @@ def payment_calculate():
     start_text = request.args.get("period_start", "")
     end_text = request.args.get("period_end", "")
     if not cid or not start_text or not end_text:
-        return {"ok": False, "message": "Select a worker and both period dates."}, 400
+        advance_deduction = 0.0
+    if pay_type == "Monthly":
+        advances = SalaryAdvance.query.filter(
+            SalaryAdvance.casual_id == cid,
+            SalaryAdvance.status == "Active",
+            SalaryAdvance.deducted_payment_id.is_(None),
+            SalaryAdvance.cycle_start >= start,
+            SalaryAdvance.cycle_end <= end,
+        ).all()
+        advance_deduction = sum(float(a.amount or 0) for a in advances)
+
+    return {"ok": False, "message": "Select a worker and both period dates."}, 400
     try:
         start = datetime.strptime(start_text, "%Y-%m-%d").date()
         end = datetime.strptime(end_text, "%Y-%m-%d").date()
@@ -2878,6 +3071,7 @@ def payment_calculate():
         "half_days": half_days,
         "days_equivalent": days_equivalent,
         "gross_pay": gross,
+        "advance_deduction": advance_deduction,
         "can_pay": can_pay,
         "explanation": explanation,
         "entries": [{
@@ -2923,15 +3117,31 @@ def payments():
         else:
             gross = float(rate_row.daily_rate) * payment_period_units(pay_type, start, end)
         deduction = float(request.form.get("deduction") or 0)
+        advance_deduction = 0.0
+        advances_to_deduct = []
+        if pay_type == "Monthly":
+            advances_to_deduct = SalaryAdvance.query.filter(
+                SalaryAdvance.casual_id == cid,
+                SalaryAdvance.status == "Active",
+                SalaryAdvance.deducted_payment_id.is_(None),
+                SalaryAdvance.cycle_start >= start,
+                SalaryAdvance.cycle_end <= end,
+            ).all()
+            advance_deduction = sum(float(a.amount or 0) for a in advances_to_deduct)
+
         p = Payment(
             payment_ref=next_code(Payment, "payment_ref", "PAY", 6), casual_id=cid,
             period_start=start, period_end=end, gross_pay=gross, deduction=deduction,
-            net_paid=max(0, gross-deduction),
+            advance_deduction=advance_deduction,
+            net_paid=max(0, gross-deduction-advance_deduction),
             payment_date=datetime.strptime(request.form["payment_date"], "%Y-%m-%d").date(),
             method=request.form["method"], pay_type=pay_type,
             rate_applied=float(rate_row.daily_rate), attendance_days=attendance_days,
         )
         db.session.add(p)
+        db.session.flush()
+        for advance in advances_to_deduct:
+            advance.deducted_payment_id = p.id
         for x in entries:
             x.status = "Paid"; x.payment_ref = p.payment_ref
         db.session.commit()
@@ -2985,6 +3195,8 @@ def payment_void(id):
         entry.payment_ref = None
     row.status = "Voided"
     row.void_reason = reason
+    for advance in SalaryAdvance.query.filter_by(deducted_payment_id=row.id).all():
+        advance.deducted_payment_id = None
     db.session.commit()
     log_action("VOID", "Payments", row.id,
                f"{row.payment_ref}; {row.casual.name}; {reason}; {len(linked)} attendance entries released")
@@ -3002,6 +3214,7 @@ def payment_receipt(id):
     days_equivalent = full_days + (half_days * 0.5)
     if not attendance_entries and row.attendance_days:
         days_equivalent = float(row.attendance_days)
+    deducted_advances = SalaryAdvance.query.filter_by(deducted_payment_id=row.id).order_by(SalaryAdvance.advance_date).all()
     return render_template(
         "payment_receipt.html",
         row=row,
@@ -3009,6 +3222,7 @@ def payment_receipt(id):
         full_days=full_days,
         half_days=half_days,
         days_equivalent=days_equivalent,
+        deducted_advances=deducted_advances,
     )
 
 

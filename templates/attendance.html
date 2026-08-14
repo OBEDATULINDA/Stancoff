@@ -82,7 +82,7 @@
   <div class="section-heading-row">
     <div>
       <h2>Monthly attendance cards</h2>
-      <p class="help-text">Each card shows one worker’s attendance for a full calendar month. A full day shows <strong>1</strong>, a half day shows <strong>½</strong>, and a blank date means no attendance was recorded.</p>
+      <p class="help-text">Each card follows that worker’s own monthly cycle from the date they first started attendance. A full day shows <strong>1</strong>, a half day shows <strong>½</strong>, and a blank date means no attendance was recorded.</p>
     </div>
   </div>
   <div class="monthly-card-grid">
@@ -96,30 +96,17 @@
         <span class="status-pill">{% if m.unpaid %}Has unpaid attendance{% else %}Attendance paid{% endif %}</span>
       </div>
       <div class="month-title">{{m.month_label}}</div>
-
-      <div class="month-calendar">
-        {% for label in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
-          <div class="month-weekday">{{label}}</div>
-        {% endfor %}
-        {% for week in m.weeks %}
-          {% for day_number in week %}
-            {% if day_number == 0 %}
-              <div class="month-day empty-day"></div>
-            {% else %}
-              {% set day_rows = m.day_entries.get(day_number, []) %}
-              <div class="month-day {% if day_rows %}worked{% endif %}">
-                <span class="day-number">{{day_number}}</span>
-                {% if day_rows %}
-                  <strong>
-                    {% for entry in day_rows %}
-                      {{'1' if entry.work_type=='Full Day' else '½'}}{% if not loop.last %}+{% endif %}
-                    {% endfor %}
-                  </strong>
-                  <small>{% if day_rows|selectattr('status','equalto','Unpaid')|list %}Unpaid{% else %}Paid{% endif %}</small>
-                {% endif %}
-              </div>
-            {% endif %}
-          {% endfor %}
+      <div class="cycle-date-grid">
+        {% for d in m.cycle_dates %}
+          {% set day_rows = m.date_entries.get(d.isoformat(), []) %}
+          <div class="cycle-day {% if day_rows %}worked{% endif %}">
+            <span class="cycle-weekday">{{d.strftime('%a')}}</span>
+            <span class="day-number">{{d.strftime('%d %b')}}</span>
+            {% if day_rows %}
+              <strong>{% for entry in day_rows %}{{'1' if entry.work_type=='Full Day' else '½'}}{% if not loop.last %}+{% endif %}{% endfor %}</strong>
+              <small>{% if day_rows|selectattr('status','equalto','Unpaid')|list %}Unpaid{% else %}Paid{% endif %}</small>
+            {% else %}<strong>—</strong>{% endif %}
+          </div>
         {% endfor %}
       </div>
 

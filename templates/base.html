@@ -51,7 +51,7 @@
       </details>
       {% endif %}
 
-      {% set workforce_open = request.path.startswith('/casuals') or request.path.startswith('/casual-rates') or request.path.startswith('/attendance') or request.path.startswith('/payments') %}
+      {% set workforce_open = request.path.startswith('/casuals') or request.path.startswith('/casual-rates') or request.path.startswith('/attendance') or request.path.startswith('/payments') or request.path.startswith('/advances') %}
       {% if current_role in ['Admin','Manager','Payroll Officer'] %}
       <details class="nav-group" data-nav-group="workforce" {% if workforce_open %}open{% endif %}>
         <summary>Workforce</summary>
@@ -60,6 +60,7 @@
           <a href="/casual-rates" class="{% if request.path.startswith('/casual-rates') %}active{% endif %}">Rate history</a>
           <a href="/attendance" class="{% if request.path.startswith('/attendance') %}active{% endif %}">Attendance</a>
           <a href="/payments" class="{% if request.path.startswith('/payments') %}active{% endif %}">Payments</a>
+          <a href="/advances" class="{% if request.path.startswith('/advances') %}active{% endif %}">Salary advances</a>
         </div>
       </details>
       {% endif %}

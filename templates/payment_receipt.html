@@ -38,11 +38,13 @@
       <tr><td>Half days worked</td><td>{{ half_days }}</td></tr>
       <tr><td>Total days payable</td><td>{{ "%.1f"|format(days_equivalent) }}</td></tr>
       <tr><td>Gross amount</td><td>UGX {{ "{:,.0f}".format(row.gross_pay) }}</td></tr>
-      <tr><td>Deduction</td><td>UGX {{ "{:,.0f}".format(row.deduction or 0) }}</td></tr>
+      <tr><td>Other deduction</td><td>UGX {{ "{:,.0f}".format(row.deduction or 0) }}</td></tr>
+      <tr><td>Salary advance deducted</td><td>UGX {{ "{:,.0f}".format(row.advance_deduction or 0) }}</td></tr>
       <tr><td>Payment method</td><td>{{ row.method or '-' }}</td></tr>
       <tr><td>Net amount paid</td><td class="amount">UGX {{ "{:,.0f}".format(row.net_paid) }}</td></tr>
     </table>
 
+    {% if deducted_advances %}<div class="ack"><strong>Advances included in this salary deduction:</strong>{% for a in deducted_advances %}<div>{{a.advance_ref}} · {{a.advance_date}} · UGX {{"{:,.0f}".format(a.amount)}}</div>{% endfor %}</div>{% endif %}
     <div class="ack">
       <strong>Payee acknowledgement:</strong><br>
       I, <strong>{{ row.casual.name }}</strong>, acknowledge that I have received the net amount shown above as <strong>{{ (row.pay_type or row.casual.pay_frequency or "Daily")|lower }}</strong> payment for the stated period. Attendance recorded for the period was <strong>{{ "%.1f"|format(days_equivalent) }}</strong> day(s).
