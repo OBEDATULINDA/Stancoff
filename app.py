@@ -2984,6 +2984,64 @@ def advance_cycle(casual_id):
         "advance_due": due.isoformat(),
     }
 
+
+@app.route("/advance/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("payments")
+def advance_edit(id):
+    row = SalaryAdvance.query.get_or_404(id)
+
+    # Once an advance has been deducted from a completed salary payment,
+    # keep the audit trail intact instead of silently changing that payment.
+    if row.deducted_payment_id:
+        flash("This advance has already been deducted from a salary payment. Void or correct the salary payment first before editing the advance.")
+        return redirect(url_for("advances"))
+
+    workers = Casual.query.filter_by(status="Active").order_by(Casual.name).all()
+
+    if request.method == "POST":
+        casual = Casual.query.get_or_404(int(request.form["casual_id"]))
+        if (casual.pay_frequency or "Daily") != "Monthly":
+            flash("Salary advances are for monthly-paid workers.")
+            return redirect(url_for("advance_edit", id=row.id))
+
+        cycle_start = datetime.strptime(request.form["cycle_start"], "%Y-%m-%d").date()
+        cycle_end = datetime.strptime(request.form["cycle_end"], "%Y-%m-%d").date()
+        advance_date = datetime.strptime(request.form["advance_date"], "%Y-%m-%d").date()
+        amount = float(request.form.get("amount") or 0)
+
+        if amount <= 0:
+            flash("Advance amount must be greater than zero.")
+            return redirect(url_for("advance_edit", id=row.id))
+
+        duplicate = SalaryAdvance.query.filter(
+            SalaryAdvance.id != row.id,
+            SalaryAdvance.casual_id == casual.id,
+            SalaryAdvance.cycle_start == cycle_start,
+            SalaryAdvance.cycle_end == cycle_end,
+            SalaryAdvance.status == "Active",
+        ).first()
+        if duplicate:
+            flash("Another active advance already exists for this worker's selected monthly cycle.")
+            return redirect(url_for("advance_edit", id=row.id))
+
+        old_details = f"{row.casual.name}; {row.advance_date}; UGX {row.amount:,.0f}"
+        row.casual_id = casual.id
+        row.cycle_start = cycle_start
+        row.cycle_end = cycle_end
+        row.advance_date = advance_date
+        row.amount = amount
+        row.notes = request.form.get("notes")
+        db.session.commit()
+
+        log_action(
+            "EDIT", "Salary Advances", row.id,
+            f"{row.advance_ref}; from [{old_details}] to [{casual.name}; {advance_date}; UGX {amount:,.0f}]"
+        )
+        flash("Salary advance updated.")
+        return redirect(url_for("advances"))
+
+    return render_template("advance_edit.html", row=row, workers=workers)
+
 @app.route("/advance/<int:id>/void", methods=["POST"])
 @permission_required("payments")
 def advance_void(id):

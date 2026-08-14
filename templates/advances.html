@@ -27,7 +27,7 @@
       <td>{{r.advance_ref}}</td><td>{{r.casual.code}} - {{r.casual.name}}</td><td>{{r.cycle_start}} to {{r.cycle_end}}</td>
       <td>{{r.advance_date}}</td><td>UGX {{"{:,.0f}".format(r.amount)}}</td><td>{{r.status}}</td>
       <td>{{r.deducted_payment.payment_ref if r.deducted_payment else '—'}}</td>
-      <td>{% if r.status=='Active' and not r.deducted_payment_id %}<form method="post" action="/advance/{{r.id}}/void" onsubmit="return confirm('Void this advance?')"><input name="reason" placeholder="Reason" required><button class="danger small">Void</button></form>{% else %}—{% endif %}</td>
+      <td>{% if r.status=='Active' and not r.deducted_payment_id %}<div class="advance-actions"><a class="button small" href="/advance/{{r.id}}/edit">Edit</a><form method="post" action="/advance/{{r.id}}/void" onsubmit="return confirm('Void this advance?')"><input name="reason" placeholder="Reason" required><button class="danger small">Void</button></form></div>{% else %}—{% endif %}</td>
     </tr>{% else %}<tr><td colspan="8" class="empty">No advances recorded.</td></tr>{% endfor %}
   </table></div>
 </div>
