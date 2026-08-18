@@ -70,7 +70,13 @@ class PriceHistory(db.Model):
     effective_date = db.Column(db.Date, nullable=False)
     cherry_price = db.Column(db.Float, nullable=False)
     floater_price = db.Column(db.Float, nullable=False)
+    supplier_id = db.Column(db.Integer, db.ForeignKey("supplier.id"))
+    purchase_id = db.Column(db.Integer, db.ForeignKey("purchase.id"))
+    receipt_no = db.Column(db.String(30))
+    source = db.Column(db.String(30), default="Purchase")
+    status = db.Column(db.String(20), default="Active")
     notes = db.Column(db.Text)
+    supplier = db.relationship("Supplier", foreign_keys=[supplier_id])
 
 class Batch(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -506,6 +512,18 @@ def ensure_multistation_schema():
         if "station_id" not in columns:
             db.session.execute(text("ALTER TABLE location ADD COLUMN station_id INTEGER"))
             db.session.commit()
+    if "price_history" in table_names:
+        price_columns = {c["name"] for c in inspector.get_columns("price_history")}
+        for column_name, column_type in {
+            "supplier_id": "INTEGER",
+            "purchase_id": "INTEGER",
+            "receipt_no": "VARCHAR(30)",
+            "source": "VARCHAR(30) DEFAULT 'Manual'",
+            "status": "VARCHAR(20) DEFAULT 'Active'",
+        }.items():
+            if column_name not in price_columns:
+                db.session.execute(text(f"ALTER TABLE price_history ADD COLUMN {column_name} {column_type}"))
+                db.session.commit()
     if "processing" in table_names:
         processing_columns = {c["name"] for c in inspector.get_columns("processing")}
         if "station_id" not in processing_columns:
@@ -650,6 +668,18 @@ def dashboard():
 
     total_good = sum(float(p.good_weight or 0) for p in active_purchases)
     total_spend = sum(float(p.total_amount or 0) for p in active_purchases)
+
+    # All-time weighted average for good cherry purchases.
+    # This is total cherry value divided by total good-cherry kilograms,
+    # so large purchases have the correct influence on the average.
+    all_time_good_kg = sum(float(p.good_weight or 0) for p in all_active_purchases)
+    all_time_cherry_value = sum(
+        float(p.good_weight or 0) * float(p.cherry_price or 0)
+        for p in all_active_purchases
+    )
+    all_time_avg_cherry_price = (
+        all_time_cherry_value / all_time_good_kg if all_time_good_kg else 0
+    )
     current_stock = sum(float(s.weight or 0) for s in stock_rows)
     completed_drying = [r for r in drying_rows if r.drying_status == "Completed" and r.dry_weight is not None]
     processing_outturns = [float(r.outturn_percent or 0) for r in processing_rows if float(r.input_weight or 0) > 0]
@@ -674,6 +704,8 @@ def dashboard():
         "purchases": len(active_purchases),
         "good_weight": total_good,
         "total_spend": total_spend,
+        "average_cherry_price": all_time_avg_cherry_price,
+        "average_cherry_price_kg": all_time_good_kg,
         "current_stock": current_stock,
         "temporary_stock": stock_by_type.get("Temporary Storage", 0.0),
         "final_stock": stock_by_type.get("Final Warehouse", 0.0),
@@ -884,6 +916,42 @@ def suppliers():
     return render_template("suppliers.html", rows=Supplier.query.order_by(Supplier.id.desc()).all(),
                            next_code=next_code(Supplier,"code","SUP",3))
 
+
+@app.route("/suppliers/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("suppliers")
+def supplier_edit(id):
+    supplier = Supplier.query.get_or_404(id)
+
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip()
+        name = (request.form.get("name") or "").strip()
+        if not code or not name:
+            flash("Supplier code and name are required.")
+            return redirect(url_for("supplier_edit", id=id))
+
+        duplicate = Supplier.query.filter(
+            Supplier.id != supplier.id,
+            func.lower(Supplier.code) == code.lower()
+        ).first()
+        if duplicate:
+            flash("That supplier code is already in use.")
+            return redirect(url_for("supplier_edit", id=id))
+
+        old = f"{supplier.code}; {supplier.name}; {supplier.phone or '-'}; {supplier.location or '-'}; {supplier.status}"
+        supplier.code = code
+        supplier.name = name
+        supplier.phone = request.form.get("phone")
+        supplier.location = request.form.get("location")
+        supplier.status = request.form.get("status", "Active")
+        db.session.commit()
+
+        new = f"{supplier.code}; {supplier.name}; {supplier.phone or '-'}; {supplier.location or '-'}; {supplier.status}"
+        log_action("EDIT", "Suppliers", supplier.id, f"Before: {old} | After: {new}")
+        flash("Supplier updated successfully.")
+        return redirect(url_for("suppliers"))
+
+    return render_template("supplier_edit.html", row=supplier)
+
 @app.route("/suppliers/<int:id>/delete", methods=["POST"])
 @permission_required("suppliers")
 def supplier_delete(id):
@@ -894,19 +962,22 @@ def supplier_delete(id):
         db.session.delete(s); db.session.commit(); log_action("DELETE","Suppliers",id)
     return redirect(url_for("suppliers"))
 
-@app.route("/prices", methods=["GET","POST"])
+@app.route("/prices")
 @permission_required("prices")
 def prices():
-    if request.method == "POST":
-        p = PriceHistory(
-            effective_date=datetime.strptime(request.form["effective_date"], "%Y-%m-%d").date(),
-            cherry_price=float(request.form["cherry_price"]),
-            floater_price=float(request.form["floater_price"]),
-            notes=request.form.get("notes")
-        )
-        db.session.add(p); db.session.commit(); log_action("CREATE","Price History",p.id)
-        return redirect(url_for("prices"))
-    return render_template("prices.html", rows=PriceHistory.query.order_by(PriceHistory.effective_date.desc()).all())
+    rows = PriceHistory.query.order_by(
+        PriceHistory.effective_date.desc(), PriceHistory.id.desc()
+    ).all()
+    active = Purchase.query.filter_by(status="Active").all()
+    good_kg = sum(float(p.good_weight or 0) for p in active)
+    cherry_value = sum(float(p.good_weight or 0) * float(p.cherry_price or 0) for p in active)
+    weighted_average = cherry_value / good_kg if good_kg else 0
+    return render_template(
+        "prices.html",
+        rows=rows,
+        weighted_average=weighted_average,
+        weighted_kg=good_kg,
+    )
 
 @app.route("/batches", methods=["GET","POST"])
 @permission_required("batches")
@@ -929,25 +1000,68 @@ def batches():
 def purchases():
     if request.method == "POST":
         d = datetime.strptime(request.form["purchase_date"], "%Y-%m-%d").date()
-        price = get_price(d)
-        if not price:
-            flash("Add price history first."); return redirect(url_for("purchases"))
-        gross = float(request.form["gross_weight"]); fl = float(request.form.get("floaters_weight") or 0)
-        good = gross - fl; bought = request.form["floaters_bought"]
-        cp = price.cherry_price; fp = price.floater_price if bought == "Yes" else 0
+        gross = float(request.form["gross_weight"])
+        fl = float(request.form.get("floaters_weight") or 0)
+        bought = request.form["floaters_bought"]
+        cp = float(request.form.get("cherry_price") or 0)
+        fp_entered = float(request.form.get("floater_price") or 0)
+
+        if gross <= 0 or fl < 0 or fl > gross:
+            flash("Check the weights. Floaters cannot be more than gross weight.")
+            return redirect(url_for("purchases"))
+        if cp <= 0:
+            flash("Enter the cherry price agreed with this supplier.")
+            return redirect(url_for("purchases"))
+        if fp_entered < 0:
+            flash("Floater price cannot be negative.")
+            return redirect(url_for("purchases"))
+
+        good = gross - fl
+        fp = fp_entered if bought == "Yes" else 0
+
         p = Purchase(
             receipt_no=next_code(Purchase,"receipt_no","REC",6),
-            purchase_date=d, batch_id=int(request.form["batch_id"]), supplier_id=int(request.form["supplier_id"]),
-            gross_weight=gross, floaters_weight=fl, good_weight=good, floaters_bought=bought,
-            cherry_price=cp, floater_price=fp, total_amount=good*cp+fl*fp,
+            purchase_date=d,
+            batch_id=int(request.form["batch_id"]),
+            supplier_id=int(request.form["supplier_id"]),
+            gross_weight=gross,
+            floaters_weight=fl,
+            good_weight=good,
+            floaters_bought=bought,
+            cherry_price=cp,
+            floater_price=fp,
+            total_amount=good * cp + fl * fp,
             created_by=session["username"]
         )
-        db.session.add(p); db.session.commit(); log_action("CREATE","Purchases",p.id,p.receipt_no)
+        db.session.add(p)
+        db.session.flush()
+
+        price_row = PriceHistory(
+            effective_date=d,
+            cherry_price=cp,
+            floater_price=fp,
+            supplier_id=p.supplier_id,
+            purchase_id=p.id,
+            receipt_no=p.receipt_no,
+            source="Purchase",
+            status="Active",
+            notes=f"Automatically recorded from {p.receipt_no}"
+        )
+        db.session.add(price_row)
+        db.session.commit()
+
+        log_action(
+            "CREATE", "Purchases", p.id,
+            f"{p.receipt_no}; cherry UGX {cp:,.0f}/kg; floater UGX {fp:,.0f}/kg"
+        )
         return redirect(url_for("purchases"))
-    return render_template("purchases.html",
+
+    return render_template(
+        "purchases.html",
         rows=Purchase.query.order_by(Purchase.id.desc()).all(),
         suppliers=Supplier.query.filter_by(status="Active").order_by(Supplier.name).all(),
-        batches=Batch.query.filter_by(status="Open").order_by(Batch.batch_date.desc()).all())
+        batches=Batch.query.filter_by(status="Open").order_by(Batch.batch_date.desc()).all()
+    )
 
 @app.route("/purchase-receipt/<int:id>")
 @permission_required("purchases")
@@ -969,19 +1083,25 @@ def purchase_edit(id):
 
     if request.method == "POST":
         d = datetime.strptime(request.form["purchase_date"], "%Y-%m-%d").date()
-        price = get_price(d)
-        if not price:
-            flash("Add price history for the selected date first.")
-            return redirect(url_for("purchase_edit", id=id))
-
         gross = float(request.form["gross_weight"])
         floaters = float(request.form.get("floaters_weight") or 0)
+        bought = request.form["floaters_bought"]
+        cp = float(request.form.get("cherry_price") or 0)
+        fp_entered = float(request.form.get("floater_price") or 0)
+
         if gross <= 0 or floaters < 0 or floaters > gross:
             flash("Check the weights. Floaters cannot be more than the gross weight.")
             return redirect(url_for("purchase_edit", id=id))
+        if cp <= 0:
+            flash("Enter the cherry price agreed with this supplier.")
+            return redirect(url_for("purchase_edit", id=id))
+        if fp_entered < 0:
+            flash("Floater price cannot be negative.")
+            return redirect(url_for("purchase_edit", id=id))
 
-        bought = request.form["floaters_bought"]
         good = gross - floaters
+        fp = fp_entered if bought == "Yes" else 0
+
         purchase.purchase_date = d
         purchase.batch_id = int(request.form["batch_id"])
         purchase.supplier_id = int(request.form["supplier_id"])
@@ -989,12 +1109,34 @@ def purchase_edit(id):
         purchase.floaters_weight = floaters
         purchase.good_weight = good
         purchase.floaters_bought = bought
-        purchase.cherry_price = price.cherry_price
-        purchase.floater_price = price.floater_price if bought == "Yes" else 0
-        purchase.total_amount = good * purchase.cherry_price + floaters * purchase.floater_price
+        purchase.cherry_price = cp
+        purchase.floater_price = fp
+        purchase.total_amount = good * cp + floaters * fp
+
+        price_row = PriceHistory.query.filter_by(purchase_id=purchase.id).first()
+        if not price_row:
+            price_row = PriceHistory(
+                purchase_id=purchase.id,
+                source="Purchase",
+                status="Active",
+            )
+            db.session.add(price_row)
+
+        price_row.effective_date = d
+        price_row.cherry_price = cp
+        price_row.floater_price = fp
+        price_row.supplier_id = purchase.supplier_id
+        price_row.receipt_no = purchase.receipt_no
+        price_row.source = "Purchase"
+        price_row.status = "Active"
+        price_row.notes = f"Automatically updated from {purchase.receipt_no}"
+
         db.session.commit()
-        log_action("UPDATE", "Purchases", purchase.id, purchase.receipt_no)
-        flash("Purchase updated successfully.")
+        log_action(
+            "UPDATE", "Purchases", purchase.id,
+            f"{purchase.receipt_no}; cherry UGX {cp:,.0f}/kg; floater UGX {fp:,.0f}/kg"
+        )
+        flash("Purchase and price history updated successfully.")
         return redirect(url_for("purchases"))
 
     return render_template(
@@ -1003,6 +1145,7 @@ def purchase_edit(id):
         suppliers=Supplier.query.order_by(Supplier.name).all(),
         batches=Batch.query.order_by(Batch.batch_date.desc()).all(),
     )
+
 
 @app.route("/purchases/<int:id>/void", methods=["POST"])
 @permission_required("purchases")
@@ -1024,6 +1167,10 @@ def purchase_void(id):
 
     purchase.status = "Voided"
     purchase.void_reason = reason
+    price_row = PriceHistory.query.filter_by(purchase_id=purchase.id).first()
+    if price_row:
+        price_row.status = "Voided"
+        price_row.notes = f"Voided with {purchase.receipt_no}: {reason}"
     db.session.commit()
     log_action("VOID", "Purchases", purchase.id, f"{purchase.receipt_no}: {reason}")
     flash("Purchase voided. It will no longer count in totals or processing.")
@@ -1042,6 +1189,9 @@ def purchase_delete(id):
         return redirect(url_for("purchases"))
 
     receipt_no = purchase.receipt_no
+    price_row = PriceHistory.query.filter_by(purchase_id=purchase.id).first()
+    if price_row:
+        db.session.delete(price_row)
     db.session.delete(purchase)
     db.session.commit()
     log_action("DELETE", "Purchases", id, receipt_no)
