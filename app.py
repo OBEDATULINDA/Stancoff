@@ -900,6 +900,92 @@ def reset_password(id):
     flash("Password reset.")
     return redirect(url_for("users"))
 
+
+@app.route("/users/<int:id>/edit", methods=["GET", "POST"])
+@permission_required("users")
+def user_edit(id):
+    if session.get("role") != "Admin":
+        abort(403)
+
+    user = User.query.get_or_404(id)
+
+    if request.method == "POST":
+        full_name = (request.form.get("full_name") or "").strip()
+        username = (request.form.get("username") or "").strip()
+        role = request.form.get("role")
+        status = request.form.get("status", "Active")
+
+        if not full_name or not username:
+            flash("Full name and username are required.")
+            return redirect(url_for("user_edit", id=id))
+
+        if role not in ROLE_PERMISSIONS:
+            flash("Select a valid role.")
+            return redirect(url_for("user_edit", id=id))
+
+        duplicate = User.query.filter(
+            User.id != user.id,
+            func.lower(User.username) == username.lower()
+        ).first()
+        if duplicate:
+            flash("That username is already in use.")
+            return redirect(url_for("user_edit", id=id))
+
+        if user.id == session.get("user_id") and status != "Active":
+            flash("You cannot disable your own account.")
+            return redirect(url_for("user_edit", id=id))
+
+        old = f"{user.full_name}; {user.username}; {user.role}; {user.status}"
+        user.full_name = full_name
+        user.username = username
+        user.role = role
+        user.status = status
+
+        new_password = (request.form.get("password") or "").strip()
+        if new_password:
+            user.password_hash = generate_password_hash(new_password)
+
+        db.session.commit()
+        new = f"{user.full_name}; {user.username}; {user.role}; {user.status}"
+        log_action("EDIT", "Users", user.id, f"Before: {old} | After: {new}")
+        flash("User updated successfully.")
+        return redirect(url_for("users"))
+
+    return render_template("user_edit.html", row=user, roles=ROLE_PERMISSIONS.keys())
+
+
+@app.route("/users/<int:id>/delete", methods=["POST"])
+@permission_required("users")
+def user_delete(id):
+    if session.get("role") != "Admin":
+        abort(403)
+
+    user = User.query.get_or_404(id)
+
+    if user.id == session.get("user_id"):
+        flash("You cannot delete the account you are currently using.")
+        return redirect(url_for("users"))
+
+    has_audit_history = AuditLog.query.filter_by(user_id=user.id).first() is not None
+
+    if has_audit_history:
+        user.status = "Inactive"
+        db.session.commit()
+        log_action(
+            "DEACTIVATE", "Users", user.id,
+            f"{user.username} was deactivated instead of deleted because audit history exists."
+        )
+        flash("This user has system history, so the account was deactivated instead of permanently deleted.")
+        return redirect(url_for("users"))
+
+    username = user.username
+    db.session.delete(user)
+    db.session.commit()
+    log_action("DELETE", "Users", id, username)
+    flash("User deleted permanently.")
+    return redirect(url_for("users"))
+
+
 @app.route("/audit")
 @permission_required("users")
 def audit():
