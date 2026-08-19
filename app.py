@@ -3581,26 +3581,43 @@ def build_processed_coffee_report(filters):
 
     if filters.get("start_date"):
         try:
-            query = query.filter(Processing.processing_date >= datetime.strptime(filters["start_date"], "%Y-%m-%d").date())
-        except ValueError:
+            query = query.filter(
+                Processing.processing_date >= datetime.strptime(
+                    filters["start_date"], "%Y-%m-%d"
+                ).date()
+            )
+        except (ValueError, TypeError):
             pass
+
     if filters.get("end_date"):
         try:
-            query = query.filter(Processing.processing_date <= datetime.strptime(filters["end_date"], "%Y-%m-%d").date())
-        except ValueError:
+            query = query.filter(
+                Processing.processing_date <= datetime.strptime(
+                    filters["end_date"], "%Y-%m-%d"
+                ).date()
+            )
+        except (ValueError, TypeError):
             pass
+
     if filters.get("station_id"):
         try:
             query = query.filter(Processing.station_id == int(filters["station_id"]))
         except (ValueError, TypeError):
             pass
+
+    # Batch number and process type both use Batch, so join it exactly once.
+    # The previous implementation could join Batch twice when both filters
+    # were selected, producing an ambiguous PostgreSQL query.
+    needs_batch_join = bool(filters.get("batch_no") or filters.get("process_type"))
+    if needs_batch_join:
+        query = query.join(Batch, Processing.batch_id == Batch.id)
+
     if filters.get("batch_no"):
-        query = query.join(Batch, Processing.batch_id == Batch.id).filter(
-            func.lower(Batch.batch_no).contains(filters["batch_no"].lower())
-        )
+        batch_search = filters["batch_no"].strip().lower()
+        if batch_search:
+            query = query.filter(func.lower(Batch.batch_no).contains(batch_search))
+
     if filters.get("process_type"):
-        if "batch" not in [d.get("entity") for d in getattr(query, "column_descriptions", [])]:
-            query = query.join(Batch, Processing.batch_id == Batch.id)
         query = query.filter(Batch.process_type == filters["process_type"])
 
     rows = []
@@ -3703,7 +3720,14 @@ def processing_reports():
         summary=summary,
         filters=filters,
         stations=Station.query.order_by(Station.name).all(),
-        process_types=[r[0] for r in db.session.query(Batch.process_type).distinct().order_by(Batch.process_type).all()],
+        process_types=[
+            r[0] for r in db.session.query(Batch.process_type)
+            .filter(Batch.process_type.isnot(None))
+            .distinct()
+            .order_by(Batch.process_type)
+            .all()
+            if r[0]
+        ],
     )
 
 
