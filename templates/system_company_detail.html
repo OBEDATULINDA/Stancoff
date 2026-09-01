@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block page_title %}Configure {{company.name}}{% endblock %}
+{% block page_subtitle %}Company profile, modules and user access{% endblock %}
+{% block content %}
+<div class="section-card">
+  <div class="section-heading-row">
+    <div><h2>Company profile</h2><p class="help-text">{{'Stancoff is the protected legacy company.' if company.is_legacy_stancoff else 'This company has an independent dashboard and module set.'}}</p></div>
+    <a class="button secondary" href="/system/companies">Back to companies</a>
+  </div>
+  <form method="post" class="form">
+    <label>Company code<input name="code" value="{{company.code}}" required></label>
+    <label>Company name<input name="name" value="{{company.name}}" required></label>
+    <label>Business / operations type<input name="business_type" value="{{company.business_type or ''}}"></label>
+    <label>Status
+      <select name="status" {% if company.is_legacy_stancoff %}disabled{% endif %}>
+        <option {% if company.status=='Active' %}selected{% endif %}>Active</option>
+        <option {% if company.status=='Inactive' %}selected{% endif %}>Inactive</option>
+      </select>
+    </label>
+    <button>Save company</button>
+  </form>
+</div>
+
+<div class="section-card">
+  <h2>Modules</h2>
+  <p class="help-text">
+    Enable only what this company needs. New-company modules are placeholders until we design that company’s actual workflow.
+    Stancoff's legacy modules continue using the existing operational system.
+  </p>
+  {% set configured = modules|map(attribute='module_key')|list %}
+  {% set enabled = modules|selectattr('enabled')|map(attribute='module_key')|list %}
+  <form method="post" action="/system/companies/{{company.id}}/modules">
+    <div class="module-check-grid">
+      {% for item in catalog %}
+      <label class="module-check">
+        <input type="checkbox" name="modules" value="{{item.key}}" {% if item.key in enabled %}checked{% endif %}>
+        <span><strong>{{item.label}}</strong><small>{% if company.is_legacy_stancoff and item.key in ['coffee_operations','workforce','reports'] %}Existing Stancoff module{% else %}Configurable company module{% endif %}</small></span>
+      </label>
+      {% endfor %}
+
+      {% for m in modules if m.module_kind=='Custom' %}
+      <label class="module-check">
+        <input type="checkbox" name="modules" value="{{m.module_key}}" {% if m.enabled %}checked{% endif %}>
+        <span><strong>{{m.label}}</strong><small>Custom module</small></span>
+      </label>
+      {% endfor %}
+    </div>
+    <button>Save module configuration</button>
+  </form>
+
+  <hr class="section-divider">
+  <form method="post" action="/system/companies/{{company.id}}/modules/custom" class="inline-create-form">
+    <label>Custom module name<input name="label" placeholder="For example Internet Vouchers"></label>
+    <button>Add custom module</button>
+  </form>
+</div>
+
+<div class="section-card">
+  <h2>User access</h2>
+  <p class="help-text">A user's role can be different in each company.</p>
+  <form method="post" action="/system/companies/{{company.id}}/users" class="form">
+    <label>User
+      <select name="user_id" required>
+        <option value="">Select user</option>
+        {% for u in users %}<option value="{{u.id}}">{{u.full_name}} · {{u.username}}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Role
+      <select name="role">
+        {% for role in company_roles %}<option>{{role}}</option>{% endfor %}
+      </select>
+    </label>
+    <button>Grant / update access</button>
+  </form>
+
+  <div class="table-wrap"><table>
+    <tr><th>User</th><th>Username</th><th>Company role</th><th>Status</th><th>Action</th></tr>
+    {% for m in memberships %}
+    <tr>
+      <td>{{m.user.full_name}}</td>
+      <td>{{m.user.username}}</td>
+      <td>{{m.role}}</td>
+      <td>{{m.status}}</td>
+      <td>
+        {% if m.status=='Active' %}
+        <form method="post" action="/system/companies/{{company.id}}/users/{{m.user_id}}/remove" class="inline-form" onsubmit="return confirm('Remove this user from this company? Their historical records will remain.');">
+          <button class="danger small">Remove access</button>
+        </form>
+        {% else %}
+          <span class="muted-text">Access removed</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+      <tr><td colspan="5">No users assigned.</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endblock %}

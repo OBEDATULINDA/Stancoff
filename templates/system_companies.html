@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block page_title %}Companies & Modules{% endblock %}
+{% block page_subtitle %}Multi-company ERP administration{% endblock %}
+{% block content %}
+<div class="section-card">
+  <h2>Add company</h2>
+  <p class="help-text">Creating a company does not copy Stancoff data or modules into it.</p>
+  <form method="post" class="form">
+    <label>Company code<input name="code" placeholder="For example MME" required></label>
+    <label>Company name<input name="name" placeholder="Company Limited" required></label>
+    <label>Business / operations type<input name="business_type" placeholder="For example internet services, trading, construction"></label>
+    <button>Create company</button>
+  </form>
+</div>
+
+<div class="section-card">
+  <h2>Companies</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Code</th><th>Company</th><th>Operations</th><th>Status</th><th>Type</th><th>Action</th></tr>
+    {% for c in companies %}
+    <tr>
+      <td><strong>{{c.code}}</strong></td>
+      <td>{{c.name}}</td>
+      <td>{{c.business_type or '-'}}</td>
+      <td>{{c.status}}</td>
+      <td>{{'Legacy Stancoff ERP' if c.is_legacy_stancoff else 'Independent company'}}</td>
+      <td><a class="button small" href="/system/companies/{{c.id}}">Configure</a></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endblock %}

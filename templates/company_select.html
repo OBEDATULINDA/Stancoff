@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block page_title %}Choose Company{% endblock %}
+{% block page_subtitle %}Open the dashboard you want to work in{% endblock %}
+{% block content %}
+<div class="section-card">
+  <div class="section-heading-row">
+    <div>
+      <h2>Your companies</h2>
+      <p class="help-text">Each company has its own dashboard and its own configured modules.</p>
+    </div>
+    {% if current_is_super_admin %}
+      <a class="button secondary" href="/system/companies">Manage companies</a>
+    {% endif %}
+  </div>
+
+  {% if companies %}
+  <div class="company-picker-grid">
+    {% for company in companies %}
+    <div class="company-picker-card {% if selected_company and selected_company.id==company.id %}selected-company{% endif %}">
+      <div class="company-picker-icon">{{company.code[0]}}</div>
+      <div>
+        <h3>{{company.name}}</h3>
+        <p>{{company.business_type or 'Business operations'}}</p>
+        <small>{{company.code}}{% if company.is_legacy_stancoff %} · Existing Stancoff ERP{% endif %}</small>
+      </div>
+      <form method="post" action="/companies/{{company.id}}/select">
+        <button>Open dashboard</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+    <div class="empty-state">
+      <h3>No company access assigned</h3>
+      <p>Ask the system administrator to add your user account to a company.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

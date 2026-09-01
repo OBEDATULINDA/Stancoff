@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#173f35">
-  <title>{% block title %}Stancoff Operations{% endblock %}</title>
+  <title>{% block title %}Business ERP{% endblock %}</title>
   <link rel="manifest" href="/static/manifest.json">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
@@ -13,15 +13,28 @@
 {% if session.get('user_id') %}
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
-    <a class="brand" href="/">
-      <span class="brand-mark">S</span>
-      <span><strong>Stancoff</strong><small>Operations</small></span>
+    <a class="brand" href="{{ '/' if active_company and active_company.is_legacy_stancoff else '/company-dashboard' }}">
+      <span class="brand-mark">{{ (active_company.code[0] if active_company else 'E') }}</span>
+      <span>
+        <strong>{{ active_company.name if active_company else 'Business ERP' }}</strong>
+        <small>{{ active_company.business_type if active_company and active_company.business_type else 'Operations' }}</small>
+      </span>
     </a>
+
+    {% if active_company %}
+    <div class="company-switch-box">
+      <small>Current company</small>
+      <strong>{{active_company.code}}</strong>
+      <a href="/companies/select">Switch company</a>
+    </div>
+    {% endif %}
+
     <nav class="side-nav">
+      {% if active_company and active_company.is_legacy_stancoff %}
       <a href="/" class="{% if request.path=='/' %}active{% endif %}">Dashboard</a>
 
       {% set coffee_open = request.path.startswith('/suppliers') or request.path.startswith('/batches') or request.path.startswith('/purchases') or request.path.startswith('/processing') or request.path.startswith('/drying') or request.path.startswith('/inventory') or request.path.startswith('/locations') or request.path.startswith('/stations') or request.path.startswith('/station-transfers') or request.path.startswith('/sales') or request.path.startswith('/dispatch') or request.path.startswith('/prices') or request.path.startswith('/reports/processing') %}
-      {% if current_role in ['Admin','Manager','Receiving Clerk','Processing Supervisor','Storekeeper'] %}
+      {% if 'coffee_operations' in active_modules and current_role in ['Admin','Manager','Receiving Clerk','Processing Supervisor','Storekeeper'] %}
       <details class="nav-group" data-nav-group="coffee" {% if coffee_open %}open{% endif %}>
         <summary>Coffee operations</summary>
         <div class="nav-group-links">
@@ -44,7 +57,7 @@
           {% if current_role in ['Admin','Manager'] %}
           <a href="/prices" class="{% if request.path.startswith('/prices') %}active{% endif %}">Price history</a>
           {% endif %}
-          {% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
+          {% if 'reports' in active_modules and current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
           <a href="/reports/processing" class="{% if request.path.startswith('/reports/processing') %}active{% endif %}">Processing Reports</a>
           {% endif %}
         </div>
@@ -52,7 +65,7 @@
       {% endif %}
 
       {% set workforce_open = request.path.startswith('/casuals') or request.path.startswith('/casual-rates') or request.path.startswith('/attendance') or request.path.startswith('/payments') or request.path.startswith('/advances') %}
-      {% if current_role in ['Admin','Manager','Payroll Officer'] %}
+      {% if 'workforce' in active_modules and current_role in ['Admin','Manager','Payroll Officer'] %}
       <details class="nav-group" data-nav-group="workforce" {% if workforce_open %}open{% endif %}>
         <summary>Workforce</summary>
         <div class="nav-group-links">
@@ -68,17 +81,37 @@
       {% set admin_open = request.path.startswith('/users') or request.path.startswith('/audit') %}
       {% if current_role=='Admin' %}
       <details class="nav-group" data-nav-group="administration" {% if admin_open %}open{% endif %}>
-        <summary>Administration</summary>
+        <summary>Stancoff administration</summary>
         <div class="nav-group-links">
           <a href="/users" class="{% if request.path.startswith('/users') %}active{% endif %}">Users</a>
           <a href="/audit" class="{% if request.path.startswith('/audit') %}active{% endif %}">Audit log</a>
         </div>
       </details>
       {% endif %}
+
+      {% else %}
+      <a href="/company-dashboard" class="{% if request.path=='/company-dashboard' %}active{% endif %}">Dashboard</a>
+      {% for module in active_module_rows %}
+      <a href="/company-dashboard#module-{{module.module_key}}">{{module.label}}</a>
+      {% endfor %}
+      {% endif %}
+
+      {% if current_is_super_admin %}
+      <details class="nav-group" data-nav-group="system" {% if request.path.startswith('/system/companies') %}open{% endif %}>
+        <summary>ERP administration</summary>
+        <div class="nav-group-links">
+          <a href="/system/companies" class="{% if request.path.startswith('/system/companies') %}active{% endif %}">Companies &amp; Modules</a>
+        </div>
+      </details>
+      {% endif %}
     </nav>
+
     <div class="sidebar-user">
       <div class="avatar">{{ (current_user or 'U')[0] }}</div>
-      <div><strong>{{ current_user }}</strong><small>{{ current_role }}</small></div>
+      <div>
+        <strong>{{ current_user }}</strong>
+        <small>{{ current_role }}{% if current_is_super_admin %} · System Admin{% endif %}</small>
+      </div>
       <a class="logout" href="/logout">Log out</a>
     </div>
   </aside>
@@ -88,9 +121,12 @@
       <button class="menu-button" type="button" onclick="document.body.classList.toggle('menu-open')">☰</button>
       <div>
         <h1>{% block page_title %}Dashboard{% endblock %}</h1>
-        <p>{% block page_subtitle %}Stancoff Company Limited{% endblock %}</p>
+        <p>{% block page_subtitle %}{{active_company.name if active_company else 'Business ERP'}}{% endblock %}</p>
       </div>
-      <div class="topbar-date" id="today"></div>
+      <div class="topbar-company">
+        {% if active_company %}<span>{{active_company.name}}</span>{% endif %}
+        <div class="topbar-date" id="today"></div>
+      </div>
     </header>
     <main>
       {% with messages=get_flashed_messages() %}
@@ -114,9 +150,8 @@ document.getElementById('today')?.append(
 );
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js')}
 
-// Remember which sidebar sections the user opened or closed.
 document.querySelectorAll('.nav-group[data-nav-group]').forEach((group) => {
-  const key = `stancoff-nav-${group.dataset.navGroup}`;
+  const key = `erp-nav-${group.dataset.navGroup}`;
   const hasActiveLink = Boolean(group.querySelector('a.active'));
   const savedState = localStorage.getItem(key);
   if (!hasActiveLink && savedState !== null) group.open = savedState === 'open';

@@ -1,5 +1,6 @@
 
 import os
+import re
 import io
 import calendar
 from datetime import datetime, timedelta
@@ -37,6 +38,78 @@ ROLE_PERMISSIONS = {
     "Viewer": {"dashboard","reports"},
 }
 
+
+# ---------------------------------------------------------------------------
+# Version 8.0 multi-company foundation
+# ---------------------------------------------------------------------------
+
+class Company(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(30), unique=True, nullable=False)
+    name = db.Column(db.String(160), nullable=False)
+    slug = db.Column(db.String(80), unique=True, nullable=False)
+    business_type = db.Column(db.String(120))
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    is_legacy_stancoff = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class CompanyUser(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    role = db.Column(db.String(50), nullable=False, default="Viewer")
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company = db.relationship("Company")
+    user = db.relationship("User")
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "user_id", name="uq_company_user_access"),
+    )
+
+
+class CompanyModule(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    module_key = db.Column(db.String(80), nullable=False)
+    label = db.Column(db.String(120), nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    module_kind = db.Column(db.String(30), nullable=False, default="Configured")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company = db.relationship("Company")
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "module_key", name="uq_company_module"),
+    )
+
+
+class SystemAdmin(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user = db.relationship("User")
+
+
+MODULE_CATALOG = [
+    ("coffee_operations", "Coffee Operations"),
+    ("workforce", "Workforce & Payroll"),
+    ("accounting", "Accounting & Finance"),
+    ("general_sales", "Sales"),
+    ("general_inventory", "Inventory"),
+    ("customers", "Customers"),
+    ("projects", "Projects / Jobs"),
+    ("reports", "Reports & Analytics"),
+]
+
+COMPANY_ROLES = [
+    "Admin",
+    "Manager",
+    "Receiving Clerk",
+    "Processing Supervisor",
+    "Storekeeper",
+    "Payroll Officer",
+    "Viewer",
+]
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     full_name = db.Column(db.String(120), nullable=False)
@@ -50,6 +123,7 @@ class User(db.Model):
 class AuditLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
     username = db.Column(db.String(80))
     action = db.Column(db.String(80), nullable=False)
     module = db.Column(db.String(80), nullable=False)
@@ -394,6 +468,7 @@ def log_action(action, module, record_id=None, details=None):
         return
     db.session.add(AuditLog(
         user_id=session["user_id"],
+        company_id=session.get("company_id"),
         username=session.get("username"),
         action=action,
         module=module,
@@ -423,6 +498,160 @@ def permission_required(permission):
             return fn(*args, **kwargs)
         return wrapper
     return decorator
+
+
+def current_company():
+    company_id = session.get("company_id")
+    if not company_id:
+        return None
+    return db.session.get(Company, company_id)
+
+
+def user_is_super_admin(user_id=None):
+    uid = user_id or session.get("user_id")
+    if not uid:
+        return False
+    return SystemAdmin.query.filter_by(user_id=uid).first() is not None
+
+
+def super_admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        if not user_is_super_admin():
+            abort(403)
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def available_companies_for_user(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        return []
+    if user_is_super_admin(user_id):
+        return Company.query.filter_by(status="Active").order_by(Company.name).all()
+    return (
+        Company.query
+        .join(CompanyUser, CompanyUser.company_id == Company.id)
+        .filter(
+            CompanyUser.user_id == user_id,
+            CompanyUser.status == "Active",
+            Company.status == "Active",
+        )
+        .order_by(Company.name)
+        .all()
+    )
+
+
+def company_membership(user_id, company_id):
+    return CompanyUser.query.filter_by(
+        user_id=user_id,
+        company_id=company_id,
+        status="Active",
+    ).first()
+
+
+def enabled_company_modules(company_id):
+    return CompanyModule.query.filter_by(
+        company_id=company_id,
+        enabled=True,
+    ).order_by(CompanyModule.id).all()
+
+
+def slugify_company(value):
+    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower()).strip("-")
+    return slug or "company"
+
+
+def unique_company_slug(value, exclude_id=None):
+    base = slugify_company(value)
+    slug = base
+    counter = 2
+    while True:
+        query = Company.query.filter(func.lower(Company.slug) == slug.lower())
+        if exclude_id:
+            query = query.filter(Company.id != exclude_id)
+        if not query.first():
+            return slug
+        slug = f"{base}-{counter}"
+        counter += 1
+
+
+def ensure_company_foundation():
+    """Create the multi-company foundation without deleting existing ERP data."""
+    # db.create_all() in ensure_multistation_schema creates the new company tables.
+    stancoff = Company.query.filter_by(is_legacy_stancoff=True).first()
+    if not stancoff:
+        stancoff = Company.query.filter(func.lower(Company.code) == "stancoff").first()
+    if not stancoff:
+        stancoff = Company(
+            code="STANCOFF",
+            name="Stancoff Company Limited",
+            slug="stancoff",
+            business_type="Coffee processing and trading",
+            status="Active",
+            is_legacy_stancoff=True,
+        )
+        db.session.add(stancoff)
+        db.session.flush()
+    else:
+        stancoff.is_legacy_stancoff = True
+        if not stancoff.slug:
+            stancoff.slug = "stancoff"
+
+    # Preserve all existing users by granting them access to Stancoff with
+    # the same role they already had before Version 8.0.
+    for user in User.query.all():
+        membership = CompanyUser.query.filter_by(
+            company_id=stancoff.id,
+            user_id=user.id,
+        ).first()
+        if not membership:
+            db.session.add(CompanyUser(
+                company_id=stancoff.id,
+                user_id=user.id,
+                role=user.role or "Viewer",
+                status="Active" if user.status == "Active" else "Inactive",
+            ))
+
+    # The oldest existing Admin becomes the first system administrator.
+    # This avoids changing or replacing any existing login.
+    if not SystemAdmin.query.first():
+        first_admin = User.query.filter_by(role="Admin").order_by(User.id).first()
+        if first_admin:
+            db.session.add(SystemAdmin(user_id=first_admin.id))
+
+    # Enable the modules that already exist in the Stancoff ERP.
+    stancoff_modules = [
+        ("coffee_operations", "Coffee Operations", "Legacy"),
+        ("workforce", "Workforce & Payroll", "Legacy"),
+        ("reports", "Reports & Analytics", "Legacy"),
+    ]
+    for key, label, kind in stancoff_modules:
+        row = CompanyModule.query.filter_by(
+            company_id=stancoff.id,
+            module_key=key,
+        ).first()
+        if not row:
+            db.session.add(CompanyModule(
+                company_id=stancoff.id,
+                module_key=key,
+                label=label,
+                enabled=True,
+                module_kind=kind,
+            ))
+
+    db.session.commit()
+
+    # Existing audit rows were created before companies existed. They belong
+    # to the legacy Stancoff ERP, so assign only previously-unassigned rows.
+    AuditLog.query.filter(AuditLog.company_id.is_(None)).update(
+        {AuditLog.company_id: stancoff.id},
+        synchronize_session=False,
+    )
+    db.session.commit()
+    return stancoff
 
 
 def add_months_safe(d, months=1):
@@ -596,6 +825,14 @@ def ensure_multistation_schema():
             if column_name not in item_columns:
                 db.session.execute(text(f"ALTER TABLE station_transfer_item ADD COLUMN {column_name} {column_type}"))
                 db.session.commit()
+    # Version 8.0: add company context to the existing audit table.
+    # This is additive only; no existing audit rows are removed.
+    if "audit_log" in table_names:
+        audit_columns = {c["name"] for c in inspector.get_columns("audit_log")}
+        if "company_id" not in audit_columns:
+            db.session.execute(text("ALTER TABLE audit_log ADD COLUMN company_id INTEGER"))
+            db.session.commit()
+
     db.create_all()
 
     default_station = Station.query.order_by(Station.id).first()
@@ -621,9 +858,42 @@ def ensure_db():
         ))
         db.session.commit()
 
+    stancoff = ensure_company_foundation()
+
+    # Legacy Stancoff operational routes remain isolated from every newly
+    # created company until each company's own modules are designed.
+    if "user_id" in session and session.get("company_id"):
+        selected = db.session.get(Company, session.get("company_id"))
+        if selected and not selected.is_legacy_stancoff:
+            legacy_prefixes = (
+                "/suppliers", "/prices", "/batches", "/purchases",
+                "/processing", "/drying", "/inventory", "/locations",
+                "/stations", "/station-transfers", "/sales", "/dispatch",
+                "/casual", "/casuals", "/casual-rate", "/casual-rates",
+                "/attendance", "/payments", "/payment", "/payment-receipt",
+                "/advances", "/advance", "/reports/processing",
+                "/audit", "/users",
+            )
+            if request.path.startswith(legacy_prefixes):
+                flash(
+                    f"{selected.name} does not use the Stancoff modules. "
+                    "Its operational modules will be designed separately."
+                )
+                return redirect(url_for("company_dashboard"))
+
+
 @app.context_processor
 def inject_helpers():
-    return {"current_role": session.get("role"), "current_user": session.get("full_name")}
+    company = current_company()
+    modules = enabled_company_modules(company.id) if company else []
+    return {
+        "current_role": session.get("role"),
+        "current_user": session.get("full_name"),
+        "active_company": company,
+        "active_modules": {m.module_key for m in modules},
+        "active_module_rows": modules,
+        "current_is_super_admin": user_is_super_admin() if session.get("user_id") else False,
+    }
 
 @app.route("/health")
 def health():
@@ -641,7 +911,7 @@ def login():
         user.last_login = datetime.utcnow()
         db.session.commit()
         log_action("LOGIN", "Authentication", user.id)
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("company_select"))
     return render_template("login.html")
 
 @app.route("/logout")
@@ -650,10 +920,319 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
+@app.route("/companies/select")
+@login_required
+def company_select():
+    companies = available_companies_for_user(session["user_id"])
+    if not companies:
+        return render_template("company_select.html", companies=[])
+
+    # Keep the currently selected company if it is still accessible.
+    selected_id = session.get("company_id")
+    if selected_id and any(c.id == selected_id for c in companies):
+        selected_company = db.session.get(Company, selected_id)
+    else:
+        selected_company = None
+
+    return render_template(
+        "company_select.html",
+        companies=companies,
+        selected_company=selected_company,
+    )
+
+
+@app.route("/companies/<int:id>/select", methods=["POST"])
+@login_required
+def select_company(id):
+    company = db.session.get(Company, id)
+    if not company or company.status != "Active":
+        flash("That company is not available.")
+        return redirect(url_for("company_select"))
+
+    membership = company_membership(session["user_id"], company.id)
+    if not membership and not user_is_super_admin():
+        abort(403)
+
+    user = db.session.get(User, session["user_id"])
+    session["company_id"] = company.id
+    session["company_name"] = company.name
+    session["company_slug"] = company.slug
+    session["role"] = membership.role if membership else "Admin"
+    session["system_role"] = user.role if user else "Viewer"
+
+    log_action("SELECT", "Company", company.id, f"Opened {company.name}")
+
+    if company.is_legacy_stancoff:
+        return redirect(url_for("dashboard"))
+    return redirect(url_for("company_dashboard"))
+
+
+@app.route("/company-dashboard")
+@login_required
+def company_dashboard():
+    company = current_company()
+    if not company:
+        return redirect(url_for("company_select"))
+    if company.is_legacy_stancoff:
+        return redirect(url_for("dashboard"))
+
+    modules = enabled_company_modules(company.id)
+    return render_template(
+        "company_dashboard.html",
+        company=company,
+        modules=modules,
+    )
+
+
+@app.route("/system/companies", methods=["GET", "POST"])
+@super_admin_required
+def system_companies():
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip().upper()
+        name = (request.form.get("name") or "").strip()
+        business_type = (request.form.get("business_type") or "").strip()
+
+        if not code or not name:
+            flash("Company code and company name are required.")
+            return redirect(url_for("system_companies"))
+
+        if Company.query.filter(func.lower(Company.code) == code.lower()).first():
+            flash("That company code already exists.")
+            return redirect(url_for("system_companies"))
+
+        company = Company(
+            code=code,
+            name=name,
+            slug=unique_company_slug(name),
+            business_type=business_type or None,
+            status="Active",
+            is_legacy_stancoff=False,
+        )
+        db.session.add(company)
+        db.session.flush()
+
+        # The system administrator who creates a company receives access
+        # automatically. Other users can then be assigned from the company page.
+        db.session.add(CompanyUser(
+            company_id=company.id,
+            user_id=session["user_id"],
+            role="Admin",
+            status="Active",
+        ))
+        db.session.commit()
+
+        log_action("CREATE", "Companies", company.id, f"{company.code} - {company.name}")
+        flash(
+            f"{company.name} created. Now choose its modules and assign users. "
+            "No Stancoff operational data is shared with it."
+        )
+        return redirect(url_for("system_company_detail", id=company.id))
+
+    return render_template(
+        "system_companies.html",
+        companies=Company.query.order_by(Company.name).all(),
+    )
+
+
+@app.route("/system/companies/<int:id>", methods=["GET", "POST"])
+@super_admin_required
+def system_company_detail(id):
+    company = db.session.get(Company, id)
+    if not company:
+        abort(404)
+
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        code = (request.form.get("code") or "").strip().upper()
+        business_type = (request.form.get("business_type") or "").strip()
+        status = request.form.get("status", "Active")
+
+        if not name or not code:
+            flash("Company name and code are required.")
+            return redirect(url_for("system_company_detail", id=id))
+
+        duplicate = Company.query.filter(
+            Company.id != company.id,
+            func.lower(Company.code) == code.lower(),
+        ).first()
+        if duplicate:
+            flash("That company code is already in use.")
+            return redirect(url_for("system_company_detail", id=id))
+
+        company.name = name
+        company.code = code
+        company.business_type = business_type or None
+        if not company.is_legacy_stancoff:
+            company.status = status if status in {"Active", "Inactive"} else "Active"
+        db.session.commit()
+
+        log_action("EDIT", "Companies", company.id, f"Updated {company.name}")
+        flash("Company details updated.")
+        return redirect(url_for("system_company_detail", id=id))
+
+    modules = CompanyModule.query.filter_by(company_id=company.id).order_by(CompanyModule.id).all()
+    memberships = CompanyUser.query.filter_by(company_id=company.id).order_by(CompanyUser.id).all()
+    users = User.query.order_by(User.full_name).all()
+    catalog = [
+        {"key": key, "label": label}
+        for key, label in MODULE_CATALOG
+    ]
+    return render_template(
+        "system_company_detail.html",
+        company=company,
+        modules=modules,
+        memberships=memberships,
+        users=users,
+        catalog=catalog,
+        company_roles=COMPANY_ROLES,
+    )
+
+
+@app.route("/system/companies/<int:id>/modules", methods=["POST"])
+@super_admin_required
+def system_company_modules(id):
+    company = db.session.get(Company, id)
+    if not company:
+        abort(404)
+
+    selected = set(request.form.getlist("modules"))
+    catalog_map = dict(MODULE_CATALOG)
+
+    # Built-in configurable modules.
+    for key, label in MODULE_CATALOG:
+        row = CompanyModule.query.filter_by(company_id=id, module_key=key).first()
+        enabled = key in selected
+        if row:
+            # Legacy Stancoff modules keep their legacy kind.
+            row.enabled = enabled
+            row.label = label
+        elif enabled:
+            db.session.add(CompanyModule(
+                company_id=id,
+                module_key=key,
+                label=label,
+                enabled=True,
+                module_kind="Legacy" if company.is_legacy_stancoff and key in {
+                    "coffee_operations", "workforce", "reports"
+                } else "Configured",
+            ))
+
+    # Existing custom modules keep their enabled/disabled setting from the form.
+    custom_rows = CompanyModule.query.filter_by(
+        company_id=id,
+        module_kind="Custom",
+    ).all()
+    for row in custom_rows:
+        row.enabled = row.module_key in selected
+
+    db.session.commit()
+    log_action("EDIT", "Company Modules", id, f"Updated modules for {company.name}")
+    flash("Company modules updated.")
+    return redirect(url_for("system_company_detail", id=id))
+
+
+@app.route("/system/companies/<int:id>/modules/custom", methods=["POST"])
+@super_admin_required
+def system_company_custom_module(id):
+    company = db.session.get(Company, id)
+    if not company:
+        abort(404)
+
+    label = (request.form.get("label") or "").strip()
+    if not label:
+        flash("Enter a module name.")
+        return redirect(url_for("system_company_detail", id=id))
+
+    base = "custom_" + slugify_company(label).replace("-", "_")
+    key = base
+    counter = 2
+    while CompanyModule.query.filter_by(company_id=id, module_key=key).first():
+        key = f"{base}_{counter}"
+        counter += 1
+
+    db.session.add(CompanyModule(
+        company_id=id,
+        module_key=key,
+        label=label,
+        enabled=True,
+        module_kind="Custom",
+    ))
+    db.session.commit()
+
+    log_action("CREATE", "Company Modules", id, f"Added {label} to {company.name}")
+    flash(f"{label} added as a custom module placeholder.")
+    return redirect(url_for("system_company_detail", id=id))
+
+
+@app.route("/system/companies/<int:id>/users", methods=["POST"])
+@super_admin_required
+def system_company_users(id):
+    company = db.session.get(Company, id)
+    if not company:
+        abort(404)
+
+    user_id = request.form.get("user_id", type=int)
+    role = request.form.get("role", "Viewer")
+    if role not in COMPANY_ROLES:
+        role = "Viewer"
+
+    user = db.session.get(User, user_id) if user_id else None
+    if not user:
+        flash("Select a valid user.")
+        return redirect(url_for("system_company_detail", id=id))
+
+    membership = CompanyUser.query.filter_by(company_id=id, user_id=user.id).first()
+    if membership:
+        membership.role = role
+        membership.status = "Active"
+    else:
+        db.session.add(CompanyUser(
+            company_id=id,
+            user_id=user.id,
+            role=role,
+            status="Active",
+        ))
+    db.session.commit()
+
+    log_action("GRANT", "Company Access", user.id, f"{user.username} -> {company.name} as {role}")
+    flash(f"{user.full_name} now has access to {company.name} as {role}.")
+    return redirect(url_for("system_company_detail", id=id))
+
+
+@app.route("/system/companies/<int:company_id>/users/<int:user_id>/remove", methods=["POST"])
+@super_admin_required
+def system_company_user_remove(company_id, user_id):
+    company = db.session.get(Company, company_id)
+    membership = CompanyUser.query.filter_by(
+        company_id=company_id,
+        user_id=user_id,
+    ).first()
+    if not company or not membership:
+        abort(404)
+
+    # Never lock the last system administrator out of the legacy Stancoff company.
+    if company.is_legacy_stancoff and user_is_super_admin(user_id):
+        flash("System administrator access to Stancoff cannot be removed.")
+        return redirect(url_for("system_company_detail", id=company_id))
+
+    membership.status = "Inactive"
+    db.session.commit()
+
+    log_action("REVOKE", "Company Access", user_id, f"Removed from {company.name}")
+    flash("Company access removed. The user's historical records were not changed.")
+    return redirect(url_for("system_company_detail", id=company_id))
+
+
 @app.route("/")
 @login_required
 def dashboard():
     """Operations dashboard using Python aggregation for PostgreSQL/SQLite compatibility."""
+    company = current_company()
+    if not company:
+        return redirect(url_for("company_select"))
+    if not company.is_legacy_stancoff:
+        return redirect(url_for("company_dashboard"))
     period = request.args.get("period", "90")
     period_days = {"30": 30, "90": 90, "365": 365}
     start_date = None
