@@ -270,6 +270,10 @@ class Company(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(20), unique=True, nullable=False)
     name = db.Column(db.String(180), unique=True, nullable=False)
+    # This column already exists in the production database and is NOT NULL.
+    # Keep it mapped so new companies are inserted safely without altering
+    # or recreating the existing company table.
+    slug = db.Column(db.String(120), unique=True, nullable=False)
     business_type = db.Column(db.String(60), nullable=False)
     status = db.Column(db.String(20), nullable=False, default="Active")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -504,15 +508,49 @@ def ensure_multistation_schema():
             db.session.commit()
     db.create_all()
 
+    # The production company table predates this release and already contains a
+    # NOT NULL slug column.  Insert seed companies with explicit SQL so startup
+    # remains safe even if an older ORM mapping is present on a deployed worker.
+    company_columns = {c["name"] for c in inspector.get_columns("company")} if "company" in table_names else set()
+
     stancoff_company = Company.query.filter_by(code="STANCOFF").first()
     if not stancoff_company:
-        db.session.add(Company(code="STANCOFF", name="Stancoff Company Limited", business_type="Specialty Coffee", status="Active"))
+        if "slug" in company_columns:
+            db.session.execute(text(
+                "INSERT INTO company (code, name, slug, business_type, status, created_at) "
+                "VALUES (:code, :name, :slug, :business_type, :status, :created_at)"
+            ), {
+                "code": "STANCOFF",
+                "name": "Stancoff Company Limited",
+                "slug": "stancoff",
+                "business_type": "Specialty Coffee",
+                "status": "Active",
+                "created_at": datetime.utcnow(),
+            })
+        else:
+            db.session.add(Company(code="STANCOFF", name="Stancoff Company Limited", business_type="Specialty Coffee", status="Active"))
+        db.session.commit()
+
     mothers = Company.query.filter_by(code="MHS").first()
     if not mothers:
-        mothers = Company(code="MHS", name="Mothers Harvest Suppliers", business_type="Commercial Coffee", status="Active")
-        db.session.add(mothers)
-        db.session.flush()
-    if not CommercialSetting.query.filter_by(company_id=mothers.id).first():
+        if "slug" in company_columns:
+            db.session.execute(text(
+                "INSERT INTO company (code, name, slug, business_type, status, created_at) "
+                "VALUES (:code, :name, :slug, :business_type, :status, :created_at)"
+            ), {
+                "code": "MHS",
+                "name": "Mothers Harvest Suppliers",
+                "slug": "mothers-harvest",
+                "business_type": "Commercial Coffee",
+                "status": "Active",
+                "created_at": datetime.utcnow(),
+            })
+        else:
+            db.session.add(Company(code="MHS", name="Mothers Harvest Suppliers", business_type="Commercial Coffee", status="Active"))
+        db.session.commit()
+        mothers = Company.query.filter_by(code="MHS").first()
+
+    if mothers and not CommercialSetting.query.filter_by(company_id=mothers.id).first():
         db.session.add(CommercialSetting(company_id=mothers.id, drugar_dry_threshold=13.5, parchment_dry_threshold=13.5))
     db.session.commit()
 
