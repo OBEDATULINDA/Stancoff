@@ -2910,7 +2910,11 @@ def attendance():
 
     for casual_id, anchor in anchors.items():
         casual = workers_by_id.get(casual_id)
-        if not casual:
+
+        # Monthly payment cards are shown only for active workers.
+        # Inactive workers keep all historical attendance/payment records,
+        # but their cards are removed from the active workforce view.
+        if not casual or casual.status != "Active":
             continue
 
         current_start, current_end = rolling_month_cycle(anchor, today)
