@@ -8,11 +8,7 @@
     <div><span class="eyebrow">{{ row.drying_no }}</span><h2>{{ row.batch.batch_no }} · {{ row.grade }}</h2></div>
     <span class="panel-note">{{ row.drying_status }}</span>
   </div>
-  <p>Finish Drying now uses the coffee's <strong>latest current inventory weight</strong>. If semi-dry coffee was reweighed during storage or movement, the older wet weight is no longer used.</p>
-  <div class="calculation-box" style="margin-top:14px">
-    <div><span>Current tracked weight</span><strong>{{ '{:,.2f}'.format(current_total_weight) }} kg</strong></div>
-    <div><span>Current outturn from original drying input</span><strong>{{ '{:.2f}%'.format(current_outturn) }}</strong></div>
-  </div>
+  <p>Select the coffee balance, destination station and storage location. A cross-station choice automatically creates a station transfer and printable transfer note.</p>
 </section>
 
 <section class="panel" style="margin-top:18px">
@@ -28,8 +24,8 @@
         {% endfor %}
       </select>
     </label>
-    <label>Current semi-dry weight available<input id="availableWeight" readonly></label>
-    <label>Current weight being finished (kg)<input type="number" step="0.01" min="0.01" name="wet_weight" id="wetWeight" required></label>
+    <label>Wet / semi-dry weight available<input id="availableWeight" readonly></label>
+    <label>Wet weight being finished (kg)<input type="number" step="0.01" min="0.01" name="wet_weight" id="wetWeight" required></label>
     <label>Actual dry weight to store (kg)<input type="number" step="0.01" min="0.01" name="dry_weight" id="dryWeight" required></label>
     <label>Completion / movement date<input type="date" name="movement_date" value="{{ today }}" required></label>
     <label>Moisture % <small>Optional record only; no separate moisture approval is required.</small><input type="number" step="0.01" min="0" max="100" name="moisture" id="moisture"></label>
@@ -57,7 +53,7 @@
 
     <div class="form-wide calculation-box">
       <div><span>Movement type</span><strong id="movementType">Select source and destination</strong></div>
-      <div><span>Current balance remaining</span><strong id="remainingWeight">0.00 kg</strong></div>
+      <div><span>Wet balance remaining</span><strong id="remainingWeight">0.00 kg</strong></div>
       <div><span>Drying loss for this movement</span><strong id="dryingLoss">0.00 kg</strong></div>
     </div>
 
@@ -78,7 +74,7 @@
 
     <label class="form-wide">Remarks<textarea name="remarks" rows="3"></textarea></label>
     <div class="form-wide action-row">
-      <button class="primary-button">Save finish drying</button>
+      <button class="primary-button">Complete movement</button>
       <a class="secondary-button" href="{{ url_for('drying') }}">Cancel</a>
     </div>
   </form>

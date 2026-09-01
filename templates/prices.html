@@ -1,36 +1,3 @@
-{% extends "base.html" %}
-{% block title %}Price History · Stancoff{% endblock %}
-{% block page_title %}Purchase price history{% endblock %}
-{% block page_subtitle %}Actual supplier prices recorded automatically from purchase entries{% endblock %}
-{% block content %}
-<section class="metric-grid">
-  <article class="metric-card">
-    <span>All-time weighted average cherry price</span>
-    <strong>UGX {{"{:,.0f}".format(weighted_average)}} / kg</strong>
-    <small>Based on {{"{:,.0f}".format(weighted_kg)}} kg of active good cherry purchases</small>
-  </article>
-</section>
-<section class="panel" style="margin-top:18px">
-  <div class="panel-heading">
-    <div><span class="eyebrow">History</span><h2>Actual purchase prices</h2></div>
-    <span class="panel-note">Automatically recorded from purchases</span>
-  </div>
-  <div class="table-scroll"><table>
-    <thead><tr><th>Date</th><th>Receipt</th><th>Supplier</th><th>Cherry/kg</th><th>Floater/kg</th><th>Source</th><th>Status</th><th>Notes</th></tr></thead>
-    <tbody>
-    {% for r in rows %}
-    <tr class="{% if r.status=='Voided' %}voided-row{% endif %}">
-      <td>{{r.effective_date}}</td>
-      <td>{{r.receipt_no or '—'}}</td>
-      <td>{{r.supplier.name if r.supplier else 'Historical/manual entry'}}</td>
-      <td>UGX {{"{:,.0f}".format(r.cherry_price)}}</td>
-      <td>UGX {{"{:,.0f}".format(r.floater_price)}}</td>
-      <td>{{r.source or 'Manual'}}</td>
-      <td>{{r.status or 'Active'}}</td>
-      <td>{{r.notes or '—'}}</td>
-    </tr>
-    {% else %}<tr><td colspan="8" class="empty">No purchase prices recorded yet.</td></tr>{% endfor %}
-    </tbody>
-  </table></div>
-</section>
-{% endblock %}
+{% extends "base.html" %}{% block content %}<h2>Price History</h2><form method=post class=form><input type=date name=effective_date required><input type=number name=cherry_price placeholder="Cherry price" required>
+<input type=number name=floater_price placeholder="Floater price" required><input name=notes placeholder=Notes><button>Save</button></form><table><tr><th>Date</th><th>Cherry</th><th>Floaters</th><th>Notes</th></tr>
+{% for r in rows %}<tr><td>{{r.effective_date}}</td><td>{{r.cherry_price}}</td><td>{{r.floater_price}}</td><td>{{r.notes}}</td></tr>{% endfor %}</table>{% endblock %}

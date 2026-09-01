@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Mothers Harvest Commercial{% endblock %}
+{% block page_title %}Commercial Dashboard{% endblock %}
+{% block page_subtitle %}Mothers Harvest Suppliers{% endblock %}
+{% block content %}
+<div class="dashboard-toolbar"><div><span class="eyebrow">Commercial coffee</span><h2>Mothers Harvest Suppliers</h2><p class="panel-note">Parchment and DRUGAR operations</p></div></div>
+<div class="metric-grid analytics-metrics">
+  <div class="metric-card compact"><span>Active lots</span><strong>{{ stats.lots }}</strong></div>
+  <div class="metric-card compact"><span>Available coffee</span><strong>{{ '%.1f'|format(stats.stock) }} kg</strong></div>
+  <div class="metric-card compact"><span>Purchase value</span><strong>UGX {{ '{:,.0f}'.format(stats.purchase_value) }}</strong></div>
+  <div class="metric-card compact"><span>Needs drying</span><strong>{{ stats.needs_drying }}</strong></div>
+</div>
+<div class="data-grid">
+  <section class="panel"><div class="panel-heading"><div><span class="eyebrow">Quick actions</span><h2>Commercial operations</h2></div></div>
+    <div class="quick-links">
+      <a href="{{ url_for('commercial_purchases') }}"><strong>Purchases</strong><span>Buy parchment, DRUGAR FAQ or processed coffee.</span></a>
+      <a href="{{ url_for('commercial_drying') }}"><strong>Drying</strong><span>Dry wet/high-moisture commercial coffee.</span></a>
+      <a href="{{ url_for('commercial_analysis') }}"><strong>Analysis</strong><span>General outturn, defects and net outturn.</span></a>
+      <a href="{{ url_for('commercial_lots') }}"><strong>Lots</strong><span>See current state and available quantity.</span></a>
+    </div>
+  </section>
+  <section class="panel"><div class="panel-heading"><div><span class="eyebrow">Recent</span><h2>Analysis records</h2></div></div>
+    <div class="table-scroll"><table><thead><tr><th>No.</th><th>Lot</th><th>Type</th><th>Net OT</th></tr></thead><tbody>
+      {% for r in analyses %}<tr><td><a href="{{ url_for('commercial_analysis_print',id=r.id) }}">{{ r.analysis_no }}</a></td><td>{{ r.lot.lot_no }}</td><td>{{ r.lot.coffee_type }}</td><td>{{ '%.2f'|format(r.net_outturn) }}%</td></tr>{% else %}<tr><td colspan="4">No analyses yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+{% endblock %}

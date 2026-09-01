@@ -19,7 +19,6 @@
 <section class="metric-grid analytics-metrics">
   <article class="metric-card"><span>Good coffee received</span><strong>{{ "{:,.0f}".format(stats.good_weight) }} kg</strong><small>{{ stats.purchases }} active purchase entries</small></article>
   <article class="metric-card"><span>Purchase value</span><strong>UGX {{ "{:,.0f}".format(stats.total_spend) }}</strong><small>Within selected period</small></article>
-  <article class="metric-card"><span>Average cherry buying price</span><strong>UGX {{ "{:,.0f}".format(stats.average_cherry_price) }} / kg</strong><small>Weighted average across {{ "{:,.0f}".format(stats.average_cherry_price_kg) }} kg purchased all time</small></article>
   <article class="metric-card"><span>Current coffee stock</span><strong>{{ "{:,.0f}".format(stats.current_stock) }} kg</strong><small>Across all active locations</small></article>
   <article class="metric-card"><span>Open operational batches</span><strong>{{ stats.open_batches }}</strong><small>Open, processing or drying</small></article>
   <article class="metric-card compact"><span>Average processing outturn</span><strong>{{ "{:.1f}".format(stats.processing_outturn) }}%</strong></article>

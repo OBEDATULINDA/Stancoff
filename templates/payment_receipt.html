@@ -4,224 +4,47 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Casual Payment Receipt - {{ row.payment_ref }}</title>
   <style>
-    @page{
-      size:A4 portrait;
-      margin:9mm;
-    }
-
-    *{box-sizing:border-box}
-
-    html,body{
-      margin:0;
-      padding:0;
-      font-family:Arial,Helvetica,sans-serif;
-      color:#111;
-      font-size:11.5px;
-      line-height:1.25;
-      background:#fff;
-    }
-
-    body{
-      max-width:190mm;
-      margin:0 auto;
-    }
-
-    .no-print{
-      margin:0 0 8px;
-      padding:7px 12px;
-      font-size:12px;
-    }
-
-    .box{
-      border:1.2px solid #000;
-      padding:10mm 9mm 8mm;
-      min-height:auto;
-    }
-
-    h2{
-      text-align:center;
-      margin:0;
-      font-size:17px;
-      line-height:1.15;
-    }
-
-    h3{
-      text-align:center;
-      margin:2px 0 0;
-      font-size:13px;
-      line-height:1.15;
-    }
-
-    .subtitle{
-      text-align:center;
-      margin:2px 0 8px;
-      font-size:10.5px;
-    }
-
-    table{
-      width:100%;
-      border-collapse:collapse;
-      margin-top:6px;
-    }
-
-    td{
-      padding:3.5px 5px;
-      border-bottom:1px solid #ddd;
-      vertical-align:top;
-    }
-
-    td:first-child{
-      width:48%;
-      font-weight:600;
-    }
-
-    td:last-child{
-      text-align:right;
-      width:52%;
-    }
-
-    .amount{
-      font-size:13px;
-      font-weight:bold;
-    }
-
-    .ack{
-      margin-top:9px;
-      line-height:1.3;
-    }
-
-    .advance-list{
-      margin-top:7px;
-      padding:6px 8px;
-      border:1px solid #ddd;
-      background:#fafafa;
-    }
-
-    .advance-list div{
-      margin-top:2px;
-    }
-
-    .signatures{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:28px;
-      margin-top:22px;
-      page-break-inside:avoid;
-      break-inside:avoid;
-    }
-
-    .signature-line{
-      border-top:1px solid #000;
-      padding-top:4px;
-      text-align:center;
-      font-size:10.5px;
-    }
-
-    .small{
-      font-size:10px;
-      color:#333;
-      margin:4px 0 0;
-    }
-
-    .receipt-footer{
-      margin-top:8px;
-      text-align:center;
-      font-size:9.5px;
-      color:#555;
-    }
-
-    @media print{
-      html,body{
-        width:100%;
-        height:auto;
-        font-size:10.5px;
-      }
-
-      .no-print{display:none}
-
-      body{
-        max-width:none;
-      }
-
-      .box{
-        border:1px solid #000;
-        padding:6mm 7mm 5mm;
-      }
-
-      h2{font-size:15px}
-      h3{font-size:12px}
-
-      table{margin-top:4px}
-
-      td{
-        padding:2.5px 4px;
-      }
-
-      .ack{
-        margin-top:6px;
-        line-height:1.2;
-      }
-
-      .advance-list{
-        margin-top:5px;
-        padding:4px 6px;
-      }
-
-      .signatures{
-        margin-top:17px;
-        gap:24px;
-      }
-
-      .small{
-        margin-top:3px;
-      }
-
-      .receipt-footer{
-        margin-top:5px;
-      }
-    }
+    body{font-family:Arial,sans-serif;max-width:760px;margin:24px auto;color:#111}
+    .box{border:1.5px solid #000;padding:28px}
+    h2,h3{text-align:center;margin:4px 0}
+    .subtitle{text-align:center;margin:0 0 20px}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left}
+    td:last-child{text-align:right}
+    .amount{font-size:1.15rem;font-weight:bold}
+    .ack{margin-top:26px;line-height:1.6}
+    .signatures{display:grid;grid-template-columns:1fr 1fr;gap:42px;margin-top:48px}
+    .signature-line{border-top:1px solid #000;padding-top:7px;text-align:center}
+    .small{font-size:.9rem;color:#333}
+    .no-print{margin-bottom:15px}
+    @media print{.no-print{display:none}body{margin:0}.box{border:1px solid #000}}
   </style>
 </head>
 <body>
   <button class="no-print" onclick="window.print()">Print receipt</button>
-
   <div class="box">
     <h2>STANCOFF COMPANY LIMITED</h2>
-    <h3>WORKFORCE PAYMENT RECEIPT</h3>
+    <h3>CASUAL PAYMENT RECEIPT</h3>
     <p class="subtitle">Payment acknowledgement</p>
 
     <table>
       <tr><td>Receipt reference</td><td>{{ row.payment_ref }}</td></tr>
       <tr><td>Casual worker</td><td>{{ row.casual.code }} - {{ row.casual.name }}</td></tr>
-      <tr><td>Pay type</td><td>{{ row.pay_type or row.casual.pay_frequency or 'Daily' }}</td></tr>
-      <tr><td>Payment period</td><td>{{ row.period_start.strftime('%d %b %Y') }} to {{ row.period_end.strftime('%d %b %Y') }}</td></tr>
-      <tr><td>Rate applied</td><td>UGX {{ "{:,.0f}".format(row.rate_applied or 0) }}</td></tr>
+      <tr><td>Attendance period</td><td>{{ row.period_start.strftime('%d %b %Y') }} to {{ row.period_end.strftime('%d %b %Y') }}</td></tr>
       <tr><td>Date of payment</td><td>{{ row.payment_date.strftime('%d %b %Y') }}</td></tr>
       <tr><td>Full days worked</td><td>{{ full_days }}</td></tr>
       <tr><td>Half days worked</td><td>{{ half_days }}</td></tr>
       <tr><td>Total days payable</td><td>{{ "%.1f"|format(days_equivalent) }}</td></tr>
       <tr><td>Gross amount</td><td>UGX {{ "{:,.0f}".format(row.gross_pay) }}</td></tr>
-      <tr><td>Other deduction</td><td>UGX {{ "{:,.0f}".format(row.deduction or 0) }}</td></tr>
-      <tr><td>Salary advance deducted</td><td>UGX {{ "{:,.0f}".format(row.advance_deduction or 0) }}</td></tr>
+      <tr><td>Deduction</td><td>UGX {{ "{:,.0f}".format(row.deduction or 0) }}</td></tr>
       <tr><td>Payment method</td><td>{{ row.method or '-' }}</td></tr>
       <tr><td>Net amount paid</td><td class="amount">UGX {{ "{:,.0f}".format(row.net_paid) }}</td></tr>
     </table>
 
-    {% if deducted_advances %}
-    <div class="advance-list">
-      <strong>Advances included in this salary deduction:</strong>
-      {% for a in deducted_advances %}
-      <div>{{a.advance_ref}} · {{a.advance_date}} · UGX {{"{:,.0f}".format(a.amount)}}</div>
-      {% endfor %}
-    </div>
-    {% endif %}
-
     <div class="ack">
-      <strong>Payee acknowledgement:</strong>
-      I, <strong>{{ row.casual.name }}</strong>, acknowledge receipt of the net amount shown above as
-      <strong>{{ (row.pay_type or row.casual.pay_frequency or "Daily")|lower }}</strong> payment
-      for the stated period. Recorded attendance for the period was
-      <strong>{{ "%.1f"|format(days_equivalent) }}</strong> day(s).
+      <strong>Payee acknowledgement:</strong><br>
+      I, <strong>{{ row.casual.name }}</strong>, acknowledge that I have received the net amount shown above as payment for
+      <strong>{{ "%.1f"|format(days_equivalent) }}</strong> day(s) worked during the stated attendance period.
     </div>
 
     <div class="signatures">
@@ -236,10 +59,7 @@
         <p class="small">Date: ____________________</p>
       </div>
     </div>
-
-    <div class="receipt-footer">Stancoff Company Limited · Workforce payment record</div>
   </div>
-
   <script>window.print()</script>
 </body>
 </html>

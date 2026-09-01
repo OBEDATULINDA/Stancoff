@@ -77,91 +77,39 @@
   </form>
 </div>
 
-{% if monthly_card_groups %}
+{% if weekly_cards %}
 <div class="section-card">
-  <div class="section-heading-row">
-    <div>
-      <h2>Monthly attendance & payment cards</h2>
-      <p class="help-text">
-        Each employee has their own rolling month based on their first attendance date.
-        Scroll sideways through the previous two periods and the current period.
-        Older periods that have not been settled are marked <strong>Unpaid</strong>.
-      </p>
-    </div>
-  </div>
-
-  <div class="employee-cycle-groups">
-    {% for group in monthly_card_groups %}
-    <section class="employee-cycle-group">
-      <div class="employee-cycle-heading">
-        <div>
-          <strong>{{group.casual.name}}</strong>
-          <small>{{group.casual.code}} · {{group.casual.pay_frequency or 'Daily'}} pay</small>
-        </div>
-        <span class="scroll-hint">← Scroll periods →</span>
+  <h2>Weekly attendance cards</h2>
+  <p class="help-text">Each card follows that worker’s own 7-day attendance cycle, beginning from their first attendance date. Use Prepare Payment to send the exact period directly to Casual Payments.</p>
+  <div class="weekly-card-grid">
+    {% for w in weekly_cards %}
+    <div class="weekly-card">
+      <div class="weekly-card-head">
+        <div><strong>{{w.casual.name}}</strong><small>{{w.casual.code}}</small></div>
+        <span class="status-pill">{% if w.unpaid %}Partly/Not paid{% else %}Fully paid{% endif %}</span>
       </div>
-
-      <div class="monthly-card-scroll">
-        {% for m in group.cards %}
-        <article class="monthly-card payment-cycle-card {% if m.card_status=='Unpaid' %}cycle-unpaid{% elif m.card_status=='Paid' %}cycle-paid{% else %}cycle-current{% endif %}">
-          <div class="weekly-card-head">
-            <div>
-              <strong>{{m.month_label}}</strong>
-              <small>
-                {% if m.is_current %}Current rolling period{% else %}Completed rolling period{% endif %}
-              </small>
-            </div>
-            <span class="status-pill">{{m.card_status}}</span>
+      <div class="week-period">{{w.start.strftime('%d %b %Y')}} – {{w.end.strftime('%d %b %Y')}}</div>
+      <div class="week-days">
+        {% for day_name in w.day_labels %}
+          {% set day_index = loop.index0 %}
+          {% set day_rows = w.day_entries[day_index] %}
+          <div class="week-day {% if day_rows %}worked{% endif %}">
+            <span>{{day_name}}</span>
+            <small>{{w.day_dates[day_index]}}</small>
+            {% if day_rows %}
+              <strong>{% for entry in day_rows %}{{'1' if entry.work_type=='Full Day' else '½'}}{% if not loop.last %}+{% endif %}{% endfor %}</strong>
+              <small>{% if day_rows|selectattr('status','equalto','Unpaid')|list %}Unpaid{% else %}Paid{% endif %}</small>
+            {% else %}<strong>—</strong><small>No entry</small>{% endif %}
           </div>
-
-          <div class="cycle-date-grid compact-cycle-grid">
-            {% for d in m.cycle_dates %}
-              {% set day_rows = m.date_entries.get(d.isoformat(), []) %}
-              <div class="cycle-day {% if day_rows %}worked{% endif %}">
-                <span class="cycle-weekday">{{d.strftime('%a')}}</span>
-                <span class="day-number">{{d.strftime('%d %b')}}</span>
-                {% if day_rows %}
-                  <strong>
-                    {% for entry in day_rows %}
-                      {{'1' if entry.work_type=='Full Day' else '½'}}{% if not loop.last %}+{% endif %}
-                    {% endfor %}
-                  </strong>
-                  <small>{% if day_rows|selectattr('status','equalto','Unpaid')|list %}Unpaid attendance{% else %}Paid attendance{% endif %}</small>
-                {% else %}
-                  <strong>—</strong>
-                {% endif %}
-              </div>
-            {% endfor %}
-          </div>
-
-          <div class="weekly-totals">
-            <span><small>Equivalent days</small><strong>{{m.days}}</strong></span>
-            <span><small>Attendance value</small><strong>UGX {{"{:,.0f}".format(m.amount)}}</strong></span>
-            <span>
-              <small>Payment status</small>
-              <strong>
-                {% if m.payment %}
-                  {{m.payment.payment_ref}}
-                {% elif m.card_status=='Current' %}
-                  Not due yet
-                {% else %}
-                  Not paid
-                {% endif %}
-              </strong>
-            </span>
-          </div>
-
-          {% if m.payment %}
-            <a class="button secondary" target="_blank" href="/payment-receipt/{{m.payment.id}}">View payment receipt</a>
-          {% else %}
-            <a class="button" href="/payments?casual_id={{m.casual.id}}&period_start={{m.start}}&period_end={{m.end}}">
-              {% if m.is_current %}Review current period{% else %}Prepare payment for this period{% endif %}
-            </a>
-          {% endif %}
-        </article>
         {% endfor %}
       </div>
-    </section>
+      <div class="weekly-totals">
+        <span><small>Days</small><strong>{{w.days}}</strong></span>
+        <span><small>Total earned</small><strong>UGX {{"{:,.0f}".format(w.amount)}}</strong></span>
+        <span><small>Unpaid</small><strong>UGX {{"{:,.0f}".format(w.unpaid_amount)}}</strong></span>
+      </div>
+      {% if w.unpaid %}<a class="button" href="/payments?casual_id={{w.casual.id}}&period_start={{w.start}}&period_end={{w.end}}">Prepare Payment</a>{% endif %}
+    </div>
     {% endfor %}
   </div>
 </div>

@@ -6,12 +6,6 @@
 <section class="panel">
 <form method="post" class="processing-form" id="processingForm">
   <label>Processing date<input type="date" name="processing_date" value="{{ row.processing_date }}" required></label>
-  <label>Station
-    <select name="station_id" required>
-      <option value="">Select station</option>
-      {% for s in stations %}<option value="{{s.id}}" {% if row.station_id==s.id %}selected{% endif %}>{{s.code}} · {{s.name}}</option>{% endfor %}
-    </select>
-  </label>
   <label>Batch<input value="{{ row.batch.batch_no }}" readonly></label>
   <label>Weight entering sorting (kg)<input type="number" step="0.01" min="0.01" name="input_weight" id="inputWeight" value="{{ row.input_weight }}" required></label>
   <div class="grade-input grade-a-box"><label>Grade A — Red (kg)<input type="number" step="0.01" min="0" name="grade_a_weight" id="gradeA" value="{{ row.grade_a_weight }}" required></label></div>

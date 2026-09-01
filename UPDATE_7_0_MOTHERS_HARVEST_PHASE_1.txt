@@ -1,0 +1,25 @@
+STANCOFF ERP — UPDATE 7.0
+MOTHERS HARVEST SUPPLIERS — COMMERCIAL PHASE 1
+
+Added without deleting or recreating existing Stancoff PostgreSQL data:
+- Multi-company foundation with Stancoff and Mothers Harvest Suppliers.
+- Company selector in the top bar.
+- Separate commercial suppliers.
+- Commercial purchases for Parchment Cherries, Wet Parchment, Dry Parchment, DRUGAR FAQ and already processed AA/AB/CPB/WUGAR.
+- Automatic MHS lot numbers.
+- Configurable moisture thresholds for DRUGAR FAQ and Dry Parchment.
+- Drying workflow that converts input weight to actual dry weight.
+- Commercial lot register with current state and available balance.
+- Commercial analysis based on the supplied grading-analysis template.
+- Parchment sample hulling: General Outturn = hulled sample / parchment sample.
+- Defect sorting: Net Outturn = sound beans / original sample.
+- DRUGAR analysis does not show AA/AB/CPB grading.
+- Printable commercial analysis report with signatures.
+- Fixes Update 6.8.1 inventory regression where generic stock movements referenced undefined dry_weight/wet_weight variables.
+
+Next planned phase:
+- Production runs (Hulling, Grading, Gravity Table, Color Sorting, Full Processing)
+- Expected vs Actual production
+- Production report
+- Commercial inventory movements / external processing
+- Sales and dispatch

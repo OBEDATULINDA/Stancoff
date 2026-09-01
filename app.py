@@ -1,21 +1,12 @@
 
 import os
-import re
-import io
-import calendar
 from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session, abort, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, session, abort
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, desc, inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
-import xlsxwriter
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-in-production")
@@ -30,85 +21,13 @@ db = SQLAlchemy(app)
 
 ROLE_PERMISSIONS = {
     "Admin": {"*"},
-    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","drying","inventory","locations","stations","transfers","sales","dispatch","casuals","rates","attendance","payments","reports"},
-    "Receiving Clerk": {"dashboard","suppliers","batches","purchases"},
-    "Processing Supervisor": {"dashboard","batches","processing","drying","inventory","locations","stations","transfers","reports"},
-    "Storekeeper": {"dashboard","batches","drying","inventory","locations","stations","transfers","sales","dispatch","reports"},
+    "Manager": {"dashboard","suppliers","prices","batches","purchases","processing","drying","inventory","locations","stations","transfers","sales","dispatch","casuals","rates","attendance","payments","reports","commercial"},
+    "Receiving Clerk": {"dashboard","suppliers","batches","purchases","commercial"},
+    "Processing Supervisor": {"dashboard","batches","processing","drying","inventory","locations","stations","transfers","reports","commercial"},
+    "Storekeeper": {"dashboard","batches","drying","inventory","locations","stations","transfers","sales","dispatch","reports","commercial"},
     "Payroll Officer": {"dashboard","casuals","rates","attendance","payments"},
     "Viewer": {"dashboard","reports"},
 }
-
-
-# ---------------------------------------------------------------------------
-# Version 8.0 multi-company foundation
-# ---------------------------------------------------------------------------
-
-class Company(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(30), unique=True, nullable=False)
-    name = db.Column(db.String(160), nullable=False)
-    slug = db.Column(db.String(80), unique=True, nullable=False)
-    business_type = db.Column(db.String(120))
-    status = db.Column(db.String(20), nullable=False, default="Active")
-    is_legacy_stancoff = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-
-class CompanyUser(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    role = db.Column(db.String(50), nullable=False, default="Viewer")
-    status = db.Column(db.String(20), nullable=False, default="Active")
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    company = db.relationship("Company")
-    user = db.relationship("User")
-    __table_args__ = (
-        db.UniqueConstraint("company_id", "user_id", name="uq_company_user_access"),
-    )
-
-
-class CompanyModule(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
-    module_key = db.Column(db.String(80), nullable=False)
-    label = db.Column(db.String(120), nullable=False)
-    enabled = db.Column(db.Boolean, nullable=False, default=True)
-    module_kind = db.Column(db.String(30), nullable=False, default="Configured")
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    company = db.relationship("Company")
-    __table_args__ = (
-        db.UniqueConstraint("company_id", "module_key", name="uq_company_module"),
-    )
-
-
-class SystemAdmin(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    user = db.relationship("User")
-
-
-MODULE_CATALOG = [
-    ("coffee_operations", "Coffee Operations"),
-    ("workforce", "Workforce & Payroll"),
-    ("accounting", "Accounting & Finance"),
-    ("general_sales", "Sales"),
-    ("general_inventory", "Inventory"),
-    ("customers", "Customers"),
-    ("projects", "Projects / Jobs"),
-    ("reports", "Reports & Analytics"),
-]
-
-COMPANY_ROLES = [
-    "Admin",
-    "Manager",
-    "Receiving Clerk",
-    "Processing Supervisor",
-    "Storekeeper",
-    "Payroll Officer",
-    "Viewer",
-]
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -123,7 +42,6 @@ class User(db.Model):
 class AuditLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
     username = db.Column(db.String(80))
     action = db.Column(db.String(80), nullable=False)
     module = db.Column(db.String(80), nullable=False)
@@ -144,13 +62,7 @@ class PriceHistory(db.Model):
     effective_date = db.Column(db.Date, nullable=False)
     cherry_price = db.Column(db.Float, nullable=False)
     floater_price = db.Column(db.Float, nullable=False)
-    supplier_id = db.Column(db.Integer, db.ForeignKey("supplier.id"))
-    purchase_id = db.Column(db.Integer, db.ForeignKey("purchase.id"))
-    receipt_no = db.Column(db.String(30))
-    source = db.Column(db.String(30), default="Purchase")
-    status = db.Column(db.String(20), default="Active")
     notes = db.Column(db.Text)
-    supplier = db.relationship("Supplier", foreign_keys=[supplier_id])
 
 class Batch(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -185,7 +97,6 @@ class Processing(db.Model):
     processing_no = db.Column(db.String(30), unique=True, nullable=False)
     processing_date = db.Column(db.Date, nullable=False)
     batch_id = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False, unique=True)
-    station_id = db.Column(db.Integer, db.ForeignKey("station.id"))
     input_weight = db.Column(db.Float, nullable=False)
     grade_a_weight = db.Column(db.Float, nullable=False, default=0)
     grade_b_weight = db.Column(db.Float, nullable=False, default=0)
@@ -202,7 +113,6 @@ class Processing(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     batch = db.relationship("Batch")
-    station = db.relationship("Station", foreign_keys=[station_id])
 
 class Drying(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -303,55 +213,11 @@ class StationTransfer(db.Model):
     dispatched_by = db.Column(db.String(120))
     received_by = db.Column(db.String(120))
     authorized_by = db.Column(db.String(120))
-    received_date = db.Column(db.Date)
-    received_weight = db.Column(db.Float)
-    received_moisture = db.Column(db.Float)
-    received_bags = db.Column(db.Integer)
-    weight_difference = db.Column(db.Float)
-    receipt_notes = db.Column(db.Text)
     status = db.Column(db.String(20), nullable=False, default="Completed")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     movement = db.relationship("CoffeeMovement")
     from_station = db.relationship("Station", foreign_keys=[from_station_id])
     to_station = db.relationship("Station", foreign_keys=[to_station_id])
-
-class StationTransferDocument(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    transfer_no = db.Column(db.String(30), unique=True, nullable=False)
-    transfer_date = db.Column(db.Date, nullable=False)
-    from_station_id = db.Column(db.Integer, db.ForeignKey("station.id"), nullable=False)
-    to_station_id = db.Column(db.Integer, db.ForeignKey("station.id"), nullable=False)
-    vehicle_no = db.Column(db.String(80))
-    driver_name = db.Column(db.String(150))
-    driver_phone = db.Column(db.String(60))
-    dispatch_time = db.Column(db.String(20))
-    arrival_time = db.Column(db.String(20))
-    dispatched_by = db.Column(db.String(120))
-    received_by = db.Column(db.String(120))
-    authorized_by = db.Column(db.String(120))
-    remarks = db.Column(db.Text)
-    received_date = db.Column(db.Date)
-    receipt_notes = db.Column(db.Text)
-    status = db.Column(db.String(20), nullable=False, default="In Transit")
-    created_by = db.Column(db.String(80))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    from_station = db.relationship("Station", foreign_keys=[from_station_id])
-    to_station = db.relationship("Station", foreign_keys=[to_station_id])
-    items = db.relationship("StationTransferItem", back_populates="document", cascade="all, delete-orphan", order_by="StationTransferItem.id")
-
-
-class StationTransferItem(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    document_id = db.Column(db.Integer, db.ForeignKey("station_transfer_document.id"), nullable=False)
-    movement_id = db.Column(db.Integer, db.ForeignKey("coffee_movement.id"), nullable=False, unique=True)
-    number_of_bags = db.Column(db.Integer)
-    received_weight = db.Column(db.Float)
-    received_moisture = db.Column(db.Float)
-    received_bags = db.Column(db.Integer)
-    weight_difference = db.Column(db.Float)
-    document = db.relationship("StationTransferDocument", back_populates="items")
-    movement = db.relationship("CoffeeMovement")
-
 
 class Sale(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -398,21 +264,144 @@ class Dispatch(db.Model):
     batch = db.relationship("Batch")
     from_location = db.relationship("Location")
 
+
+
+class Company(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(20), unique=True, nullable=False)
+    name = db.Column(db.String(180), unique=True, nullable=False)
+    business_type = db.Column(db.String(60), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class CommercialSupplier(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    code = db.Column(db.String(30), nullable=False)
+    name = db.Column(db.String(180), nullable=False)
+    phone = db.Column(db.String(60))
+    location = db.Column(db.String(180))
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    company = db.relationship("Company")
+    __table_args__ = (db.UniqueConstraint("company_id", "code", name="uq_commercial_supplier_company_code"),)
+
+class CommercialLot(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    lot_no = db.Column(db.String(30), nullable=False)
+    coffee_type = db.Column(db.String(50), nullable=False)
+    current_state = db.Column(db.String(50), nullable=False)
+    original_weight = db.Column(db.Float, nullable=False)
+    available_weight = db.Column(db.Float, nullable=False)
+    moisture = db.Column(db.Float)
+    status = db.Column(db.String(30), nullable=False, default="Active")
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company = db.relationship("Company")
+    __table_args__ = (db.UniqueConstraint("company_id", "lot_no", name="uq_commercial_lot_company_no"),)
+
+class CommercialPurchase(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    purchase_no = db.Column(db.String(30), nullable=False)
+    purchase_date = db.Column(db.Date, nullable=False)
+    supplier_id = db.Column(db.Integer, db.ForeignKey("commercial_supplier.id"), nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey("commercial_lot.id"), nullable=False, unique=True)
+    coffee_type = db.Column(db.String(50), nullable=False)
+    weight = db.Column(db.Float, nullable=False)
+    moisture = db.Column(db.Float)
+    price_per_kg = db.Column(db.Float, nullable=False, default=0)
+    total_amount = db.Column(db.Float, nullable=False, default=0)
+    drying_required = db.Column(db.Boolean, nullable=False, default=False)
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    created_by = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company = db.relationship("Company")
+    supplier = db.relationship("CommercialSupplier")
+    lot = db.relationship("CommercialLot")
+    __table_args__ = (db.UniqueConstraint("company_id", "purchase_no", name="uq_commercial_purchase_company_no"),)
+
+class CommercialDrying(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    drying_no = db.Column(db.String(30), nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey("commercial_lot.id"), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    input_weight = db.Column(db.Float, nullable=False)
+    initial_moisture = db.Column(db.Float)
+    end_date = db.Column(db.Date)
+    dry_weight = db.Column(db.Float)
+    final_moisture = db.Column(db.Float)
+    status = db.Column(db.String(30), nullable=False, default="Drying")
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company = db.relationship("Company")
+    lot = db.relationship("CommercialLot")
+    __table_args__ = (db.UniqueConstraint("company_id", "drying_no", name="uq_commercial_drying_company_no"),)
+
+class CommercialSetting(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, unique=True)
+    drugar_dry_threshold = db.Column(db.Float, nullable=False, default=13.5)
+    parchment_dry_threshold = db.Column(db.Float, nullable=False, default=13.5)
+    company = db.relationship("Company")
+
+class CommercialAnalysis(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    analysis_no = db.Column(db.String(30), nullable=False)
+    analysis_date = db.Column(db.Date, nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey("commercial_lot.id"), nullable=False)
+    sample_weight = db.Column(db.Float, nullable=False)
+    moisture = db.Column(db.Float)
+    hulled_weight = db.Column(db.Float)
+    general_outturn = db.Column(db.Float, nullable=False, default=0)
+    blacks = db.Column(db.Float, default=0)
+    partly_blacks = db.Column(db.Float, default=0)
+    insect_damaged = db.Column(db.Float, default=0)
+    diseased_tourney_oily = db.Column(db.Float, default=0)
+    chalky_whites = db.Column(db.Float, default=0)
+    faded = db.Column(db.Float, default=0)
+    withered_fools = db.Column(db.Float, default=0)
+    broken_pulp_nipped = db.Column(db.Float, default=0)
+    pods = db.Column(db.Float, default=0)
+    foreign_matter = db.Column(db.Float, default=0)
+    total_defects = db.Column(db.Float, nullable=False, default=0)
+    sound_beans = db.Column(db.Float, nullable=False, default=0)
+    net_outturn = db.Column(db.Float, nullable=False, default=0)
+    screen_18 = db.Column(db.Float, default=0)
+    screen_17 = db.Column(db.Float, default=0)
+    screen_16 = db.Column(db.Float, default=0)
+    screen_15 = db.Column(db.Float, default=0)
+    screen_14 = db.Column(db.Float, default=0)
+    aa_percent = db.Column(db.Float, default=0)
+    ab_percent = db.Column(db.Float, default=0)
+    cpb_percent = db.Column(db.Float, default=0)
+    wugar_percent = db.Column(db.Float, default=0)
+    colour = db.Column(db.String(40))
+    smell = db.Column(db.String(40))
+    remarks = db.Column(db.Text)
+    analysed_by = db.Column(db.String(120))
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company = db.relationship("Company")
+    lot = db.relationship("CommercialLot")
+    __table_args__ = (db.UniqueConstraint("company_id", "analysis_no", name="uq_commercial_analysis_company_no"),)
+
 class Casual(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(20), unique=True, nullable=False)
     name = db.Column(db.String(150), nullable=False)
     sex = db.Column(db.String(20))
     phone = db.Column(db.String(50))
-    pay_frequency = db.Column(db.String(20), nullable=False, default="Daily")
     status = db.Column(db.String(20), default="Active")
 
 class CasualRate(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     casual_id = db.Column(db.Integer, db.ForeignKey("casual.id"), nullable=False)
     effective_date = db.Column(db.Date, nullable=False)
-    daily_rate = db.Column(db.Float, nullable=False)  # Stores the rate amount for Daily, Weekly, or Monthly pay.
-    pay_type = db.Column(db.String(20), nullable=False, default="Daily")
+    daily_rate = db.Column(db.Float, nullable=False)
     notes = db.Column(db.Text)
     casual = db.relationship("Casual")
 
@@ -436,39 +425,18 @@ class Payment(db.Model):
     period_end = db.Column(db.Date, nullable=False)
     gross_pay = db.Column(db.Float, nullable=False)
     deduction = db.Column(db.Float, default=0)
-    advance_deduction = db.Column(db.Float, default=0)
     net_paid = db.Column(db.Float, nullable=False)
     payment_date = db.Column(db.Date, nullable=False)
     method = db.Column(db.String(30))
-    pay_type = db.Column(db.String(20), nullable=False, default="Daily")
-    rate_applied = db.Column(db.Float)
-    attendance_days = db.Column(db.Float, default=0)
     status = db.Column(db.String(20), default="Paid")
     void_reason = db.Column(db.Text)
     casual = db.relationship("Casual")
-
-
-
-class SalaryAdvance(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    advance_ref = db.Column(db.String(30), unique=True, nullable=False)
-    casual_id = db.Column(db.Integer, db.ForeignKey("casual.id"), nullable=False)
-    cycle_start = db.Column(db.Date, nullable=False)
-    cycle_end = db.Column(db.Date, nullable=False)
-    advance_date = db.Column(db.Date, nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    notes = db.Column(db.Text)
-    status = db.Column(db.String(20), nullable=False, default="Active")
-    deducted_payment_id = db.Column(db.Integer, db.ForeignKey("payment.id"))
-    casual = db.relationship("Casual")
-    deducted_payment = db.relationship("Payment", foreign_keys=[deducted_payment_id])
 
 def log_action(action, module, record_id=None, details=None):
     if "user_id" not in session:
         return
     db.session.add(AuditLog(
         user_id=session["user_id"],
-        company_id=session.get("company_id"),
         username=session.get("username"),
         action=action,
         module=module,
@@ -499,199 +467,6 @@ def permission_required(permission):
         return wrapper
     return decorator
 
-
-def current_company():
-    company_id = session.get("company_id")
-    if not company_id:
-        return None
-    return db.session.get(Company, company_id)
-
-
-def user_is_super_admin(user_id=None):
-    uid = user_id or session.get("user_id")
-    if not uid:
-        return False
-    return SystemAdmin.query.filter_by(user_id=uid).first() is not None
-
-
-def super_admin_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if "user_id" not in session:
-            return redirect(url_for("login"))
-        if not user_is_super_admin():
-            abort(403)
-        return fn(*args, **kwargs)
-    return wrapper
-
-
-def available_companies_for_user(user_id):
-    user = db.session.get(User, user_id)
-    if not user:
-        return []
-    if user_is_super_admin(user_id):
-        return Company.query.filter_by(status="Active").order_by(Company.name).all()
-    return (
-        Company.query
-        .join(CompanyUser, CompanyUser.company_id == Company.id)
-        .filter(
-            CompanyUser.user_id == user_id,
-            CompanyUser.status == "Active",
-            Company.status == "Active",
-        )
-        .order_by(Company.name)
-        .all()
-    )
-
-
-def company_membership(user_id, company_id):
-    return CompanyUser.query.filter_by(
-        user_id=user_id,
-        company_id=company_id,
-        status="Active",
-    ).first()
-
-
-def enabled_company_modules(company_id):
-    return CompanyModule.query.filter_by(
-        company_id=company_id,
-        enabled=True,
-    ).order_by(CompanyModule.id).all()
-
-
-def slugify_company(value):
-    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower()).strip("-")
-    return slug or "company"
-
-
-def unique_company_slug(value, exclude_id=None):
-    base = slugify_company(value)
-    slug = base
-    counter = 2
-    while True:
-        query = Company.query.filter(func.lower(Company.slug) == slug.lower())
-        if exclude_id:
-            query = query.filter(Company.id != exclude_id)
-        if not query.first():
-            return slug
-        slug = f"{base}-{counter}"
-        counter += 1
-
-
-def ensure_company_foundation():
-    """Create the multi-company foundation without deleting existing ERP data."""
-    # db.create_all() in ensure_multistation_schema creates the new company tables.
-    stancoff = Company.query.filter_by(is_legacy_stancoff=True).first()
-    if not stancoff:
-        stancoff = Company.query.filter(func.lower(Company.code) == "stancoff").first()
-    if not stancoff:
-        stancoff = Company(
-            code="STANCOFF",
-            name="Stancoff Company Limited",
-            slug="stancoff",
-            business_type="Coffee processing and trading",
-            status="Active",
-            is_legacy_stancoff=True,
-        )
-        db.session.add(stancoff)
-        db.session.flush()
-    else:
-        stancoff.is_legacy_stancoff = True
-        if not stancoff.slug:
-            stancoff.slug = "stancoff"
-
-    # Preserve all existing users by granting them access to Stancoff with
-    # the same role they already had before Version 8.0.
-    for user in User.query.all():
-        membership = CompanyUser.query.filter_by(
-            company_id=stancoff.id,
-            user_id=user.id,
-        ).first()
-        if not membership:
-            db.session.add(CompanyUser(
-                company_id=stancoff.id,
-                user_id=user.id,
-                role=user.role or "Viewer",
-                status="Active" if user.status == "Active" else "Inactive",
-            ))
-
-    # The oldest existing Admin becomes the first system administrator.
-    # This avoids changing or replacing any existing login.
-    if not SystemAdmin.query.first():
-        first_admin = User.query.filter_by(role="Admin").order_by(User.id).first()
-        if first_admin:
-            db.session.add(SystemAdmin(user_id=first_admin.id))
-
-    # Enable the modules that already exist in the Stancoff ERP.
-    stancoff_modules = [
-        ("coffee_operations", "Coffee Operations", "Legacy"),
-        ("workforce", "Workforce & Payroll", "Legacy"),
-        ("reports", "Reports & Analytics", "Legacy"),
-    ]
-    for key, label, kind in stancoff_modules:
-        row = CompanyModule.query.filter_by(
-            company_id=stancoff.id,
-            module_key=key,
-        ).first()
-        if not row:
-            db.session.add(CompanyModule(
-                company_id=stancoff.id,
-                module_key=key,
-                label=label,
-                enabled=True,
-                module_kind=kind,
-            ))
-
-    db.session.commit()
-
-    # Existing audit rows were created before companies existed. They belong
-    # to the legacy Stancoff ERP, so assign only previously-unassigned rows.
-    AuditLog.query.filter(AuditLog.company_id.is_(None)).update(
-        {AuditLog.company_id: stancoff.id},
-        synchronize_session=False,
-    )
-    db.session.commit()
-    return stancoff
-
-
-def add_months_safe(d, months=1):
-    month_index = d.month - 1 + months
-    year = d.year + month_index // 12
-    month = month_index % 12 + 1
-    day = min(d.day, calendar.monthrange(year, month)[1])
-    return d.replace(year=year, month=month, day=day)
-
-def worker_first_date(casual_id):
-    first = Attendance.query.filter(
-        Attendance.casual_id == casual_id,
-        Attendance.status != "Voided",
-    ).order_by(Attendance.work_date.asc(), Attendance.id.asc()).first()
-    return first.work_date if first else datetime.utcnow().date()
-
-def rolling_month_cycle(anchor, target):
-    if target < anchor:
-        return anchor, add_months_safe(anchor, 1) - timedelta(days=1)
-    start = anchor
-    while True:
-        next_start = add_months_safe(start, 1)
-        if target < next_start:
-            return start, next_start - timedelta(days=1)
-        start = next_start
-
-def worker_pay_cycle(casual, target=None):
-    target = target or datetime.utcnow().date()
-    anchor = worker_first_date(casual.id)
-    pay_type = casual.pay_frequency or "Daily"
-    if pay_type == "Monthly":
-        return rolling_month_cycle(anchor, target)
-    days_since = max(0, (target - anchor).days)
-    start = anchor + timedelta(days=(days_since // 7) * 7)
-    return start, start + timedelta(days=6)
-
-def worker_advance_due(casual, target=None):
-    cycle_start, cycle_end = worker_pay_cycle(casual, target)
-    return cycle_start + timedelta(days=13), cycle_start, cycle_end
-
 def next_code(model, field, prefix, width):
     row = model.query.order_by(model.id.desc()).first()
     if not row:
@@ -707,37 +482,11 @@ def get_price(d):
     return PriceHistory.query.filter(PriceHistory.effective_date <= d).order_by(
         PriceHistory.effective_date.desc(), PriceHistory.id.desc()).first()
 
-def get_rate(casual_id, d, pay_type=None):
-    query = CasualRate.query.filter(
+def get_rate(casual_id, d):
+    return CasualRate.query.filter(
         CasualRate.casual_id == casual_id,
         CasualRate.effective_date <= d
-    )
-    if pay_type:
-        query = query.filter(CasualRate.pay_type == pay_type)
-    return query.order_by(CasualRate.effective_date.desc(), CasualRate.id.desc()).first()
-
-
-def attendance_amount(casual, rate_row, work_type):
-    """Attendance creates earnings only for daily-paid workers."""
-    if casual.pay_frequency != "Daily":
-        return 0.0
-    return float(rate_row.daily_rate) if work_type == "Full Day" else float(rate_row.daily_rate) / 2
-
-
-def payment_period_units(pay_type, start, end):
-    days = (end - start).days + 1
-    if pay_type == "Weekly":
-        return max(1, (days + 6) // 7)
-    if pay_type == "Monthly":
-        # Count rolling monthly cycles from the selected period start.
-        # Example: 05 Aug-04 Sep is one monthly period, not two.
-        units = 0
-        cursor = start
-        while cursor <= end:
-            units += 1
-            cursor = add_months_safe(cursor, 1)
-        return max(1, units)
-    return 1
+    ).order_by(CasualRate.effective_date.desc(), CasualRate.id.desc()).first()
 
 def ensure_multistation_schema():
     """Add multi-station support without deleting or recreating existing data."""
@@ -748,92 +497,24 @@ def ensure_multistation_schema():
         if "station_id" not in columns:
             db.session.execute(text("ALTER TABLE location ADD COLUMN station_id INTEGER"))
             db.session.commit()
-    if "price_history" in table_names:
-        price_columns = {c["name"] for c in inspector.get_columns("price_history")}
-        for column_name, column_type in {
-            "supplier_id": "INTEGER",
-            "purchase_id": "INTEGER",
-            "receipt_no": "VARCHAR(30)",
-            "source": "VARCHAR(30) DEFAULT 'Manual'",
-            "status": "VARCHAR(20) DEFAULT 'Active'",
-        }.items():
-            if column_name not in price_columns:
-                db.session.execute(text(f"ALTER TABLE price_history ADD COLUMN {column_name} {column_type}"))
-                db.session.commit()
-    if "processing" in table_names:
-        processing_columns = {c["name"] for c in inspector.get_columns("processing")}
-        if "station_id" not in processing_columns:
-            db.session.execute(text("ALTER TABLE processing ADD COLUMN station_id INTEGER"))
-            db.session.commit()
     if "coffee_movement" in table_names:
         movement_columns = {c["name"] for c in inspector.get_columns("coffee_movement")}
         if "source_weight" not in movement_columns:
             db.session.execute(text("ALTER TABLE coffee_movement ADD COLUMN source_weight FLOAT"))
             db.session.commit()
-    if "station_transfer" in table_names:
-        legacy_columns = {c["name"] for c in inspector.get_columns("station_transfer")}
-        for column_name, column_type in {
-            "received_date": "DATE",
-            "received_weight": "FLOAT",
-            "received_moisture": "FLOAT",
-            "received_bags": "INTEGER",
-            "weight_difference": "FLOAT",
-            "receipt_notes": "TEXT",
-        }.items():
-            if column_name not in legacy_columns:
-                db.session.execute(text(f"ALTER TABLE station_transfer ADD COLUMN {column_name} {column_type}"))
-                db.session.commit()
-    if "station_transfer_document" in table_names:
-        document_columns = {c["name"] for c in inspector.get_columns("station_transfer_document")}
-        for column_name, column_type in {
-            "received_date": "DATE",
-            "receipt_notes": "TEXT",
-        }.items():
-            if column_name not in document_columns:
-                db.session.execute(text(f"ALTER TABLE station_transfer_document ADD COLUMN {column_name} {column_type}"))
-                db.session.commit()
-    if "casual" in table_names:
-        casual_columns = {c["name"] for c in inspector.get_columns("casual")}
-        if "pay_frequency" not in casual_columns:
-            db.session.execute(text("ALTER TABLE casual ADD COLUMN pay_frequency VARCHAR(20) DEFAULT 'Daily'"))
-            db.session.commit()
-    if "casual_rate" in table_names:
-        rate_columns = {c["name"] for c in inspector.get_columns("casual_rate")}
-        if "pay_type" not in rate_columns:
-            db.session.execute(text("ALTER TABLE casual_rate ADD COLUMN pay_type VARCHAR(20) DEFAULT 'Daily'"))
-            db.session.commit()
-    if "payment" in table_names:
-        payment_columns = {c["name"] for c in inspector.get_columns("payment")}
-        for column_name, column_type in {
-            "pay_type": "VARCHAR(20) DEFAULT 'Daily'",
-            "rate_applied": "FLOAT",
-            "attendance_days": "FLOAT DEFAULT 0",
-            "advance_deduction": "FLOAT DEFAULT 0",
-        }.items():
-            if column_name not in payment_columns:
-                db.session.execute(text(f"ALTER TABLE payment ADD COLUMN {column_name} {column_type}"))
-                db.session.commit()
-
-    if "station_transfer_item" in table_names:
-        item_columns = {c["name"] for c in inspector.get_columns("station_transfer_item")}
-        for column_name, column_type in {
-            "received_weight": "FLOAT",
-            "received_moisture": "FLOAT",
-            "received_bags": "INTEGER",
-            "weight_difference": "FLOAT",
-        }.items():
-            if column_name not in item_columns:
-                db.session.execute(text(f"ALTER TABLE station_transfer_item ADD COLUMN {column_name} {column_type}"))
-                db.session.commit()
-    # Version 8.0: add company context to the existing audit table.
-    # This is additive only; no existing audit rows are removed.
-    if "audit_log" in table_names:
-        audit_columns = {c["name"] for c in inspector.get_columns("audit_log")}
-        if "company_id" not in audit_columns:
-            db.session.execute(text("ALTER TABLE audit_log ADD COLUMN company_id INTEGER"))
-            db.session.commit()
-
     db.create_all()
+
+    stancoff_company = Company.query.filter_by(code="STANCOFF").first()
+    if not stancoff_company:
+        db.session.add(Company(code="STANCOFF", name="Stancoff Company Limited", business_type="Specialty Coffee", status="Active"))
+    mothers = Company.query.filter_by(code="MHS").first()
+    if not mothers:
+        mothers = Company(code="MHS", name="Mothers Harvest Suppliers", business_type="Commercial Coffee", status="Active")
+        db.session.add(mothers)
+        db.session.flush()
+    if not CommercialSetting.query.filter_by(company_id=mothers.id).first():
+        db.session.add(CommercialSetting(company_id=mothers.id, drugar_dry_threshold=13.5, parchment_dry_threshold=13.5))
+    db.session.commit()
 
     default_station = Station.query.order_by(Station.id).first()
     if not default_station:
@@ -858,42 +539,9 @@ def ensure_db():
         ))
         db.session.commit()
 
-    stancoff = ensure_company_foundation()
-
-    # Legacy Stancoff operational routes remain isolated from every newly
-    # created company until each company's own modules are designed.
-    if "user_id" in session and session.get("company_id"):
-        selected = db.session.get(Company, session.get("company_id"))
-        if selected and not selected.is_legacy_stancoff:
-            legacy_prefixes = (
-                "/suppliers", "/prices", "/batches", "/purchases",
-                "/processing", "/drying", "/inventory", "/locations",
-                "/stations", "/station-transfers", "/sales", "/dispatch",
-                "/casual", "/casuals", "/casual-rate", "/casual-rates",
-                "/attendance", "/payments", "/payment", "/payment-receipt",
-                "/advances", "/advance", "/reports/processing",
-                "/audit", "/users",
-            )
-            if request.path.startswith(legacy_prefixes):
-                flash(
-                    f"{selected.name} does not use the Stancoff modules. "
-                    "Its operational modules will be designed separately."
-                )
-                return redirect(url_for("company_dashboard"))
-
-
 @app.context_processor
 def inject_helpers():
-    company = current_company()
-    modules = enabled_company_modules(company.id) if company else []
-    return {
-        "current_role": session.get("role"),
-        "current_user": session.get("full_name"),
-        "active_company": company,
-        "active_modules": {m.module_key for m in modules},
-        "active_module_rows": modules,
-        "current_is_super_admin": user_is_super_admin() if session.get("user_id") else False,
-    }
+    return {"current_role": session.get("role"), "current_user": session.get("full_name")}
 
 @app.route("/health")
 def health():
@@ -911,7 +559,7 @@ def login():
         user.last_login = datetime.utcnow()
         db.session.commit()
         log_action("LOGIN", "Authentication", user.id)
-        return redirect(url_for("company_select"))
+        return redirect(url_for("dashboard"))
     return render_template("login.html")
 
 @app.route("/logout")
@@ -920,319 +568,10 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
-
-@app.route("/companies/select")
-@login_required
-def company_select():
-    companies = available_companies_for_user(session["user_id"])
-    if not companies:
-        return render_template("company_select.html", companies=[])
-
-    # Keep the currently selected company if it is still accessible.
-    selected_id = session.get("company_id")
-    if selected_id and any(c.id == selected_id for c in companies):
-        selected_company = db.session.get(Company, selected_id)
-    else:
-        selected_company = None
-
-    return render_template(
-        "company_select.html",
-        companies=companies,
-        selected_company=selected_company,
-    )
-
-
-@app.route("/companies/<int:id>/select", methods=["POST"])
-@login_required
-def select_company(id):
-    company = db.session.get(Company, id)
-    if not company or company.status != "Active":
-        flash("That company is not available.")
-        return redirect(url_for("company_select"))
-
-    membership = company_membership(session["user_id"], company.id)
-    if not membership and not user_is_super_admin():
-        abort(403)
-
-    user = db.session.get(User, session["user_id"])
-    session["company_id"] = company.id
-    session["company_name"] = company.name
-    session["company_slug"] = company.slug
-    session["role"] = membership.role if membership else "Admin"
-    session["system_role"] = user.role if user else "Viewer"
-
-    log_action("SELECT", "Company", company.id, f"Opened {company.name}")
-
-    if company.is_legacy_stancoff:
-        return redirect(url_for("dashboard"))
-    return redirect(url_for("company_dashboard"))
-
-
-@app.route("/company-dashboard")
-@login_required
-def company_dashboard():
-    company = current_company()
-    if not company:
-        return redirect(url_for("company_select"))
-    if company.is_legacy_stancoff:
-        return redirect(url_for("dashboard"))
-
-    modules = enabled_company_modules(company.id)
-    return render_template(
-        "company_dashboard.html",
-        company=company,
-        modules=modules,
-    )
-
-
-@app.route("/system/companies", methods=["GET", "POST"])
-@super_admin_required
-def system_companies():
-    if request.method == "POST":
-        code = (request.form.get("code") or "").strip().upper()
-        name = (request.form.get("name") or "").strip()
-        business_type = (request.form.get("business_type") or "").strip()
-
-        if not code or not name:
-            flash("Company code and company name are required.")
-            return redirect(url_for("system_companies"))
-
-        if Company.query.filter(func.lower(Company.code) == code.lower()).first():
-            flash("That company code already exists.")
-            return redirect(url_for("system_companies"))
-
-        company = Company(
-            code=code,
-            name=name,
-            slug=unique_company_slug(name),
-            business_type=business_type or None,
-            status="Active",
-            is_legacy_stancoff=False,
-        )
-        db.session.add(company)
-        db.session.flush()
-
-        # The system administrator who creates a company receives access
-        # automatically. Other users can then be assigned from the company page.
-        db.session.add(CompanyUser(
-            company_id=company.id,
-            user_id=session["user_id"],
-            role="Admin",
-            status="Active",
-        ))
-        db.session.commit()
-
-        log_action("CREATE", "Companies", company.id, f"{company.code} - {company.name}")
-        flash(
-            f"{company.name} created. Now choose its modules and assign users. "
-            "No Stancoff operational data is shared with it."
-        )
-        return redirect(url_for("system_company_detail", id=company.id))
-
-    return render_template(
-        "system_companies.html",
-        companies=Company.query.order_by(Company.name).all(),
-    )
-
-
-@app.route("/system/companies/<int:id>", methods=["GET", "POST"])
-@super_admin_required
-def system_company_detail(id):
-    company = db.session.get(Company, id)
-    if not company:
-        abort(404)
-
-    if request.method == "POST":
-        name = (request.form.get("name") or "").strip()
-        code = (request.form.get("code") or "").strip().upper()
-        business_type = (request.form.get("business_type") or "").strip()
-        status = request.form.get("status", "Active")
-
-        if not name or not code:
-            flash("Company name and code are required.")
-            return redirect(url_for("system_company_detail", id=id))
-
-        duplicate = Company.query.filter(
-            Company.id != company.id,
-            func.lower(Company.code) == code.lower(),
-        ).first()
-        if duplicate:
-            flash("That company code is already in use.")
-            return redirect(url_for("system_company_detail", id=id))
-
-        company.name = name
-        company.code = code
-        company.business_type = business_type or None
-        if not company.is_legacy_stancoff:
-            company.status = status if status in {"Active", "Inactive"} else "Active"
-        db.session.commit()
-
-        log_action("EDIT", "Companies", company.id, f"Updated {company.name}")
-        flash("Company details updated.")
-        return redirect(url_for("system_company_detail", id=id))
-
-    modules = CompanyModule.query.filter_by(company_id=company.id).order_by(CompanyModule.id).all()
-    memberships = CompanyUser.query.filter_by(company_id=company.id).order_by(CompanyUser.id).all()
-    users = User.query.order_by(User.full_name).all()
-    catalog = [
-        {"key": key, "label": label}
-        for key, label in MODULE_CATALOG
-    ]
-    return render_template(
-        "system_company_detail.html",
-        company=company,
-        modules=modules,
-        memberships=memberships,
-        users=users,
-        catalog=catalog,
-        company_roles=COMPANY_ROLES,
-    )
-
-
-@app.route("/system/companies/<int:id>/modules", methods=["POST"])
-@super_admin_required
-def system_company_modules(id):
-    company = db.session.get(Company, id)
-    if not company:
-        abort(404)
-
-    selected = set(request.form.getlist("modules"))
-    catalog_map = dict(MODULE_CATALOG)
-
-    # Built-in configurable modules.
-    for key, label in MODULE_CATALOG:
-        row = CompanyModule.query.filter_by(company_id=id, module_key=key).first()
-        enabled = key in selected
-        if row:
-            # Legacy Stancoff modules keep their legacy kind.
-            row.enabled = enabled
-            row.label = label
-        elif enabled:
-            db.session.add(CompanyModule(
-                company_id=id,
-                module_key=key,
-                label=label,
-                enabled=True,
-                module_kind="Legacy" if company.is_legacy_stancoff and key in {
-                    "coffee_operations", "workforce", "reports"
-                } else "Configured",
-            ))
-
-    # Existing custom modules keep their enabled/disabled setting from the form.
-    custom_rows = CompanyModule.query.filter_by(
-        company_id=id,
-        module_kind="Custom",
-    ).all()
-    for row in custom_rows:
-        row.enabled = row.module_key in selected
-
-    db.session.commit()
-    log_action("EDIT", "Company Modules", id, f"Updated modules for {company.name}")
-    flash("Company modules updated.")
-    return redirect(url_for("system_company_detail", id=id))
-
-
-@app.route("/system/companies/<int:id>/modules/custom", methods=["POST"])
-@super_admin_required
-def system_company_custom_module(id):
-    company = db.session.get(Company, id)
-    if not company:
-        abort(404)
-
-    label = (request.form.get("label") or "").strip()
-    if not label:
-        flash("Enter a module name.")
-        return redirect(url_for("system_company_detail", id=id))
-
-    base = "custom_" + slugify_company(label).replace("-", "_")
-    key = base
-    counter = 2
-    while CompanyModule.query.filter_by(company_id=id, module_key=key).first():
-        key = f"{base}_{counter}"
-        counter += 1
-
-    db.session.add(CompanyModule(
-        company_id=id,
-        module_key=key,
-        label=label,
-        enabled=True,
-        module_kind="Custom",
-    ))
-    db.session.commit()
-
-    log_action("CREATE", "Company Modules", id, f"Added {label} to {company.name}")
-    flash(f"{label} added as a custom module placeholder.")
-    return redirect(url_for("system_company_detail", id=id))
-
-
-@app.route("/system/companies/<int:id>/users", methods=["POST"])
-@super_admin_required
-def system_company_users(id):
-    company = db.session.get(Company, id)
-    if not company:
-        abort(404)
-
-    user_id = request.form.get("user_id", type=int)
-    role = request.form.get("role", "Viewer")
-    if role not in COMPANY_ROLES:
-        role = "Viewer"
-
-    user = db.session.get(User, user_id) if user_id else None
-    if not user:
-        flash("Select a valid user.")
-        return redirect(url_for("system_company_detail", id=id))
-
-    membership = CompanyUser.query.filter_by(company_id=id, user_id=user.id).first()
-    if membership:
-        membership.role = role
-        membership.status = "Active"
-    else:
-        db.session.add(CompanyUser(
-            company_id=id,
-            user_id=user.id,
-            role=role,
-            status="Active",
-        ))
-    db.session.commit()
-
-    log_action("GRANT", "Company Access", user.id, f"{user.username} -> {company.name} as {role}")
-    flash(f"{user.full_name} now has access to {company.name} as {role}.")
-    return redirect(url_for("system_company_detail", id=id))
-
-
-@app.route("/system/companies/<int:company_id>/users/<int:user_id>/remove", methods=["POST"])
-@super_admin_required
-def system_company_user_remove(company_id, user_id):
-    company = db.session.get(Company, company_id)
-    membership = CompanyUser.query.filter_by(
-        company_id=company_id,
-        user_id=user_id,
-    ).first()
-    if not company or not membership:
-        abort(404)
-
-    # Never lock the last system administrator out of the legacy Stancoff company.
-    if company.is_legacy_stancoff and user_is_super_admin(user_id):
-        flash("System administrator access to Stancoff cannot be removed.")
-        return redirect(url_for("system_company_detail", id=company_id))
-
-    membership.status = "Inactive"
-    db.session.commit()
-
-    log_action("REVOKE", "Company Access", user_id, f"Removed from {company.name}")
-    flash("Company access removed. The user's historical records were not changed.")
-    return redirect(url_for("system_company_detail", id=company_id))
-
-
 @app.route("/")
 @login_required
 def dashboard():
     """Operations dashboard using Python aggregation for PostgreSQL/SQLite compatibility."""
-    company = current_company()
-    if not company:
-        return redirect(url_for("company_select"))
-    if not company.is_legacy_stancoff:
-        return redirect(url_for("company_dashboard"))
     period = request.args.get("period", "90")
     period_days = {"30": 30, "90": 90, "365": 365}
     start_date = None
@@ -1254,18 +593,6 @@ def dashboard():
 
     total_good = sum(float(p.good_weight or 0) for p in active_purchases)
     total_spend = sum(float(p.total_amount or 0) for p in active_purchases)
-
-    # All-time weighted average for good cherry purchases.
-    # This is total cherry value divided by total good-cherry kilograms,
-    # so large purchases have the correct influence on the average.
-    all_time_good_kg = sum(float(p.good_weight or 0) for p in all_active_purchases)
-    all_time_cherry_value = sum(
-        float(p.good_weight or 0) * float(p.cherry_price or 0)
-        for p in all_active_purchases
-    )
-    all_time_avg_cherry_price = (
-        all_time_cherry_value / all_time_good_kg if all_time_good_kg else 0
-    )
     current_stock = sum(float(s.weight or 0) for s in stock_rows)
     completed_drying = [r for r in drying_rows if r.drying_status == "Completed" and r.dry_weight is not None]
     processing_outturns = [float(r.outturn_percent or 0) for r in processing_rows if float(r.input_weight or 0) > 0]
@@ -1290,8 +617,6 @@ def dashboard():
         "purchases": len(active_purchases),
         "good_weight": total_good,
         "total_spend": total_spend,
-        "average_cherry_price": all_time_avg_cherry_price,
-        "average_cherry_price_kg": all_time_good_kg,
         "current_stock": current_stock,
         "temporary_stock": stock_by_type.get("Temporary Storage", 0.0),
         "final_stock": stock_by_type.get("Final Warehouse", 0.0),
@@ -1397,44 +722,6 @@ def dashboard():
         },
     }
 
-    workforce_notices = []
-    notice_today = datetime.utcnow().date()
-    for worker in Casual.query.filter_by(status="Active").order_by(Casual.name).all():
-        cycle_start, cycle_end = worker_pay_cycle(worker, notice_today)
-        days_to_payment = (cycle_end - notice_today).days
-        if 0 <= days_to_payment <= 5:
-            workforce_notices.append({
-                "type": "Payment",
-                "worker": worker.name,
-                "due": cycle_end,
-                "message": f"Payment for {worker.name} is due " + (
-                    "today." if days_to_payment == 0 else f"in {days_to_payment} day(s)."
-                ),
-                "url": url_for("payments", casual_id=worker.id,
-                               period_start=cycle_start.isoformat(),
-                               period_end=cycle_end.isoformat()),
-            })
-
-        if (worker.pay_frequency or "Daily") == "Monthly":
-            advance_due, advance_start, advance_end = worker_advance_due(worker, notice_today)
-            days_to_advance = (advance_due - notice_today).days
-            has_advance = SalaryAdvance.query.filter(
-                SalaryAdvance.casual_id == worker.id,
-                SalaryAdvance.cycle_start == advance_start,
-                SalaryAdvance.cycle_end == advance_end,
-                SalaryAdvance.status == "Active",
-            ).first()
-            if not has_advance and 0 <= days_to_advance <= 2:
-                workforce_notices.append({
-                    "type": "Advance",
-                    "worker": worker.name,
-                    "due": advance_due,
-                    "message": f"Advance for {worker.name} is due " + (
-                        "today." if days_to_advance == 0 else f"in {days_to_advance} day(s)."
-                    ),
-                    "url": url_for("advances"),
-                })
-
     return render_template(
         "dashboard.html",
         period=period,
@@ -1444,7 +731,6 @@ def dashboard():
         top_suppliers=top_suppliers,
         alerts=alerts,
         charts=charts,
-        workforce_notices=workforce_notices,
     )
 
 @app.route("/users", methods=["GET","POST"])
@@ -1486,92 +772,6 @@ def reset_password(id):
     flash("Password reset.")
     return redirect(url_for("users"))
 
-
-@app.route("/users/<int:id>/edit", methods=["GET", "POST"])
-@permission_required("users")
-def user_edit(id):
-    if session.get("role") != "Admin":
-        abort(403)
-
-    user = User.query.get_or_404(id)
-
-    if request.method == "POST":
-        full_name = (request.form.get("full_name") or "").strip()
-        username = (request.form.get("username") or "").strip()
-        role = request.form.get("role")
-        status = request.form.get("status", "Active")
-
-        if not full_name or not username:
-            flash("Full name and username are required.")
-            return redirect(url_for("user_edit", id=id))
-
-        if role not in ROLE_PERMISSIONS:
-            flash("Select a valid role.")
-            return redirect(url_for("user_edit", id=id))
-
-        duplicate = User.query.filter(
-            User.id != user.id,
-            func.lower(User.username) == username.lower()
-        ).first()
-        if duplicate:
-            flash("That username is already in use.")
-            return redirect(url_for("user_edit", id=id))
-
-        if user.id == session.get("user_id") and status != "Active":
-            flash("You cannot disable your own account.")
-            return redirect(url_for("user_edit", id=id))
-
-        old = f"{user.full_name}; {user.username}; {user.role}; {user.status}"
-        user.full_name = full_name
-        user.username = username
-        user.role = role
-        user.status = status
-
-        new_password = (request.form.get("password") or "").strip()
-        if new_password:
-            user.password_hash = generate_password_hash(new_password)
-
-        db.session.commit()
-        new = f"{user.full_name}; {user.username}; {user.role}; {user.status}"
-        log_action("EDIT", "Users", user.id, f"Before: {old} | After: {new}")
-        flash("User updated successfully.")
-        return redirect(url_for("users"))
-
-    return render_template("user_edit.html", row=user, roles=ROLE_PERMISSIONS.keys())
-
-
-@app.route("/users/<int:id>/delete", methods=["POST"])
-@permission_required("users")
-def user_delete(id):
-    if session.get("role") != "Admin":
-        abort(403)
-
-    user = User.query.get_or_404(id)
-
-    if user.id == session.get("user_id"):
-        flash("You cannot delete the account you are currently using.")
-        return redirect(url_for("users"))
-
-    has_audit_history = AuditLog.query.filter_by(user_id=user.id).first() is not None
-
-    if has_audit_history:
-        user.status = "Inactive"
-        db.session.commit()
-        log_action(
-            "DEACTIVATE", "Users", user.id,
-            f"{user.username} was deactivated instead of deleted because audit history exists."
-        )
-        flash("This user has system history, so the account was deactivated instead of permanently deleted.")
-        return redirect(url_for("users"))
-
-    username = user.username
-    db.session.delete(user)
-    db.session.commit()
-    log_action("DELETE", "Users", id, username)
-    flash("User deleted permanently.")
-    return redirect(url_for("users"))
-
-
 @app.route("/audit")
 @permission_required("users")
 def audit():
@@ -1588,42 +788,6 @@ def suppliers():
     return render_template("suppliers.html", rows=Supplier.query.order_by(Supplier.id.desc()).all(),
                            next_code=next_code(Supplier,"code","SUP",3))
 
-
-@app.route("/suppliers/<int:id>/edit", methods=["GET", "POST"])
-@permission_required("suppliers")
-def supplier_edit(id):
-    supplier = Supplier.query.get_or_404(id)
-
-    if request.method == "POST":
-        code = (request.form.get("code") or "").strip()
-        name = (request.form.get("name") or "").strip()
-        if not code or not name:
-            flash("Supplier code and name are required.")
-            return redirect(url_for("supplier_edit", id=id))
-
-        duplicate = Supplier.query.filter(
-            Supplier.id != supplier.id,
-            func.lower(Supplier.code) == code.lower()
-        ).first()
-        if duplicate:
-            flash("That supplier code is already in use.")
-            return redirect(url_for("supplier_edit", id=id))
-
-        old = f"{supplier.code}; {supplier.name}; {supplier.phone or '-'}; {supplier.location or '-'}; {supplier.status}"
-        supplier.code = code
-        supplier.name = name
-        supplier.phone = request.form.get("phone")
-        supplier.location = request.form.get("location")
-        supplier.status = request.form.get("status", "Active")
-        db.session.commit()
-
-        new = f"{supplier.code}; {supplier.name}; {supplier.phone or '-'}; {supplier.location or '-'}; {supplier.status}"
-        log_action("EDIT", "Suppliers", supplier.id, f"Before: {old} | After: {new}")
-        flash("Supplier updated successfully.")
-        return redirect(url_for("suppliers"))
-
-    return render_template("supplier_edit.html", row=supplier)
-
 @app.route("/suppliers/<int:id>/delete", methods=["POST"])
 @permission_required("suppliers")
 def supplier_delete(id):
@@ -1634,22 +798,19 @@ def supplier_delete(id):
         db.session.delete(s); db.session.commit(); log_action("DELETE","Suppliers",id)
     return redirect(url_for("suppliers"))
 
-@app.route("/prices")
+@app.route("/prices", methods=["GET","POST"])
 @permission_required("prices")
 def prices():
-    rows = PriceHistory.query.order_by(
-        PriceHistory.effective_date.desc(), PriceHistory.id.desc()
-    ).all()
-    active = Purchase.query.filter_by(status="Active").all()
-    good_kg = sum(float(p.good_weight or 0) for p in active)
-    cherry_value = sum(float(p.good_weight or 0) * float(p.cherry_price or 0) for p in active)
-    weighted_average = cherry_value / good_kg if good_kg else 0
-    return render_template(
-        "prices.html",
-        rows=rows,
-        weighted_average=weighted_average,
-        weighted_kg=good_kg,
-    )
+    if request.method == "POST":
+        p = PriceHistory(
+            effective_date=datetime.strptime(request.form["effective_date"], "%Y-%m-%d").date(),
+            cherry_price=float(request.form["cherry_price"]),
+            floater_price=float(request.form["floater_price"]),
+            notes=request.form.get("notes")
+        )
+        db.session.add(p); db.session.commit(); log_action("CREATE","Price History",p.id)
+        return redirect(url_for("prices"))
+    return render_template("prices.html", rows=PriceHistory.query.order_by(PriceHistory.effective_date.desc()).all())
 
 @app.route("/batches", methods=["GET","POST"])
 @permission_required("batches")
@@ -1672,68 +833,25 @@ def batches():
 def purchases():
     if request.method == "POST":
         d = datetime.strptime(request.form["purchase_date"], "%Y-%m-%d").date()
-        gross = float(request.form["gross_weight"])
-        fl = float(request.form.get("floaters_weight") or 0)
-        bought = request.form["floaters_bought"]
-        cp = float(request.form.get("cherry_price") or 0)
-        fp_entered = float(request.form.get("floater_price") or 0)
-
-        if gross <= 0 or fl < 0 or fl > gross:
-            flash("Check the weights. Floaters cannot be more than gross weight.")
-            return redirect(url_for("purchases"))
-        if cp <= 0:
-            flash("Enter the cherry price agreed with this supplier.")
-            return redirect(url_for("purchases"))
-        if fp_entered < 0:
-            flash("Floater price cannot be negative.")
-            return redirect(url_for("purchases"))
-
-        good = gross - fl
-        fp = fp_entered if bought == "Yes" else 0
-
+        price = get_price(d)
+        if not price:
+            flash("Add price history first."); return redirect(url_for("purchases"))
+        gross = float(request.form["gross_weight"]); fl = float(request.form.get("floaters_weight") or 0)
+        good = gross - fl; bought = request.form["floaters_bought"]
+        cp = price.cherry_price; fp = price.floater_price if bought == "Yes" else 0
         p = Purchase(
             receipt_no=next_code(Purchase,"receipt_no","REC",6),
-            purchase_date=d,
-            batch_id=int(request.form["batch_id"]),
-            supplier_id=int(request.form["supplier_id"]),
-            gross_weight=gross,
-            floaters_weight=fl,
-            good_weight=good,
-            floaters_bought=bought,
-            cherry_price=cp,
-            floater_price=fp,
-            total_amount=good * cp + fl * fp,
+            purchase_date=d, batch_id=int(request.form["batch_id"]), supplier_id=int(request.form["supplier_id"]),
+            gross_weight=gross, floaters_weight=fl, good_weight=good, floaters_bought=bought,
+            cherry_price=cp, floater_price=fp, total_amount=good*cp+fl*fp,
             created_by=session["username"]
         )
-        db.session.add(p)
-        db.session.flush()
-
-        price_row = PriceHistory(
-            effective_date=d,
-            cherry_price=cp,
-            floater_price=fp,
-            supplier_id=p.supplier_id,
-            purchase_id=p.id,
-            receipt_no=p.receipt_no,
-            source="Purchase",
-            status="Active",
-            notes=f"Automatically recorded from {p.receipt_no}"
-        )
-        db.session.add(price_row)
-        db.session.commit()
-
-        log_action(
-            "CREATE", "Purchases", p.id,
-            f"{p.receipt_no}; cherry UGX {cp:,.0f}/kg; floater UGX {fp:,.0f}/kg"
-        )
+        db.session.add(p); db.session.commit(); log_action("CREATE","Purchases",p.id,p.receipt_no)
         return redirect(url_for("purchases"))
-
-    return render_template(
-        "purchases.html",
+    return render_template("purchases.html",
         rows=Purchase.query.order_by(Purchase.id.desc()).all(),
         suppliers=Supplier.query.filter_by(status="Active").order_by(Supplier.name).all(),
-        batches=Batch.query.filter_by(status="Open").order_by(Batch.batch_date.desc()).all()
-    )
+        batches=Batch.query.filter_by(status="Open").order_by(Batch.batch_date.desc()).all())
 
 @app.route("/purchase-receipt/<int:id>")
 @permission_required("purchases")
@@ -1755,25 +873,19 @@ def purchase_edit(id):
 
     if request.method == "POST":
         d = datetime.strptime(request.form["purchase_date"], "%Y-%m-%d").date()
+        price = get_price(d)
+        if not price:
+            flash("Add price history for the selected date first.")
+            return redirect(url_for("purchase_edit", id=id))
+
         gross = float(request.form["gross_weight"])
         floaters = float(request.form.get("floaters_weight") or 0)
-        bought = request.form["floaters_bought"]
-        cp = float(request.form.get("cherry_price") or 0)
-        fp_entered = float(request.form.get("floater_price") or 0)
-
         if gross <= 0 or floaters < 0 or floaters > gross:
             flash("Check the weights. Floaters cannot be more than the gross weight.")
             return redirect(url_for("purchase_edit", id=id))
-        if cp <= 0:
-            flash("Enter the cherry price agreed with this supplier.")
-            return redirect(url_for("purchase_edit", id=id))
-        if fp_entered < 0:
-            flash("Floater price cannot be negative.")
-            return redirect(url_for("purchase_edit", id=id))
 
+        bought = request.form["floaters_bought"]
         good = gross - floaters
-        fp = fp_entered if bought == "Yes" else 0
-
         purchase.purchase_date = d
         purchase.batch_id = int(request.form["batch_id"])
         purchase.supplier_id = int(request.form["supplier_id"])
@@ -1781,34 +893,12 @@ def purchase_edit(id):
         purchase.floaters_weight = floaters
         purchase.good_weight = good
         purchase.floaters_bought = bought
-        purchase.cherry_price = cp
-        purchase.floater_price = fp
-        purchase.total_amount = good * cp + floaters * fp
-
-        price_row = PriceHistory.query.filter_by(purchase_id=purchase.id).first()
-        if not price_row:
-            price_row = PriceHistory(
-                purchase_id=purchase.id,
-                source="Purchase",
-                status="Active",
-            )
-            db.session.add(price_row)
-
-        price_row.effective_date = d
-        price_row.cherry_price = cp
-        price_row.floater_price = fp
-        price_row.supplier_id = purchase.supplier_id
-        price_row.receipt_no = purchase.receipt_no
-        price_row.source = "Purchase"
-        price_row.status = "Active"
-        price_row.notes = f"Automatically updated from {purchase.receipt_no}"
-
+        purchase.cherry_price = price.cherry_price
+        purchase.floater_price = price.floater_price if bought == "Yes" else 0
+        purchase.total_amount = good * purchase.cherry_price + floaters * purchase.floater_price
         db.session.commit()
-        log_action(
-            "UPDATE", "Purchases", purchase.id,
-            f"{purchase.receipt_no}; cherry UGX {cp:,.0f}/kg; floater UGX {fp:,.0f}/kg"
-        )
-        flash("Purchase and price history updated successfully.")
+        log_action("UPDATE", "Purchases", purchase.id, purchase.receipt_no)
+        flash("Purchase updated successfully.")
         return redirect(url_for("purchases"))
 
     return render_template(
@@ -1817,7 +907,6 @@ def purchase_edit(id):
         suppliers=Supplier.query.order_by(Supplier.name).all(),
         batches=Batch.query.order_by(Batch.batch_date.desc()).all(),
     )
-
 
 @app.route("/purchases/<int:id>/void", methods=["POST"])
 @permission_required("purchases")
@@ -1839,10 +928,6 @@ def purchase_void(id):
 
     purchase.status = "Voided"
     purchase.void_reason = reason
-    price_row = PriceHistory.query.filter_by(purchase_id=purchase.id).first()
-    if price_row:
-        price_row.status = "Voided"
-        price_row.notes = f"Voided with {purchase.receipt_no}: {reason}"
     db.session.commit()
     log_action("VOID", "Purchases", purchase.id, f"{purchase.receipt_no}: {reason}")
     flash("Purchase voided. It will no longer count in totals or processing.")
@@ -1861,9 +946,6 @@ def purchase_delete(id):
         return redirect(url_for("purchases"))
 
     receipt_no = purchase.receipt_no
-    price_row = PriceHistory.query.filter_by(purchase_id=purchase.id).first()
-    if price_row:
-        db.session.delete(price_row)
     db.session.delete(purchase)
     db.session.commit()
     log_action("DELETE", "Purchases", id, receipt_no)
@@ -1875,11 +957,6 @@ def purchase_delete(id):
 def processing():
     if request.method == "POST":
         batch_id = int(request.form["batch_id"])
-        station_id = int(request.form.get("station_id") or 0)
-        station = db.session.get(Station, station_id)
-        if not station or station.status != "Active":
-            flash("Select an active station where processing is taking place.")
-            return redirect(url_for("processing"))
         if Processing.query.filter_by(batch_id=batch_id).first():
             flash("This batch already has a processing record. Open it and use Edit.")
             return redirect(url_for("processing"))
@@ -1906,7 +983,6 @@ def processing():
             processing_no=next_code(Processing, "processing_no", "PRO", 6),
             processing_date=datetime.strptime(request.form["processing_date"], "%Y-%m-%d").date(),
             batch_id=batch_id,
-            station_id=station.id,
             input_weight=input_weight,
             grade_a_weight=grade_a,
             grade_b_weight=grade_b,
@@ -1941,8 +1017,7 @@ def processing():
         rows=Processing.query.order_by(Processing.id.desc()).all(),
         batches=batches,
         purchase_totals=purchase_totals,
-        next_processing=next_code(Processing, "processing_no", "PRO", 6),
-        stations=Station.query.filter_by(status="Active").order_by(Station.name).all(),
+        next_processing=next_code(Processing, "processing_no", "PRO", 6)
     )
 
 @app.route("/processing/<int:id>/edit", methods=["GET", "POST"])
@@ -1957,11 +1032,6 @@ def processing_edit(id):
         return redirect(url_for("processing"))
 
     if request.method == "POST":
-        station_id = int(request.form.get("station_id") or 0)
-        station = db.session.get(Station, station_id)
-        if not station or station.status != "Active":
-            flash("Select an active processing station.")
-            return redirect(url_for("processing_edit", id=id))
         input_weight = float(request.form["input_weight"] or 0)
         grade_a = float(request.form.get("grade_a_weight") or 0)
         grade_b = float(request.form.get("grade_b_weight") or 0)
@@ -1973,7 +1043,6 @@ def processing_edit(id):
             return redirect(url_for("processing_edit", id=id))
 
         record.processing_date = datetime.strptime(request.form["processing_date"], "%Y-%m-%d").date()
-        record.station_id = station.id
         record.input_weight = input_weight
         record.grade_a_weight = grade_a
         record.grade_b_weight = grade_b
@@ -1989,11 +1058,7 @@ def processing_edit(id):
         flash("Processing record updated.")
         return redirect(url_for("processing"))
 
-    return render_template(
-        "processing_edit.html",
-        row=record,
-        stations=Station.query.filter_by(status="Active").order_by(Station.name).all(),
-    )
+    return render_template("processing_edit.html", row=record)
 
 @app.route("/processing/<int:id>/void", methods=["POST"])
 @permission_required("processing")
@@ -2063,15 +1128,6 @@ def drying():
             flash("Dry weight cannot be negative or greater than the input weight.")
             return redirect(url_for("drying"))
 
-        drying_location_id = int(request.form.get("drying_location_id") or 0)
-        drying_location = db.session.get(Location, drying_location_id)
-        if not drying_location or drying_location.status != "Active" or drying_location.location_type != "Drying Area":
-            flash("Select an active drying area.")
-            return redirect(url_for("drying"))
-        if process.station_id and drying_location.station_id != process.station_id:
-            flash("The drying area must belong to the same station where this processing record started.")
-            return redirect(url_for("drying"))
-
         start_date = datetime.strptime(request.form["start_date"], "%Y-%m-%d").date()
         end_text = request.form.get("end_date")
         end_date = datetime.strptime(end_text, "%Y-%m-%d").date() if end_text else None
@@ -2094,7 +1150,7 @@ def drying():
             drying_loss=loss,
             outturn_percent=outturn,
             moisture=float(request.form["moisture"]) if request.form.get("moisture") else None,
-            drying_location=drying_location.name,
+            drying_location=request.form.get("drying_location"),
             dried_by=request.form.get("dried_by"),
             drying_status=drying_status,
             notes=request.form.get("notes"),
@@ -2126,12 +1182,7 @@ def drying():
         processes=active_processes,
         grade_weights=grade_weights,
         finishable_ids=finishable_ids,
-        next_drying=next_code(Drying, "drying_no", "DRY", 6),
-        drying_locations=Location.query.join(Station).filter(
-            Location.status == "Active",
-            Location.location_type == "Drying Area",
-            Station.status == "Active",
-        ).order_by(Station.name, Location.name).all(),
+        next_drying=next_code(Drying, "drying_no", "DRY", 6)
     )
 
 
@@ -2232,7 +1283,7 @@ def finish_drying(id):
                 moisture=moisture,
             )
             db.session.add(destination_stock)
-        new_total = old_destination_weight + dry_weight
+        new_total = old_destination_weight + weight
         if moisture is not None:
             old_moisture = float(destination_stock.moisture if destination_stock.moisture is not None else moisture)
             destination_stock.moisture = (
@@ -2241,7 +1292,7 @@ def finish_drying(id):
             )
         destination_stock.weight = new_total
         destination_stock.stock_status = "Stored" if destination.location_type == "Final Warehouse" else "Finished Dry"
-        source.weight = max(0, float(source.weight or 0) - wet_weight)
+        source.weight = max(0, float(source.weight or 0) - weight)
         source.stock_status = stock_status_for_location(source.location.location_type)
 
         cross_station = source.location.station_id != destination.station_id
@@ -2300,27 +1351,15 @@ def finish_drying(id):
         log_action("CREATE", "Finish Drying", movement.id, movement.movement_no)
         flash(f"{dry_weight:,.2f} kg dry coffee stored from {wet_weight:,.2f} kg wet coffee at {destination.station.name} · {destination.name}.")
         if transfer:
-            flash(f"Transfer {transfer.transfer_no} was created. You can print its moving form from Station Transfers.")
-        else:
-            flash(f"Movement {movement.movement_no} was saved. You can print its moving form from Storage & Inventory.")
-        return redirect(url_for("drying"))
+            return redirect(url_for("station_transfer_print", id=transfer.id))
+        return redirect(url_for("inventory_movement_print", id=movement.id))
 
-    current_total_weight = db.session.query(func.coalesce(func.sum(CoffeeStock.weight), 0.0)).filter(
-        CoffeeStock.drying_id == row.id,
-        CoffeeStock.weight > 0.0001,
-    ).scalar() or 0.0
-    current_outturn = (
-        float(current_total_weight) / float(row.input_weight or 0) * 100
-        if row.input_weight else 0
-    )
     return render_template(
         "finish_drying.html",
         row=row,
         source_stocks=source_stocks,
         destinations=destinations,
         today=datetime.utcnow().date().isoformat(),
-        current_total_weight=float(current_total_weight),
-        current_outturn=current_outturn,
     )
 
 
@@ -2410,19 +1449,9 @@ def ensure_initial_stock():
         if existing or movement:
             continue
         location_name = (row.drying_location or "Unspecified Drying Area").strip()
-        station_id = row.processing.station_id if row.processing and row.processing.station_id else None
-        location_query = Location.query.filter(func.lower(Location.name) == location_name.lower())
-        if station_id:
-            location_query = location_query.filter(Location.station_id == station_id)
-        location = location_query.first()
+        location = Location.query.filter(func.lower(Location.name) == location_name.lower()).first()
         if not location:
-            fallback_station = db.session.get(Station, station_id) if station_id else Station.query.order_by(Station.id).first()
-            location = Location(
-                name=location_name,
-                location_type="Drying Area",
-                status="Active",
-                station_id=fallback_station.id if fallback_station else None,
-            )
+            location = Location(name=location_name, location_type="Drying Area", status="Active", station_id=Station.query.order_by(Station.id).first().id)
             db.session.add(location)
             db.session.flush()
         starting_weight = float(row.dry_weight if row.drying_status == "Completed" and row.dry_weight is not None else row.input_weight or 0)
@@ -2516,282 +1545,58 @@ def station_toggle(id):
 def station_transfers():
     ensure_initial_stock()
     if request.method == "POST":
-        source_ids = request.form.getlist("source_stock_id[]")
-        destination_ids = request.form.getlist("to_location_id[]")
-        weights = request.form.getlist("weight[]")
-        moistures = request.form.getlist("moisture[]")
-        bags = request.form.getlist("number_of_bags[]")
-
-        if not source_ids or not (len(source_ids) == len(destination_ids) == len(weights) == len(moistures) == len(bags)):
-            flash("Add at least one complete coffee line to the transfer.")
+        source = CoffeeStock.query.get_or_404(int(request.form["source_stock_id"]))
+        destination = Location.query.get_or_404(int(request.form["to_location_id"]))
+        if not source.location.station_id or not destination.station_id or source.location.station_id == destination.station_id:
+            flash("Station transfers must move coffee between two different stations.")
             return redirect(url_for("station_transfers"))
-        if len(set(source_ids)) != len(source_ids):
-            flash("The same inventory balance cannot be selected twice on one transfer form.")
+        weight = float(request.form.get("weight") or 0)
+        if weight <= 0 or weight > float(source.weight or 0) + 0.0001:
+            flash(f"Transfer weight cannot exceed {source.weight:,.2f} kg.")
             return redirect(url_for("station_transfers"))
-
-        prepared = []
-        from_station_id = None
-        to_station_id = None
-        try:
-            for index, source_id in enumerate(source_ids):
-                source = db.session.get(CoffeeStock, int(source_id))
-                destination = db.session.get(Location, int(destination_ids[index]))
-                if not source or not destination:
-                    raise ValueError(f"Coffee line {index + 1} contains an invalid stock or destination.")
-                if not source.location.station_id or not destination.station_id:
-                    raise ValueError(f"Coffee line {index + 1} must use locations linked to stations.")
-                if source.location.station_id == destination.station_id:
-                    raise ValueError(f"Coffee line {index + 1} must move to a different station.")
-                if from_station_id is None:
-                    from_station_id = source.location.station_id
-                    to_station_id = destination.station_id
-                elif source.location.station_id != from_station_id or destination.station_id != to_station_id:
-                    raise ValueError("All coffee lines on one transfer form must move between the same sending and receiving stations.")
-
-                weight = float(weights[index] or 0)
-                available = float(source.weight or 0)
-                if weight <= 0 or weight > available + 0.0001:
-                    raise ValueError(f"Line {index + 1}: transfer weight must be above zero and cannot exceed {available:,.2f} kg.")
-                moisture = float(moistures[index]) if moistures[index] else source.moisture
-                bag_count = int(bags[index]) if bags[index] else None
-                prepared.append((source, destination, weight, moisture, bag_count))
-
-            document = StationTransferDocument(
-                transfer_no=next_code(StationTransferDocument, "transfer_no", "TRF", 6),
-                transfer_date=datetime.strptime(request.form["transfer_date"], "%Y-%m-%d").date(),
-                from_station_id=from_station_id,
-                to_station_id=to_station_id,
-                vehicle_no=request.form.get("vehicle_no"),
-                driver_name=request.form.get("driver_name"),
-                driver_phone=request.form.get("driver_phone"),
-                dispatch_time=request.form.get("dispatch_time"),
-                arrival_time=request.form.get("arrival_time"),
-                dispatched_by=request.form.get("dispatched_by"),
-                received_by=request.form.get("received_by"),
-                authorized_by=request.form.get("authorized_by"),
-                remarks=request.form.get("remarks"),
-                status="In Transit",
-                created_by=session.get("username"),
-            )
-            db.session.add(document)
-            db.session.flush()
-
-            total_weight = 0
-            for source, destination, weight, moisture, bag_count in prepared:
-                # At dispatch, remove coffee from the sending location. The receiving
-                # station adds the actual received weight only when it confirms receipt.
-                source.weight = max(0, float(source.weight or 0) - source_weight)
-
-                movement = CoffeeMovement(
-                    movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6),
-                    drying_id=source.drying_id, batch_id=source.batch_id, grade=source.grade,
-                    from_location_id=source.location_id, to_location_id=destination.id,
-                    movement_date=document.transfer_date, weight=weight, moisture=moisture,
-                    movement_type="Station Transfer", reason=document.remarks,
-                    moved_by=document.dispatched_by, created_by=session.get("username")
-                )
-                db.session.add(movement)
-                db.session.flush()
-                db.session.add(StationTransferItem(document_id=document.id, movement_id=movement.id, number_of_bags=bag_count))
-                batch = db.session.get(Batch, source.batch_id)
-                if batch:
-                    batch.status = "Transferred to " + destination.station.name
-                total_weight += weight
-
-            db.session.commit()
-            log_action("CREATE", "Station Transfer", document.id, f"{document.transfer_no}: {len(prepared)} lines, {total_weight:,.2f} kg")
-            flash(f"{document.transfer_no} dispatched with {len(prepared)} coffee lines totalling {total_weight:,.2f} kg. It is awaiting receipt at {document.to_station.name}.")
-            return redirect(url_for("station_transfer_document_print", id=document.id))
-        except (ValueError, TypeError) as exc:
-            db.session.rollback()
-            flash(str(exc))
-            return redirect(url_for("station_transfers"))
-        except Exception:
-            db.session.rollback()
-            app.logger.exception("Station transfer save failed")
-            flash("The station transfer could not be saved. No inventory was changed. Please review the lines and try again.")
-            return redirect(url_for("station_transfers"))
-
+        moisture = float(request.form["moisture"]) if request.form.get("moisture") else source.moisture
+        destination_stock = CoffeeStock.query.filter_by(drying_id=source.drying_id, location_id=destination.id).first()
+        old_weight = float(destination_stock.weight or 0) if destination_stock else 0
+        if not destination_stock:
+            destination_stock = CoffeeStock(drying_id=source.drying_id, batch_id=source.batch_id, grade=source.grade, location_id=destination.id, weight=0, moisture=moisture)
+            db.session.add(destination_stock)
+        destination_stock.weight = old_weight + weight
+        destination_stock.moisture = moisture
+        destination_stock.stock_status = stock_status_for_location(destination.location_type)
+        source.weight = max(0, float(source.weight or 0) - weight)
+        movement = CoffeeMovement(
+            movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6), drying_id=source.drying_id,
+            batch_id=source.batch_id, grade=source.grade, from_location_id=source.location_id,
+            to_location_id=destination.id, movement_date=datetime.strptime(request.form["transfer_date"], "%Y-%m-%d").date(),
+            weight=weight, moisture=moisture, movement_type="Station Transfer",
+            reason=request.form.get("remarks"), moved_by=request.form.get("dispatched_by"), created_by=session.get("username"))
+        db.session.add(movement)
+        db.session.flush()
+        transfer = StationTransfer(
+            transfer_no=next_code(StationTransfer, "transfer_no", "TRF", 6), movement_id=movement.id,
+            from_station_id=source.location.station_id, to_station_id=destination.station_id,
+            number_of_bags=int(request.form["number_of_bags"]) if request.form.get("number_of_bags") else None,
+            vehicle_no=request.form.get("vehicle_no"), driver_name=request.form.get("driver_name"),
+            driver_phone=request.form.get("driver_phone"), dispatch_time=request.form.get("dispatch_time"),
+            arrival_time=request.form.get("arrival_time"), dispatched_by=request.form.get("dispatched_by"),
+            received_by=request.form.get("received_by"), authorized_by=request.form.get("authorized_by"))
+        db.session.add(transfer)
+        batch = db.session.get(Batch, source.batch_id)
+        if batch: batch.status = "Transferred to " + destination.station.name
+        db.session.commit()
+        log_action("CREATE", "Station Transfer", transfer.id, transfer.transfer_no)
+        flash(f"{transfer.transfer_no} saved. {weight:,.2f} kg moved to {destination.station.name}.")
+        return redirect(url_for("station_transfer_print", id=transfer.id))
     stocks = CoffeeStock.query.join(Location).filter(CoffeeStock.weight > 0.0001, Location.station_id.isnot(None)).order_by(CoffeeStock.updated_at.desc()).all()
     destinations = Location.query.join(Station).filter(Location.status == "Active", Station.status == "Active").order_by(Station.name, Location.location_type, Location.name).all()
-    documents = StationTransferDocument.query.order_by(StationTransferDocument.id.desc()).limit(200).all()
-    legacy_rows = StationTransfer.query.order_by(StationTransfer.id.desc()).limit(100).all()
-    return render_template(
-        "station_transfers.html", stocks=stocks, destinations=destinations,
-        documents=documents, legacy_rows=legacy_rows,
-        next_transfer=next_code(StationTransferDocument, "transfer_no", "TRF", 6)
-    )
-
-
-@app.route("/station-transfers/<int:id>/receive", methods=["GET", "POST"])
-@permission_required("transfers")
-def legacy_station_transfer_receive(id):
-    row = StationTransfer.query.get_or_404(id)
-    if row.received_date or row.status == "Received":
-        flash("This earlier transfer has already been received.")
-        return redirect(url_for("station_transfers"))
-
-    movement = row.movement
-    destination_stock = CoffeeStock.query.filter_by(
-        drying_id=movement.drying_id, location_id=movement.to_location_id
-    ).first()
-
-    if request.method == "POST":
-        try:
-            received_weight = float(request.form.get("received_weight") or 0)
-            if received_weight < 0:
-                raise ValueError("Received weight cannot be negative.")
-            received_moisture = float(request.form["received_moisture"]) if request.form.get("received_moisture") else movement.moisture
-            received_bags = int(request.form["received_bags"]) if request.form.get("received_bags") else None
-            received_by = (request.form.get("received_by") or "").strip()
-            if not received_by:
-                raise ValueError("Enter the name of the person receiving the coffee.")
-            received_date = datetime.strptime(request.form["received_date"], "%Y-%m-%d").date()
-
-            dispatched_weight = float(movement.weight or 0)
-            difference = received_weight - dispatched_weight
-
-            # Earlier transfers were credited to destination inventory immediately.
-            # Adjust only by the difference so the coffee is not counted twice.
-            if not destination_stock:
-                destination_stock = CoffeeStock(
-                    drying_id=movement.drying_id,
-                    batch_id=movement.batch_id,
-                    grade=movement.grade,
-                    location_id=movement.to_location_id,
-                    weight=0,
-                    moisture=received_moisture,
-                    stock_status=stock_status_for_location(movement.to_location.location_type),
-                )
-                db.session.add(destination_stock)
-                db.session.flush()
-
-            revised_weight = float(destination_stock.weight or 0) + difference
-            if revised_weight < -0.0001:
-                raise ValueError(
-                    "The received shortage is greater than the coffee currently available at the destination. "
-                    "Some of this coffee may already have moved onward."
-                )
-            destination_stock.weight = max(0, revised_weight)
-            if received_moisture is not None:
-                destination_stock.moisture = received_moisture
-
-            row.received_date = received_date
-            row.received_weight = received_weight
-            row.received_moisture = received_moisture
-            row.received_bags = received_bags
-            row.weight_difference = difference
-            row.received_by = received_by
-            row.receipt_notes = request.form.get("receipt_notes")
-            row.arrival_time = request.form.get("arrival_time") or row.arrival_time
-            row.status = "Received"
-            db.session.commit()
-            log_action("RECEIVE", "Station Transfer", row.id, f"{row.transfer_no}: sent {dispatched_weight:,.2f} kg, received {received_weight:,.2f} kg")
-            flash(f"{row.transfer_no} received successfully. Difference: {difference:+,.2f} kg.")
-            return redirect(url_for("station_transfer_print", id=row.id))
-        except (ValueError, TypeError) as exc:
-            db.session.rollback()
-            flash(str(exc))
-        except Exception:
-            db.session.rollback()
-            app.logger.exception("Earlier station transfer receipt failed")
-            flash("The earlier transfer could not be received. No inventory adjustment was saved.")
-
-    return render_template("legacy_station_transfer_receive.html", row=row)
-
-
-@app.route("/station-transfer-documents/<int:id>/receive", methods=["GET", "POST"])
-@permission_required("transfers")
-def station_transfer_document_receive(id):
-    document = StationTransferDocument.query.get_or_404(id)
-    if document.status != "In Transit":
-        flash("This transfer has already been received or is not awaiting receipt.")
-        return redirect(url_for("station_transfers"))
-
-    if request.method == "POST":
-        received_weights = request.form.getlist("received_weight[]")
-        received_moistures = request.form.getlist("received_moisture[]")
-        received_bags = request.form.getlist("received_bags[]")
-        if not (len(received_weights) == len(document.items) == len(received_moistures) == len(received_bags)):
-            flash("Enter receiving details for every coffee line.")
-            return redirect(url_for("station_transfer_document_receive", id=id))
-        try:
-            prepared = []
-            for index, item in enumerate(document.items):
-                received_weight = float(received_weights[index] or 0)
-                if received_weight < 0:
-                    raise ValueError(f"Line {index + 1}: received weight cannot be negative.")
-                received_moisture = float(received_moistures[index]) if received_moistures[index] else item.movement.moisture
-                bag_count = int(received_bags[index]) if received_bags[index] else None
-                prepared.append((item, received_weight, received_moisture, bag_count))
-
-            for item, received_weight, received_moisture, bag_count in prepared:
-                movement = item.movement
-                destination = movement.to_location
-                destination_stock = CoffeeStock.query.filter_by(
-                    drying_id=movement.drying_id, location_id=destination.id
-                ).first()
-                old_weight = float(destination_stock.weight or 0) if destination_stock else 0
-                if not destination_stock:
-                    destination_stock = CoffeeStock(
-                        drying_id=movement.drying_id, batch_id=movement.batch_id, grade=movement.grade,
-                        location_id=destination.id, weight=0, moisture=received_moisture,
-                        stock_status=stock_status_for_location(destination.location_type)
-                    )
-                    db.session.add(destination_stock)
-                new_total = old_weight + received_weight
-                if received_moisture is not None and received_weight > 0:
-                    old_moisture = float(destination_stock.moisture if destination_stock.moisture is not None else received_moisture)
-                    destination_stock.moisture = (((old_weight * old_moisture) + (received_weight * received_moisture)) / new_total) if new_total else received_moisture
-                destination_stock.weight = new_total
-                destination_stock.stock_status = stock_status_for_location(destination.location_type)
-                item.received_weight = received_weight
-                item.received_moisture = received_moisture
-                item.received_bags = bag_count
-                item.weight_difference = received_weight - float(movement.weight or 0)
-                batch = movement.batch
-                if batch:
-                    batch.status = "Received at " + document.to_station.name
-
-            document.received_date = datetime.strptime(request.form["received_date"], "%Y-%m-%d").date()
-            document.arrival_time = request.form.get("arrival_time") or document.arrival_time
-            document.received_by = (request.form.get("received_by") or "").strip()
-            document.receipt_notes = request.form.get("receipt_notes")
-            document.status = "Received"
-            if not document.received_by:
-                raise ValueError("Enter the name of the person receiving the coffee.")
-            db.session.commit()
-            total_sent = sum(float(x.movement.weight or 0) for x in document.items)
-            total_received = sum(float(x.received_weight or 0) for x in document.items)
-            log_action("RECEIVE", "Station Transfer", document.id, f"{document.transfer_no}: sent {total_sent:,.2f} kg, received {total_received:,.2f} kg")
-            flash(f"{document.transfer_no} received successfully. Difference: {total_received - total_sent:,.2f} kg.")
-            return redirect(url_for("station_transfer_document_print", id=document.id))
-        except (ValueError, TypeError) as exc:
-            db.session.rollback()
-            flash(str(exc))
-            return redirect(url_for("station_transfer_document_receive", id=id))
-        except Exception:
-            db.session.rollback()
-            app.logger.exception("Station transfer receipt failed")
-            flash("The transfer could not be received. No destination inventory was changed.")
-            return redirect(url_for("station_transfer_document_receive", id=id))
-
-    return render_template("station_transfer_receive.html", row=document)
-
-
-@app.route("/station-transfer-documents/<int:id>/print")
-@permission_required("transfers")
-def station_transfer_document_print(id):
-    row = StationTransferDocument.query.get_or_404(id)
-    return render_template("station_transfer_document.html", row=row)
-
+    rows = StationTransfer.query.order_by(StationTransfer.id.desc()).limit(200).all()
+    return render_template("station_transfers.html", stocks=stocks, destinations=destinations, rows=rows, next_transfer=next_code(StationTransfer, "transfer_no", "TRF", 6))
 
 @app.route("/station-transfers/<int:id>/print")
 @permission_required("transfers")
 def station_transfer_print(id):
     row = StationTransfer.query.get_or_404(id)
     return render_template("station_transfer_note.html", row=row)
-
 
 @app.route("/locations", methods=["GET", "POST"])
 @permission_required("locations")
@@ -2839,19 +1644,15 @@ def inventory():
         destination_id = int(request.form["to_location_id"])
         source = CoffeeStock.query.get_or_404(source_id)
         destination = Location.query.get_or_404(destination_id)
-        source_weight = float(request.form.get("source_weight") or 0)
-        current_weight = float(request.form.get("current_weight") or 0)
+        weight = float(request.form.get("weight") or 0)
         if source.weight <= 0:
             flash("The selected source has no available coffee.")
             return redirect(url_for("inventory"))
         if source.location_id == destination.id:
             flash("Choose a different destination.")
             return redirect(url_for("inventory"))
-        if source_weight <= 0 or source_weight > source.weight + 0.0001:
-            flash(f"Weight leaving the current location must be greater than zero and cannot exceed {source.weight:,.2f} kg.")
-            return redirect(url_for("inventory"))
-        if current_weight <= 0 or current_weight > source_weight + 0.0001:
-            flash("The new/current weight must be greater than zero and cannot exceed the weight leaving the source.")
+        if weight <= 0 or weight > source.weight + 0.0001:
+            flash(f"Movement weight must be greater than zero and cannot exceed {source.weight:,.2f} kg.")
             return redirect(url_for("inventory"))
 
         moisture = float(request.form["moisture"]) if request.form.get("moisture") else source.moisture
@@ -2869,10 +1670,10 @@ def inventory():
                 moisture=moisture,
             )
             db.session.add(destination_stock)
-        new_total = old_destination_weight + current_weight
+        new_total = old_destination_weight + weight
         if moisture is not None:
             old_m = float(destination_stock.moisture or moisture)
-            destination_stock.moisture = ((old_destination_weight * old_m) + (current_weight * moisture)) / new_total if new_total else moisture
+            destination_stock.moisture = ((old_destination_weight * old_m) + (weight * moisture)) / new_total if new_total else moisture
         destination_stock.weight = new_total
         destination_stock.stock_status = stock_status_for_location(destination.location_type)
 
@@ -2892,8 +1693,7 @@ def inventory():
             from_location_id=source.location_id,
             to_location_id=destination.id,
             movement_date=datetime.strptime(request.form["movement_date"], "%Y-%m-%d").date(),
-            weight=current_weight,
-            source_weight=source_weight,
+            weight=weight,
             moisture=moisture,
             movement_type=movement_type,
             reason=request.form.get("reason"),
@@ -2906,12 +1706,7 @@ def inventory():
             batch.status = movement_type
         db.session.commit()
         log_action("CREATE", "Inventory Movement", movement.id, movement.movement_no)
-        movement_outturn = (current_weight / source_weight * 100) if source_weight else 0
-        flash(
-            f"Movement saved. {source_weight:,.2f} kg left the source and "
-            f"{current_weight:,.2f} kg is now recorded at {destination.name} "
-            f"({movement_outturn:.1f}% movement outturn)."
-        )
+        flash(f"Movement saved. {weight:,.2f} kg moved to {destination.name}.")
         return redirect(url_for("inventory"))
 
     stocks = CoffeeStock.query.filter(CoffeeStock.weight > 0.0001).order_by(CoffeeStock.updated_at.desc()).all()
@@ -2927,15 +1722,6 @@ def inventory():
         station_name = stock.location.station.name if stock.location.station else "Unassigned"
         station_totals.setdefault(station_name, 0.0)
         station_totals[station_name] += float(stock.weight or 0)
-    current_outturns = {}
-    for stock in stocks:
-        drying_total = db.session.query(func.coalesce(func.sum(CoffeeStock.weight), 0.0)).filter(
-            CoffeeStock.drying_id == stock.drying_id,
-            CoffeeStock.weight > 0.0001,
-        ).scalar() or 0.0
-        input_weight = float(stock.drying.input_weight or 0) if stock.drying else 0
-        current_outturns[stock.drying_id] = (float(drying_total) / input_weight * 100) if input_weight else 0
-
     return render_template(
         "inventory.html",
         stocks=stocks,
@@ -2946,159 +1732,6 @@ def inventory():
         location_totals=location_totals,
         station_totals=station_totals,
         next_movement=next_code(CoffeeMovement, "movement_no", "MOV", 6),
-        current_outturns=current_outturns,
-    )
-
-
-@app.route("/inventory/movement/<int:id>/edit", methods=["GET", "POST"])
-@permission_required("inventory")
-def inventory_movement_edit(id):
-    movement = CoffeeMovement.query.get_or_404(id)
-    if movement.status == "Voided":
-        flash("A voided movement cannot be edited.")
-        return redirect(url_for("inventory"))
-
-    destination_stock = CoffeeStock.query.filter_by(
-        drying_id=movement.drying_id, location_id=movement.to_location_id
-    ).first()
-    linked_transfer = StationTransfer.query.filter_by(movement_id=movement.id).first()
-    later_movement = CoffeeMovement.query.filter(
-        CoffeeMovement.drying_id == movement.drying_id,
-        CoffeeMovement.from_location_id == movement.to_location_id,
-        CoffeeMovement.status == "Active",
-        CoffeeMovement.id > movement.id,
-    ).first()
-    later_dispatch = None
-    if destination_stock:
-        later_dispatch = Dispatch.query.filter(
-            Dispatch.stock_id == destination_stock.id,
-            Dispatch.status == "Active",
-            Dispatch.created_at > movement.created_at,
-        ).first()
-
-    protected_type = (movement.movement_type or "").startswith("Finished Drying")
-    can_change_stock = not linked_transfer and not later_movement and not later_dispatch and not protected_type
-
-    if request.method == "POST":
-        try:
-            movement_date = datetime.strptime(request.form["movement_date"], "%Y-%m-%d").date()
-        except (KeyError, ValueError):
-            flash("Enter a valid movement date.")
-            return redirect(url_for("inventory_movement_edit", id=id))
-
-        moisture = float(request.form["moisture"]) if request.form.get("moisture") else None
-        reason = (request.form.get("reason") or "").strip()
-        moved_by = (request.form.get("moved_by") or "").strip()
-
-        # Metadata may always be corrected on an active movement.
-        movement.movement_date = movement_date
-        movement.moisture = moisture
-        movement.reason = reason
-        movement.moved_by = moved_by
-
-        if can_change_stock:
-            try:
-                new_destination_id = int(request.form["to_location_id"])
-                new_source_weight = float(request.form.get("source_weight") or 0)
-                new_weight = float(request.form.get("weight") or 0)
-            except (KeyError, TypeError, ValueError):
-                flash("Enter a valid destination and movement weight.")
-                return redirect(url_for("inventory_movement_edit", id=id))
-
-            new_destination = Location.query.get_or_404(new_destination_id)
-            if new_destination.id == movement.from_location_id:
-                flash("The destination must be different from the source location.")
-                return redirect(url_for("inventory_movement_edit", id=id))
-            if new_source_weight <= 0:
-                flash("Source weight must be greater than zero.")
-                return redirect(url_for("inventory_movement_edit", id=id))
-            if new_weight <= 0 or new_weight > new_source_weight + 0.0001:
-                flash("The new/current destination weight must be greater than zero and cannot exceed the source weight.")
-                return redirect(url_for("inventory_movement_edit", id=id))
-            if not destination_stock or float(destination_stock.weight or 0) + 0.0001 < float(movement.weight or 0):
-                flash("Weight or destination cannot be changed because the original destination no longer holds enough coffee to reverse this movement.")
-                return redirect(url_for("inventory_movement_edit", id=id))
-
-            source_stock = CoffeeStock.query.filter_by(
-                drying_id=movement.drying_id, location_id=movement.from_location_id
-            ).first()
-            if not source_stock:
-                source_stock = CoffeeStock(
-                    drying_id=movement.drying_id,
-                    batch_id=movement.batch_id,
-                    grade=movement.grade,
-                    location_id=movement.from_location_id,
-                    weight=0,
-                    moisture=movement.moisture,
-                    stock_status=stock_status_for_location(movement.from_location.location_type),
-                )
-                db.session.add(source_stock)
-                db.session.flush()
-
-            # Reverse the original movement first.
-            original_source_weight = float(movement.source_weight if movement.source_weight is not None else movement.weight or 0)
-            destination_stock.weight = max(0, float(destination_stock.weight or 0) - float(movement.weight or 0))
-            source_stock.weight = float(source_stock.weight or 0) + original_source_weight
-
-            if new_source_weight > float(source_stock.weight or 0) + 0.0001:
-                db.session.rollback()
-                flash(f"The revised source weight cannot exceed the available source balance of {source_stock.weight:,.2f} kg.")
-                return redirect(url_for("inventory_movement_edit", id=id))
-
-            revised_destination_stock = CoffeeStock.query.filter_by(
-                drying_id=movement.drying_id, location_id=new_destination.id
-            ).first()
-            old_revised_weight = float(revised_destination_stock.weight or 0) if revised_destination_stock else 0
-            if not revised_destination_stock:
-                revised_destination_stock = CoffeeStock(
-                    drying_id=movement.drying_id,
-                    batch_id=movement.batch_id,
-                    grade=movement.grade,
-                    location_id=new_destination.id,
-                    weight=0,
-                    moisture=moisture,
-                    stock_status=stock_status_for_location(new_destination.location_type),
-                )
-                db.session.add(revised_destination_stock)
-
-            new_total = old_revised_weight + new_weight
-            if moisture is not None:
-                old_m = float(revised_destination_stock.moisture if revised_destination_stock.moisture is not None else moisture)
-                revised_destination_stock.moisture = ((old_revised_weight * old_m) + (new_weight * moisture)) / new_total if new_total else moisture
-            revised_destination_stock.weight = new_total
-            revised_destination_stock.stock_status = stock_status_for_location(new_destination.location_type)
-            source_stock.weight = max(0, float(source_stock.weight or 0) - new_source_weight)
-            source_stock.stock_status = stock_status_for_location(movement.from_location.location_type)
-
-            movement.to_location_id = new_destination.id
-            movement.source_weight = new_source_weight
-            movement.weight = new_weight
-            movement.movement_type = {
-                "Drying Area": "Return to Drying",
-                "Temporary Storage": "Temporary Storage",
-                "Final Warehouse": "Final Storage",
-            }.get(new_destination.location_type, "Transfer")
-
-        db.session.commit()
-        log_action("EDIT", "Inventory Movement", movement.id, movement.movement_no)
-        if can_change_stock:
-            flash("Movement and inventory balances updated successfully.")
-        else:
-            flash("Movement details updated. Weight and destination were protected because linked activity already exists.")
-        return redirect(url_for("inventory"))
-
-    locations_list = Location.query.filter_by(status="Active").order_by(
-        Location.station_id, Location.location_type, Location.name
-    ).all()
-    return render_template(
-        "movement_edit.html",
-        movement=movement,
-        locations=locations_list,
-        can_change_stock=can_change_stock,
-        linked_transfer=linked_transfer,
-        later_movement=later_movement,
-        later_dispatch=later_dispatch,
-        protected_type=protected_type,
     )
 
 
@@ -3136,9 +1769,8 @@ def inventory_movement_void(id):
             stock_status=stock_status_for_location(movement.from_location.location_type)
         )
         db.session.add(source_stock)
-    original_source_weight = float(movement.source_weight if movement.source_weight is not None else movement.weight or 0)
     destination_stock.weight = max(0, destination_stock.weight - movement.weight)
-    source_stock.weight += original_source_weight
+    source_stock.weight += movement.weight
     source_stock.moisture = movement.moisture
     movement.status = "Voided"
     movement.void_reason = reason
@@ -3316,13 +1948,9 @@ def sale_void(id):
 @permission_required("casuals")
 def casuals():
     if request.method == "POST":
-        pay_frequency = request.form.get("pay_frequency", "Daily")
-        if pay_frequency not in {"Daily", "Weekly", "Monthly"}:
-            pay_frequency = "Daily"
         c = Casual(code=request.form["code"], name=request.form["name"], sex=request.form["sex"],
-                   phone=request.form.get("phone"), pay_frequency=pay_frequency,
-                   status=request.form.get("status","Active"))
-        db.session.add(c); db.session.commit(); log_action("CREATE","Workforce",c.id, f"{c.name}; {pay_frequency}")
+                   phone=request.form.get("phone"), status=request.form.get("status","Active"))
+        db.session.add(c); db.session.commit(); log_action("CREATE","Casuals",c.id)
         return redirect(url_for("casuals"))
     return render_template("casuals.html", rows=Casual.query.order_by(Casual.id.desc()).all(),
                            next_code=next_code(Casual,"code","CAS",3))
@@ -3331,73 +1959,16 @@ def casuals():
 @permission_required("rates")
 def casual_rates():
     if request.method == "POST":
-        casual = Casual.query.get_or_404(int(request.form["casual_id"]))
-        pay_type = request.form.get("pay_type", casual.pay_frequency or "Daily")
-        if pay_type not in {"Daily", "Weekly", "Monthly"}:
-            pay_type = "Daily"
         r = CasualRate(
-            casual_id=casual.id,
+            casual_id=int(request.form["casual_id"]),
             effective_date=datetime.strptime(request.form["effective_date"], "%Y-%m-%d").date(),
             daily_rate=float(request.form["daily_rate"]),
-            pay_type=pay_type,
             notes=request.form.get("notes")
         )
-        casual.pay_frequency = pay_type
-        db.session.add(r); db.session.commit(); log_action("CREATE","Pay Rates",r.id, f"{casual.name}; {pay_type}; UGX {r.daily_rate:,.0f}")
+        db.session.add(r); db.session.commit(); log_action("CREATE","Casual Rates",r.id)
         return redirect(url_for("casual_rates"))
-    return render_template("casual_rates.html", rows=CasualRate.query.order_by(CasualRate.effective_date.desc(), CasualRate.id.desc()).all(),
+    return render_template("casual_rates.html", rows=CasualRate.query.order_by(CasualRate.effective_date.desc()).all(),
                            casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all())
-
-@app.route("/casual-rate/<int:id>/edit", methods=["GET", "POST"])
-@permission_required("rates")
-def casual_rate_edit(id):
-    row = CasualRate.query.get_or_404(id)
-    if request.method == "POST":
-        casual = Casual.query.get_or_404(int(request.form["casual_id"]))
-        pay_type = request.form.get("pay_type", row.pay_type or casual.pay_frequency or "Daily")
-        if pay_type not in {"Daily", "Weekly", "Monthly"}:
-            pay_type = "Daily"
-
-        effective_date = datetime.strptime(request.form["effective_date"], "%Y-%m-%d").date()
-        amount = float(request.form["daily_rate"])
-        if amount < 0:
-            flash("The rate amount cannot be negative.")
-            return redirect(url_for("casual_rate_edit", id=id))
-
-        duplicate = CasualRate.query.filter(
-            CasualRate.casual_id == casual.id,
-            CasualRate.effective_date == effective_date,
-            CasualRate.id != row.id,
-        ).first()
-        if duplicate:
-            flash("That worker already has another rate entry with the same effective date. Edit that record or choose another date.")
-            return redirect(url_for("casual_rate_edit", id=id))
-
-        old = (
-            f"Worker {row.casual.name}; Date {row.effective_date}; "
-            f"Type {row.pay_type or 'Daily'}; Rate UGX {row.daily_rate:,.0f}; Notes {row.notes or '-'}"
-        )
-        row.casual_id = casual.id
-        row.effective_date = effective_date
-        row.pay_type = pay_type
-        row.daily_rate = amount
-        row.notes = request.form.get("notes")
-        casual.pay_frequency = pay_type
-        db.session.commit()
-
-        new = (
-            f"Worker {row.casual.name}; Date {row.effective_date}; "
-            f"Type {row.pay_type}; Rate UGX {row.daily_rate:,.0f}; Notes {row.notes or '-'}"
-        )
-        log_action("EDIT", "Pay Rates", row.id, f"Before: {old} | After: {new}")
-        flash("Rate history entry updated. Existing attendance and completed payments keep the rate values already stored on those records.")
-        return redirect(url_for("casual_rates"))
-
-    return render_template(
-        "casual_rate_edit.html",
-        row=row,
-        casuals=Casual.query.order_by(Casual.name).all(),
-    )
 
 def find_existing_attendance(casual_id, work_date, exclude_id=None):
     """Find a non-voided attendance entry for one worker on one date."""
@@ -3424,13 +1995,12 @@ def attendance():
                 f"{d.strftime('%d %b %Y')}. Edit the existing entry instead."
             )
             return redirect(url_for("attendance", worker_id=cid, date_from=d.isoformat(), date_to=d.isoformat()))
-        casual = Casual.query.get_or_404(cid)
-        rr = get_rate(cid, d, casual.pay_frequency)
+        rr = get_rate(cid, d)
         if not rr:
             flash("Add a rate for this worker before recording attendance.")
             return redirect(url_for("attendance"))
         work_type = request.form["work_type"]
-        amount = attendance_amount(casual, rr, work_type)
+        amount = rr.daily_rate if work_type == "Full Day" else rr.daily_rate / 2
         a = Attendance(
             work_date=d,
             casual_id=cid,
@@ -3461,130 +2031,53 @@ def attendance():
         query = query.filter(Attendance.work_date <= datetime.strptime(date_to, "%Y-%m-%d").date())
     rows = query.order_by(Attendance.work_date.desc(), Attendance.id.desc()).all()
 
-    # Rolling monthly cards follow each worker's own first-attendance date.
-    # Show several cycles per worker even when one cycle has no attendance,
-    # so an older unpaid salary period is never hidden simply because a new
-    # month has started.
-    today = datetime.utcnow().date()
-
-    card_rows = Attendance.query.filter(
-        Attendance.status != "Voided"
-    ).order_by(Attendance.work_date.asc(), Attendance.id.asc()).all()
-
-    attendance_by_worker = {}
-    anchors = {}
-    workers_by_id = {}
+    # Seven-day cards are calculated from each worker's own attendance cycle.
+    # The first non-voided attendance date becomes that worker's cycle start,
+    # so workers are not forced into a Monday-to-Sunday calendar week.
+    weekly = {}
+    card_rows = Attendance.query.filter(Attendance.status != "Voided").order_by(
+        Attendance.work_date.asc(), Attendance.id.asc()
+    ).all()
+    cycle_starts = {}
+    for row in card_rows:
+        cycle_starts.setdefault(row.casual_id, row.work_date)
 
     for row in card_rows:
-        anchors.setdefault(row.casual_id, row.work_date)
-        workers_by_id[row.casual_id] = row.casual
-        attendance_by_worker.setdefault(row.casual_id, []).append(row)
-
-    # Include active workers too. A worker needs at least one attendance entry
-    # to establish their personal rolling-month anchor.
-    for casual in Casual.query.order_by(Casual.name).all():
-        workers_by_id.setdefault(casual.id, casual)
-
-    monthly_card_groups = []
-
-    for casual_id, anchor in anchors.items():
-        casual = workers_by_id.get(casual_id)
-
-        # Monthly payment cards are shown only for active workers.
-        # Inactive workers keep all historical attendance/payment records,
-        # but their cards are removed from the active workforce view.
-        if not casual or casual.status != "Active":
-            continue
-
-        current_start, current_end = rolling_month_cycle(anchor, today)
-
-        # Previous two cycles + the current cycle = three scrollable cards.
-        cycle_starts = [
-            add_months_safe(current_start, -2),
-            add_months_safe(current_start, -1),
-            current_start,
-        ]
-
-        worker_cards = []
-        worker_attendance = attendance_by_worker.get(casual_id, [])
-
-        for cycle_start in cycle_starts:
-            cycle_end = add_months_safe(cycle_start, 1) - timedelta(days=1)
-
-            cycle_entries = [
-                row for row in worker_attendance
-                if cycle_start <= row.work_date <= cycle_end
-            ]
-
-            cycle_dates = []
-            date_entries = {}
-            d = cycle_start
-            while d <= cycle_end:
-                cycle_dates.append(d)
-                date_entries[d.isoformat()] = []
-                d += timedelta(days=1)
-
-            days = 0.0
-            amount = 0.0
-            unpaid_amount = 0.0
-            unpaid_count = 0
-            paid_attendance_count = 0
-
-            for row in cycle_entries:
-                date_entries[row.work_date.isoformat()].append(row)
-                value = 1 if row.work_type == "Full Day" else 0.5
-                days += value
-                amount += float(row.amount or 0)
-                if row.status == "Paid":
-                    paid_attendance_count += 1
-                else:
-                    unpaid_count += 1
-                    unpaid_amount += float(row.amount or 0)
-
-            # A completed non-voided payment for this exact rolling period
-            # is the clearest source of truth for salary settlement.
-            payment = Payment.query.filter(
-                Payment.casual_id == casual_id,
-                Payment.status != "Voided",
-                Payment.period_start == cycle_start,
-                Payment.period_end == cycle_end,
-            ).order_by(Payment.id.desc()).first()
-
-            is_current = cycle_start <= today <= cycle_end
-            is_paid = payment is not None
-
-            if is_paid:
-                card_status = "Paid"
-            elif is_current:
-                card_status = "Current"
-            else:
-                card_status = "Unpaid"
-
-            worker_cards.append({
-                "casual": casual,
-                "start": cycle_start,
-                "end": cycle_end,
-                "month_label": f"{cycle_start.strftime('%d %b %Y')} – {cycle_end.strftime('%d %b %Y')}",
-                "days": days,
-                "amount": amount,
-                "unpaid_amount": unpaid_amount,
-                "paid": paid_attendance_count,
-                "unpaid": unpaid_count,
-                "cycle_dates": cycle_dates,
-                "date_entries": date_entries,
-                "payment": payment,
-                "is_paid": is_paid,
-                "is_current": is_current,
-                "card_status": card_status,
-            })
-
-        monthly_card_groups.append({
-            "casual": casual,
-            "cards": worker_cards,
+        anchor = cycle_starts[row.casual_id]
+        cycle_number = (row.work_date - anchor).days // 7
+        week_start = anchor + timedelta(days=cycle_number * 7)
+        day_index = (row.work_date - week_start).days
+        key = (row.casual_id, week_start)
+        item = weekly.setdefault(key, {
+            "casual": row.casual,
+            "start": week_start,
+            "end": week_start + timedelta(days=6),
+            "days": 0.0,
+            "amount": 0.0,
+            "unpaid_amount": 0.0,
+            "paid": 0,
+            "unpaid": 0,
+            "day_entries": {i: [] for i in range(7)},
+            "day_labels": [
+                (week_start + timedelta(days=i)).strftime("%a") for i in range(7)
+            ],
+            "day_dates": [
+                (week_start + timedelta(days=i)).strftime("%d %b") for i in range(7)
+            ],
         })
+        day_value = 1 if row.work_type == "Full Day" else 0.5
+        item["days"] += day_value
+        item["amount"] += float(row.amount or 0)
+        item["day_entries"][day_index].append(row)
+        if row.status == "Paid":
+            item["paid"] += 1
+        else:
+            item["unpaid"] += 1
+            item["unpaid_amount"] += float(row.amount or 0)
 
-    monthly_card_groups.sort(key=lambda x: x["casual"].name.lower())
-    monthly_cards = [card for group in monthly_card_groups for card in group["cards"]]
+    weekly_cards = sorted(
+        weekly.values(), key=lambda x: (x["start"], x["casual"].name), reverse=True
+    )[:40]
 
     daily_date_text = request.args.get("daily_date", datetime.utcnow().date().isoformat())
     try:
@@ -3604,8 +2097,7 @@ def attendance():
     return render_template(
         "attendance.html",
         rows=rows,
-        monthly_cards=monthly_cards,
-        monthly_card_groups=monthly_card_groups,
+        weekly_cards=weekly_cards,
         casuals=active_casuals,
         all_casuals=Casual.query.order_by(Casual.name).all(),
         filters={"worker_id": worker_id, "status": status, "date_from": date_from, "date_to": date_to},
@@ -3640,14 +2132,14 @@ def attendance_daily_save():
         if find_existing_attendance(casual_id, work_date):
             skipped += 1
             continue
-        rate_row = get_rate(casual_id, work_date, casual.pay_frequency)
+        rate_row = get_rate(casual_id, work_date)
         if not rate_row:
             missing_rates.append(casual.name)
             continue
         work_type = request.form.get(f"work_type_{casual_id}", "Full Day")
         if work_type not in {"Full Day", "Half Day"}:
             work_type = "Full Day"
-        amount = attendance_amount(casual, rate_row, work_type)
+        amount = rate_row.daily_rate if work_type == "Full Day" else rate_row.daily_rate / 2
         entry = Attendance(
             work_date=work_date,
             casual_id=casual_id,
@@ -3685,10 +2177,8 @@ def recalculate_payment(payment_ref):
     if not payment or payment.status == "Voided":
         return
     paid_entries = Attendance.query.filter_by(payment_ref=payment_ref, status="Paid").all()
-    payment.attendance_days = sum(1 if x.work_type == "Full Day" else 0.5 for x in paid_entries)
-    if (payment.pay_type or "Daily") == "Daily":
-        payment.gross_pay = sum(float(x.amount or 0) for x in paid_entries)
-    payment.net_paid = max(0, payment.gross_pay - (payment.deduction or 0) - (payment.advance_deduction or 0))
+    payment.gross_pay = sum(x.amount for x in paid_entries)
+    payment.net_paid = max(0, payment.gross_pay - (payment.deduction or 0))
 
 
 @app.route("/attendance/<int:id>/edit", methods=["GET", "POST"])
@@ -3710,8 +2200,7 @@ def attendance_edit(id):
                 f"{work_date.strftime('%d %b %Y')}. Edit that existing record instead."
             )
             return redirect(url_for("attendance_edit", id=id))
-        casual = Casual.query.get_or_404(casual_id)
-        rr = get_rate(casual_id, work_date, casual.pay_frequency)
+        rr = get_rate(casual_id, work_date)
         if not rr:
             flash("Add a rate for this worker before saving the correction.")
             return redirect(url_for("attendance_edit", id=id))
@@ -3720,7 +2209,7 @@ def attendance_edit(id):
         row.work_done = request.form.get("work_done")
         row.work_type = request.form["work_type"]
         row.rate = rr.daily_rate
-        row.amount = attendance_amount(casual, rr, row.work_type)
+        row.amount = rr.daily_rate if row.work_type == "Full Day" else rr.daily_rate / 2
         recalculate_payment(old_payment_ref)
         db.session.commit()
         new = f"{row.work_date}; {row.casual.name}; {row.work_type}; UGX {row.amount:,.0f}; {row.work_done or ''}"
@@ -3769,27 +2258,6 @@ def attendance_delete(id):
     return redirect(url_for("attendance"))
 
 
-@app.route("/casual/<int:id>/edit", methods=["GET", "POST"])
-@permission_required("casuals")
-def casual_edit(id):
-    casual = Casual.query.get_or_404(id)
-    if request.method == "POST":
-        old = f"{casual.name}; {casual.pay_frequency}; {casual.status}"
-        pay_frequency = request.form.get("pay_frequency", casual.pay_frequency or "Daily")
-        if pay_frequency not in {"Daily", "Weekly", "Monthly"}:
-            pay_frequency = "Daily"
-        casual.name = request.form["name"].strip()
-        casual.sex = request.form.get("sex")
-        casual.phone = request.form.get("phone")
-        casual.pay_frequency = pay_frequency
-        casual.status = request.form.get("status", "Active")
-        db.session.commit()
-        log_action("EDIT", "Workforce", casual.id, f"Before: {old} | After: {casual.name}; {pay_frequency}; {casual.status}")
-        flash("Worker details updated.")
-        return redirect(url_for("casual_profile", id=id))
-    return render_template("casual_edit.html", casual=casual)
-
-
 @app.route("/casual/<int:id>")
 @permission_required("casuals")
 def casual_profile(id):
@@ -3818,330 +2286,100 @@ def casual_status(id):
     return redirect(url_for("casual_profile", id=id))
 
 
-
-@app.route("/advances", methods=["GET", "POST"])
-@permission_required("payments")
-def advances():
-    workers = Casual.query.filter_by(status="Active").order_by(Casual.name).all()
-    today = datetime.utcnow().date()
-
-    if request.method == "POST":
-        casual = Casual.query.get_or_404(int(request.form["casual_id"]))
-        if (casual.pay_frequency or "Daily") != "Monthly":
-            flash("Salary advances are for monthly-paid workers.")
-            return redirect(url_for("advances"))
-
-        cycle_start = datetime.strptime(request.form["cycle_start"], "%Y-%m-%d").date()
-        cycle_end = datetime.strptime(request.form["cycle_end"], "%Y-%m-%d").date()
-        advance_date = datetime.strptime(request.form["advance_date"], "%Y-%m-%d").date()
-        amount = float(request.form.get("amount") or 0)
-        if amount <= 0:
-            flash("Advance amount must be greater than zero.")
-            return redirect(url_for("advances"))
-
-        existing = SalaryAdvance.query.filter(
-            SalaryAdvance.casual_id == casual.id,
-            SalaryAdvance.cycle_start == cycle_start,
-            SalaryAdvance.cycle_end == cycle_end,
-            SalaryAdvance.status == "Active",
-        ).first()
-        if existing:
-            flash("An active advance already exists for this worker's current monthly cycle.")
-            return redirect(url_for("advances"))
-
-        row = SalaryAdvance(
-            advance_ref=next_code(SalaryAdvance, "advance_ref", "ADV", 6),
-            casual_id=casual.id,
-            cycle_start=cycle_start,
-            cycle_end=cycle_end,
-            advance_date=advance_date,
-            amount=amount,
-            notes=request.form.get("notes"),
-        )
-        db.session.add(row)
-        db.session.commit()
-        log_action("CREATE", "Salary Advances", row.id,
-                   f"{row.advance_ref}; {casual.name}; UGX {row.amount:,.0f}")
-        flash("Salary advance saved. It will be deducted automatically from the matching monthly salary.")
-        return redirect(url_for("advances"))
-
-    return render_template(
-        "advances.html",
-        workers=workers,
-        rows=SalaryAdvance.query.order_by(SalaryAdvance.id.desc()).all(),
-        today=today.isoformat(),
-    )
-
-@app.route("/advances/cycle/<int:casual_id>")
-@permission_required("payments")
-def advance_cycle(casual_id):
-    casual = Casual.query.get_or_404(casual_id)
-    due, cycle_start, cycle_end = worker_advance_due(casual)
-    return {
-        "pay_frequency": casual.pay_frequency or "Daily",
-        "cycle_start": cycle_start.isoformat(),
-        "cycle_end": cycle_end.isoformat(),
-        "advance_due": due.isoformat(),
-    }
-
-
-@app.route("/advance/<int:id>/edit", methods=["GET", "POST"])
-@permission_required("payments")
-def advance_edit(id):
-    row = SalaryAdvance.query.get_or_404(id)
-
-    # Once an advance has been deducted from a completed salary payment,
-    # keep the audit trail intact instead of silently changing that payment.
-    if row.deducted_payment_id:
-        flash("This advance has already been deducted from a salary payment. Void or correct the salary payment first before editing the advance.")
-        return redirect(url_for("advances"))
-
-    workers = Casual.query.filter_by(status="Active").order_by(Casual.name).all()
-
-    if request.method == "POST":
-        casual = Casual.query.get_or_404(int(request.form["casual_id"]))
-        if (casual.pay_frequency or "Daily") != "Monthly":
-            flash("Salary advances are for monthly-paid workers.")
-            return redirect(url_for("advance_edit", id=row.id))
-
-        cycle_start = datetime.strptime(request.form["cycle_start"], "%Y-%m-%d").date()
-        cycle_end = datetime.strptime(request.form["cycle_end"], "%Y-%m-%d").date()
-        advance_date = datetime.strptime(request.form["advance_date"], "%Y-%m-%d").date()
-        amount = float(request.form.get("amount") or 0)
-
-        if amount <= 0:
-            flash("Advance amount must be greater than zero.")
-            return redirect(url_for("advance_edit", id=row.id))
-
-        duplicate = SalaryAdvance.query.filter(
-            SalaryAdvance.id != row.id,
-            SalaryAdvance.casual_id == casual.id,
-            SalaryAdvance.cycle_start == cycle_start,
-            SalaryAdvance.cycle_end == cycle_end,
-            SalaryAdvance.status == "Active",
-        ).first()
-        if duplicate:
-            flash("Another active advance already exists for this worker's selected monthly cycle.")
-            return redirect(url_for("advance_edit", id=row.id))
-
-        old_details = f"{row.casual.name}; {row.advance_date}; UGX {row.amount:,.0f}"
-        row.casual_id = casual.id
-        row.cycle_start = cycle_start
-        row.cycle_end = cycle_end
-        row.advance_date = advance_date
-        row.amount = amount
-        row.notes = request.form.get("notes")
-        db.session.commit()
-
-        log_action(
-            "EDIT", "Salary Advances", row.id,
-            f"{row.advance_ref}; from [{old_details}] to [{casual.name}; {advance_date}; UGX {amount:,.0f}]"
-        )
-        flash("Salary advance updated.")
-        return redirect(url_for("advances"))
-
-    return render_template("advance_edit.html", row=row, workers=workers)
-
-@app.route("/advance/<int:id>/void", methods=["POST"])
-@permission_required("payments")
-def advance_void(id):
-    row = SalaryAdvance.query.get_or_404(id)
-    if row.deducted_payment_id:
-        flash("This advance has already been deducted from a salary payment.")
-        return redirect(url_for("advances"))
-    row.status = "Voided"
-    db.session.commit()
-    log_action("VOID", "Salary Advances", row.id, request.form.get("reason") or "Voided")
-    flash("Advance voided.")
-    return redirect(url_for("advances"))
-
-
 @app.route("/payments/calculate")
 @permission_required("payments")
 def payment_calculate():
-    """Preview Daily, Weekly, or Monthly pay for a selected worker and period."""
+    """Return an automatic preview of unpaid attendance for a selected period."""
+    cid = request.args.get("casual_id", type=int)
+    start_text = request.args.get("period_start", "")
+    end_text = request.args.get("period_end", "")
+    if not cid or not start_text or not end_text:
+        return {"ok": False, "message": "Select a worker and both period dates."}, 400
     try:
-        cid = request.args.get("casual_id", type=int)
-        start_text = (request.args.get("period_start") or "").strip()
-        end_text = (request.args.get("period_end") or "").strip()
+        start = datetime.strptime(start_text, "%Y-%m-%d").date()
+        end = datetime.strptime(end_text, "%Y-%m-%d").date()
+    except ValueError:
+        return {"ok": False, "message": "Enter valid dates."}, 400
+    if end < start:
+        return {"ok": False, "message": "The period end cannot be before the start."}, 400
 
-        if not cid or not start_text or not end_text:
-            return {"ok": False, "message": "Select a worker and both period dates."}, 400
-
-        try:
-            start = datetime.strptime(start_text, "%Y-%m-%d").date()
-            end = datetime.strptime(end_text, "%Y-%m-%d").date()
-        except ValueError:
-            return {"ok": False, "message": "Enter valid dates."}, 400
-
-        if end < start:
-            return {"ok": False, "message": "The period end cannot be before the start."}, 400
-
-        casual = db.session.get(Casual, cid)
-        if not casual:
-            return {"ok": False, "message": "The selected worker could not be found."}, 404
-
-        pay_type = casual.pay_frequency or "Daily"
-        rate_row = get_rate(cid, start, pay_type)
-        if not rate_row:
-            return {
-                "ok": False,
-                "message": f"Add a {pay_type.lower()} rate for this worker first."
-            }, 400
-
-        duplicate = Payment.query.filter(
-            Payment.casual_id == cid,
-            Payment.status != "Voided",
-            Payment.period_start <= end,
-            Payment.period_end >= start,
-        ).first()
-        if duplicate:
-            return {
-                "ok": False,
-                "message": (
-                    f"This period overlaps payment {duplicate.payment_ref}. "
-                    "Edit or void that payment first."
-                )
-            }, 400
-
-        entries = Attendance.query.filter(
-            Attendance.casual_id == cid,
-            Attendance.work_date >= start,
-            Attendance.work_date <= end,
-            Attendance.status == "Unpaid",
-        ).order_by(Attendance.work_date).all()
-
-        full_days = sum(1 for x in entries if x.work_type == "Full Day")
-        half_days = sum(1 for x in entries if x.work_type == "Half Day")
-        days_equivalent = full_days + half_days * 0.5
-        units = payment_period_units(pay_type, start, end)
-
-        if pay_type == "Daily":
-            gross = sum(float(x.amount or 0) for x in entries)
-            can_pay = bool(entries)
-            explanation = "Calculated from unpaid attendance."
-        else:
-            gross = float(rate_row.daily_rate) * units
-            can_pay = True
-            explanation = (
-                f"{units} {pay_type.lower()} pay period(s) × "
-                f"UGX {rate_row.daily_rate:,.0f}. Attendance is shown for review."
-            )
-
-        # Calculate salary advances only after the worker and period are valid.
-        advance_deduction = 0.0
-        if pay_type == "Monthly":
-            advances = SalaryAdvance.query.filter(
-                SalaryAdvance.casual_id == cid,
-                SalaryAdvance.status == "Active",
-                SalaryAdvance.deducted_payment_id.is_(None),
-                SalaryAdvance.cycle_start >= start,
-                SalaryAdvance.cycle_end <= end,
-            ).all()
-            advance_deduction = sum(float(a.amount or 0) for a in advances)
-
-        return {
-            "ok": True,
-            "pay_type": pay_type,
-            "rate_applied": float(rate_row.daily_rate),
-            "period_units": units,
-            "entry_count": len(entries),
-            "full_days": full_days,
-            "half_days": half_days,
-            "days_equivalent": days_equivalent,
-            "gross_pay": gross,
-            "advance_deduction": advance_deduction,
-            "can_pay": can_pay,
-            "explanation": explanation,
-            "entries": [{
+    entries = Attendance.query.filter(
+        Attendance.casual_id == cid,
+        Attendance.work_date >= start,
+        Attendance.work_date <= end,
+        Attendance.status == "Unpaid",
+    ).order_by(Attendance.work_date).all()
+    gross = sum(float(x.amount or 0) for x in entries)
+    full_days = sum(1 for x in entries if x.work_type == "Full Day")
+    half_days = sum(1 for x in entries if x.work_type == "Half Day")
+    return {
+        "ok": True,
+        "entry_count": len(entries),
+        "full_days": full_days,
+        "half_days": half_days,
+        "days_equivalent": full_days + (half_days * 0.5),
+        "gross_pay": gross,
+        "entries": [
+            {
                 "date": x.work_date.isoformat(),
                 "work_type": x.work_type,
                 "work_done": x.work_done or "-",
                 "amount": float(x.amount or 0),
-            } for x in entries],
-        }
-
-    except Exception:
-        app.logger.exception("Payment preview calculation failed")
-        return {
-            "ok": False,
-            "message": "The payment preview could not be calculated. Please check the worker, dates and rate, then try again."
-        }, 500
+            } for x in entries
+        ],
+    }
 
 
-@app.route("/payments", methods=["GET", "POST"])
+@app.route("/payments", methods=["GET","POST"])
 @permission_required("payments")
 def payments():
     if request.method == "POST":
         cid = int(request.form["casual_id"])
-        casual = Casual.query.get_or_404(cid)
-        pay_type = casual.pay_frequency or "Daily"
         start = datetime.strptime(request.form["period_start"], "%Y-%m-%d").date()
         end = datetime.strptime(request.form["period_end"], "%Y-%m-%d").date()
         if end < start:
             flash("The period end cannot be before the period start.")
             return redirect(url_for("payments"))
-        duplicate = Payment.query.filter(
-            Payment.casual_id == cid, Payment.status != "Voided",
-            Payment.period_start <= end, Payment.period_end >= start,
-        ).first()
-        if duplicate:
-            flash(f"The selected period overlaps payment {duplicate.payment_ref}.")
-            return redirect(url_for("payments"))
-        rate_row = get_rate(cid, start, pay_type)
-        if not rate_row:
-            flash(f"Add a {pay_type.lower()} rate for this worker first.")
-            return redirect(url_for("payments"))
         entries = Attendance.query.filter(
-            Attendance.casual_id == cid, Attendance.work_date >= start,
-            Attendance.work_date <= end, Attendance.status == "Unpaid",
+            Attendance.casual_id == cid,
+            Attendance.work_date >= start,
+            Attendance.work_date <= end,
+            Attendance.status == "Unpaid",
         ).all()
-        attendance_days = sum(1 if x.work_type == "Full Day" else 0.5 for x in entries)
-        if pay_type == "Daily":
-            if not entries:
-                flash("There is no unpaid attendance for this daily-paid worker in the selected period.")
-                return redirect(url_for("payments"))
-            gross = sum(float(x.amount or 0) for x in entries)
-        else:
-            gross = float(rate_row.daily_rate) * payment_period_units(pay_type, start, end)
+        if not entries:
+            flash("There is no unpaid attendance for this worker in the selected period.")
+            return redirect(url_for("payments"))
+        gross = sum(x.amount for x in entries)
         deduction = float(request.form.get("deduction") or 0)
-        advance_deduction = 0.0
-        advances_to_deduct = []
-        if pay_type == "Monthly":
-            advances_to_deduct = SalaryAdvance.query.filter(
-                SalaryAdvance.casual_id == cid,
-                SalaryAdvance.status == "Active",
-                SalaryAdvance.deducted_payment_id.is_(None),
-                SalaryAdvance.cycle_start >= start,
-                SalaryAdvance.cycle_end <= end,
-            ).all()
-            advance_deduction = sum(float(a.amount or 0) for a in advances_to_deduct)
-
         p = Payment(
-            payment_ref=next_code(Payment, "payment_ref", "PAY", 6), casual_id=cid,
-            period_start=start, period_end=end, gross_pay=gross, deduction=deduction,
-            advance_deduction=advance_deduction,
-            net_paid=max(0, gross-deduction-advance_deduction),
+            payment_ref=next_code(Payment, "payment_ref", "PAY", 6),
+            casual_id=cid,
+            period_start=start,
+            period_end=end,
+            gross_pay=gross,
+            deduction=deduction,
+            net_paid=max(0, gross-deduction),
             payment_date=datetime.strptime(request.form["payment_date"], "%Y-%m-%d").date(),
-            method=request.form["method"], pay_type=pay_type,
-            rate_applied=float(rate_row.daily_rate), attendance_days=attendance_days,
+            method=request.form["method"],
         )
         db.session.add(p)
-        db.session.flush()
-        for advance in advances_to_deduct:
-            advance.deducted_payment_id = p.id
         for x in entries:
-            x.status = "Paid"; x.payment_ref = p.payment_ref
+            x.status = "Paid"
+            x.payment_ref = p.payment_ref
         db.session.commit()
-        log_action("CREATE", "Payroll", p.id, f"{p.payment_ref}; {p.casual.name}; {pay_type}; UGX {p.net_paid:,.0f}")
+        log_action("CREATE", "Payments", p.id,
+                   f"{p.payment_ref}; {p.casual.name}; UGX {p.net_paid:,.0f}")
         flash("Payment saved. You can now print the receipt.")
         return redirect(url_for("payments"))
     return render_template(
-        "payments.html", rows=Payment.query.order_by(Payment.id.desc()).all(),
+        "payments.html",
+        rows=Payment.query.order_by(Payment.id.desc()).all(),
         casuals=Casual.query.filter_by(status="Active").order_by(Casual.name).all(),
-        prefill={"casual_id": request.args.get("casual_id", type=int),
-                 "period_start": request.args.get("period_start", ""),
-                 "period_end": request.args.get("period_end", "")},
+        prefill={
+            "casual_id": request.args.get("casual_id", type=int),
+            "period_start": request.args.get("period_start", ""),
+            "period_end": request.args.get("period_end", ""),
+        },
     )
 
 
@@ -4183,8 +2421,6 @@ def payment_void(id):
         entry.payment_ref = None
     row.status = "Voided"
     row.void_reason = reason
-    for advance in SalaryAdvance.query.filter_by(deducted_payment_id=row.id).all():
-        advance.deducted_payment_id = None
     db.session.commit()
     log_action("VOID", "Payments", row.id,
                f"{row.payment_ref}; {row.casual.name}; {reason}; {len(linked)} attendance entries released")
@@ -4200,9 +2436,6 @@ def payment_receipt(id):
     full_days = sum(1 for entry in attendance_entries if entry.work_type == "Full Day")
     half_days = sum(1 for entry in attendance_entries if entry.work_type == "Half Day")
     days_equivalent = full_days + (half_days * 0.5)
-    if not attendance_entries and row.attendance_days:
-        days_equivalent = float(row.attendance_days)
-    deducted_advances = SalaryAdvance.query.filter_by(deducted_payment_id=row.id).order_by(SalaryAdvance.advance_date).all()
     return render_template(
         "payment_receipt.html",
         row=row,
@@ -4210,7 +2443,6 @@ def payment_receipt(id):
         full_days=full_days,
         half_days=half_days,
         days_equivalent=days_equivalent,
-        deducted_advances=deducted_advances,
     )
 
 
@@ -4236,356 +2468,155 @@ def audit_enhanced():
 
 
 
-def _processed_report_filters():
-    start_text = (request.args.get("start_date") or "").strip()
-    end_text = (request.args.get("end_date") or "").strip()
-    station_id = (request.args.get("station_id") or "").strip()
-    batch_no = (request.args.get("batch_no") or "").strip()
-    process_type = (request.args.get("process_type") or "").strip()
-    return {
-        "start_date": start_text,
-        "end_date": end_text,
-        "station_id": station_id,
-        "batch_no": batch_no,
-        "process_type": process_type,
+def get_mhs_company():
+    return Company.query.filter_by(code="MHS").first()
+
+def next_company_code(model, field, company_id, prefix, width=5):
+    row = model.query.filter_by(company_id=company_id).order_by(model.id.desc()).first()
+    if not row:
+        return f"{prefix}{1:0{width}d}"
+    old = getattr(row, field) or ""
+    try:
+        n = int(old.replace(prefix, "")) + 1
+    except Exception:
+        n = (row.id or 0) + 1
+    return f"{prefix}{n:0{width}d}"
+
+@app.route("/commercial")
+@permission_required("commercial")
+def commercial_dashboard():
+    company = get_mhs_company()
+    lots = CommercialLot.query.filter_by(company_id=company.id, status="Active").all()
+    purchases = CommercialPurchase.query.filter_by(company_id=company.id, status="Active").all()
+    drying = CommercialDrying.query.filter_by(company_id=company.id).order_by(CommercialDrying.id.desc()).limit(10).all()
+    analyses = CommercialAnalysis.query.filter_by(company_id=company.id, status="Active").order_by(CommercialAnalysis.id.desc()).limit(10).all()
+    stats = {
+        "lots": len(lots),
+        "stock": sum(float(x.available_weight or 0) for x in lots),
+        "purchase_value": sum(float(x.total_amount or 0) for x in purchases),
+        "needs_drying": sum(1 for x in lots if x.current_state == "Needs Drying"),
+        "analysed": CommercialAnalysis.query.filter_by(company_id=company.id, status="Active").count(),
     }
+    return render_template("commercial_dashboard.html", company=company, stats=stats, drying=drying, analyses=analyses)
 
+@app.route("/commercial/suppliers", methods=["GET","POST"])
+@permission_required("commercial")
+def commercial_suppliers():
+    company = get_mhs_company()
+    if request.method == "POST":
+        code=(request.form.get("code") or "").strip().upper()
+        name=(request.form.get("name") or "").strip()
+        if not code or not name:
+            flash("Supplier code and name are required.")
+            return redirect(url_for("commercial_suppliers"))
+        if CommercialSupplier.query.filter_by(company_id=company.id, code=code).first():
+            flash("That supplier code already exists for Mothers Harvest.")
+            return redirect(url_for("commercial_suppliers"))
+        row=CommercialSupplier(company_id=company.id,code=code,name=name,phone=request.form.get("phone"),location=request.form.get("location"))
+        db.session.add(row); db.session.commit(); log_action("CREATE","Commercial Suppliers",row.id,row.name)
+        flash("Commercial supplier added.")
+        return redirect(url_for("commercial_suppliers"))
+    rows=CommercialSupplier.query.filter_by(company_id=company.id).order_by(CommercialSupplier.name).all()
+    return render_template("commercial_suppliers.html", company=company, rows=rows)
 
-def _dry_output_for_record(drying_row):
-    """Return the final dry weight for one drying record.
+@app.route("/commercial/settings", methods=["GET","POST"])
+@permission_required("commercial")
+def commercial_settings():
+    company=get_mhs_company(); row=CommercialSetting.query.filter_by(company_id=company.id).first()
+    if request.method=="POST":
+        row.drugar_dry_threshold=float(request.form.get("drugar_dry_threshold") or 13.5)
+        row.parchment_dry_threshold=float(request.form.get("parchment_dry_threshold") or 13.5)
+        db.session.commit(); log_action("UPDATE","Commercial Settings",row.id,"Moisture thresholds updated")
+        flash("Commercial moisture thresholds updated.")
+        return redirect(url_for("commercial_settings"))
+    return render_template("commercial_settings.html",company=company,row=row)
 
-    The saved Drying.dry_weight is the primary source of truth because it is the
-    final dry coffee weight recorded for that grade. Finish Drying movement totals
-    are used only as a fallback for records where no final dry weight has yet been
-    saved.
-    """
-    if drying_row.dry_weight is not None and float(drying_row.dry_weight or 0) > 0:
-        return float(drying_row.dry_weight or 0)
+@app.route("/commercial/purchases", methods=["GET","POST"])
+@permission_required("commercial")
+def commercial_purchases():
+    company=get_mhs_company(); settings=CommercialSetting.query.filter_by(company_id=company.id).first()
+    if request.method=="POST":
+        supplier=CommercialSupplier.query.get_or_404(int(request.form["supplier_id"]))
+        coffee_type=request.form["coffee_type"]
+        weight=float(request.form.get("weight") or 0); moisture=float(request.form["moisture"]) if request.form.get("moisture") else None
+        price=float(request.form.get("price_per_kg") or 0)
+        if weight<=0:
+            flash("Purchase weight must be greater than zero."); return redirect(url_for("commercial_purchases"))
+        drying_required=False
+        if moisture is not None:
+            if coffee_type=="DRUGAR FAQ" and moisture>=settings.drugar_dry_threshold: drying_required=True
+            if coffee_type=="Dry Parchment" and moisture>=settings.parchment_dry_threshold: drying_required=True
+            if coffee_type in {"Parchment Cherries","Wet Parchment"}: drying_required=True
+        elif coffee_type in {"Parchment Cherries","Wet Parchment"}: drying_required=True
+        current_state="Needs Drying" if drying_required else coffee_type
+        lot=CommercialLot(company_id=company.id,lot_no=next_company_code(CommercialLot,"lot_no",company.id,"MHS",4),coffee_type=coffee_type,current_state=current_state,original_weight=weight,available_weight=weight,moisture=moisture,notes=request.form.get("notes"))
+        db.session.add(lot); db.session.flush()
+        row=CommercialPurchase(company_id=company.id,purchase_no=next_company_code(CommercialPurchase,"purchase_no",company.id,"PUR",5),purchase_date=datetime.strptime(request.form["purchase_date"],"%Y-%m-%d").date(),supplier_id=supplier.id,lot_id=lot.id,coffee_type=coffee_type,weight=weight,moisture=moisture,price_per_kg=price,total_amount=weight*price,drying_required=drying_required,notes=request.form.get("notes"),created_by=session.get("username"))
+        db.session.add(row); db.session.commit(); log_action("CREATE","Commercial Purchases",row.id,f"{row.purchase_no} / {lot.lot_no}")
+        flash(f"Purchase saved as lot {lot.lot_no}." + (" Drying is required before processing." if drying_required else ""))
+        return redirect(url_for("commercial_purchases"))
+    rows=CommercialPurchase.query.filter_by(company_id=company.id).order_by(CommercialPurchase.id.desc()).all()
+    suppliers=CommercialSupplier.query.filter_by(company_id=company.id,status="Active").order_by(CommercialSupplier.name).all()
+    return render_template("commercial_purchases.html",company=company,rows=rows,suppliers=suppliers,settings=settings,today=datetime.utcnow().date().isoformat())
 
-    finished = db.session.query(func.coalesce(func.sum(CoffeeMovement.weight), 0.0)).filter(
-        CoffeeMovement.drying_id == drying_row.id,
-        CoffeeMovement.status == "Active",
-        CoffeeMovement.movement_type.like("Finished Drying%"),
-    ).scalar() or 0.0
-    return float(finished or 0)
+@app.route("/commercial/lots")
+@permission_required("commercial")
+def commercial_lots():
+    company=get_mhs_company(); rows=CommercialLot.query.filter_by(company_id=company.id).order_by(CommercialLot.id.desc()).all()
+    return render_template("commercial_lots.html",company=company,rows=rows)
 
+@app.route("/commercial/drying", methods=["GET","POST"])
+@permission_required("commercial")
+def commercial_drying():
+    company=get_mhs_company()
+    if request.method=="POST":
+        lot=CommercialLot.query.get_or_404(int(request.form["lot_id"])); weight=float(request.form.get("input_weight") or lot.available_weight)
+        if weight<=0 or weight>lot.available_weight+0.0001:
+            flash("Drying input cannot exceed available lot weight."); return redirect(url_for("commercial_drying"))
+        row=CommercialDrying(company_id=company.id,drying_no=next_company_code(CommercialDrying,"drying_no",company.id,"CDR",5),lot_id=lot.id,start_date=datetime.strptime(request.form["start_date"],"%Y-%m-%d").date(),input_weight=weight,initial_moisture=lot.moisture,notes=request.form.get("notes"))
+        db.session.add(row); lot.current_state="Drying"; db.session.commit(); log_action("CREATE","Commercial Drying",row.id,row.drying_no)
+        flash("Commercial drying record started."); return redirect(url_for("commercial_drying"))
+    lots=CommercialLot.query.filter(CommercialLot.company_id==company.id,CommercialLot.status=="Active",CommercialLot.current_state.in_(["Needs Drying","Drying"])).order_by(CommercialLot.lot_no).all()
+    rows=CommercialDrying.query.filter_by(company_id=company.id).order_by(CommercialDrying.id.desc()).all()
+    return render_template("commercial_drying.html",company=company,lots=lots,rows=rows,today=datetime.utcnow().date().isoformat())
 
-def build_processed_coffee_report(filters):
-    query = Processing.query.filter(Processing.status == "Active")
+@app.route("/commercial/drying/<int:id>/finish", methods=["POST"])
+@permission_required("commercial")
+def commercial_drying_finish(id):
+    row=CommercialDrying.query.get_or_404(id); dry_weight=float(request.form.get("dry_weight") or 0)
+    if dry_weight<=0 or dry_weight>row.input_weight+0.0001:
+        flash("Enter a valid final dry weight."); return redirect(url_for("commercial_drying"))
+    row.end_date=datetime.strptime(request.form["end_date"],"%Y-%m-%d").date(); row.dry_weight=dry_weight
+    row.final_moisture=float(request.form["final_moisture"]) if request.form.get("final_moisture") else None; row.status="Completed"
+    lot=row.lot; lot.available_weight=max(0,float(lot.available_weight or 0)-float(row.input_weight or 0)+dry_weight); lot.moisture=row.final_moisture
+    lot.current_state="Dry Parchment" if lot.coffee_type in {"Parchment Cherries","Wet Parchment","Dry Parchment"} else "DRUGAR FAQ"
+    db.session.commit(); log_action("COMPLETE","Commercial Drying",row.id,f"Dry {dry_weight} kg")
+    flash("Drying completed and the lot balance updated to the dry weight."); return redirect(url_for("commercial_drying"))
 
-    if filters.get("start_date"):
-        try:
-            query = query.filter(
-                Processing.processing_date >= datetime.strptime(
-                    filters["start_date"], "%Y-%m-%d"
-                ).date()
-            )
-        except (ValueError, TypeError):
-            pass
+@app.route("/commercial/analysis", methods=["GET","POST"])
+@permission_required("commercial")
+def commercial_analysis():
+    company=get_mhs_company()
+    if request.method=="POST":
+        lot=CommercialLot.query.get_or_404(int(request.form["lot_id"])); sample=float(request.form.get("sample_weight") or 0)
+        hulled=float(request.form.get("hulled_weight") or 0) if request.form.get("hulled_weight") else None
+        fields=["blacks","partly_blacks","insect_damaged","diseased_tourney_oily","chalky_whites","faded","withered_fools","broken_pulp_nipped","pods","foreign_matter"]
+        defects={f:float(request.form.get(f) or 0) for f in fields}; total=sum(defects.values())
+        basis=hulled if hulled is not None and hulled>0 else sample
+        sound=max(0,basis-total)
+        general=(hulled/sample*100) if sample>0 and hulled is not None else 100.0 if sample>0 else 0
+        net=(sound/sample*100) if sample>0 else 0
+        row=CommercialAnalysis(company_id=company.id,analysis_no=next_company_code(CommercialAnalysis,"analysis_no",company.id,"AN",5),analysis_date=datetime.strptime(request.form["analysis_date"],"%Y-%m-%d").date(),lot_id=lot.id,sample_weight=sample,moisture=float(request.form["moisture"]) if request.form.get("moisture") else lot.moisture,hulled_weight=hulled,general_outturn=general,total_defects=total,sound_beans=sound,net_outturn=net,screen_18=float(request.form.get("screen_18") or 0),screen_17=float(request.form.get("screen_17") or 0),screen_16=float(request.form.get("screen_16") or 0),screen_15=float(request.form.get("screen_15") or 0),screen_14=float(request.form.get("screen_14") or 0),aa_percent=float(request.form.get("aa_percent") or 0),ab_percent=float(request.form.get("ab_percent") or 0),cpb_percent=float(request.form.get("cpb_percent") or 0),wugar_percent=float(request.form.get("wugar_percent") or 0),colour=request.form.get("colour"),smell=request.form.get("smell"),remarks=request.form.get("remarks"),analysed_by=request.form.get("analysed_by"),**defects)
+        db.session.add(row); db.session.commit(); log_action("CREATE","Commercial Analysis",row.id,row.analysis_no)
+        flash("Analysis saved. General and net outturn were calculated automatically."); return redirect(url_for("commercial_analysis"))
+    lots=CommercialLot.query.filter(CommercialLot.company_id==company.id,CommercialLot.status=="Active",CommercialLot.current_state.in_(["Dry Parchment","DRUGAR FAQ"])).order_by(CommercialLot.lot_no).all()
+    rows=CommercialAnalysis.query.filter_by(company_id=company.id).order_by(CommercialAnalysis.id.desc()).all()
+    return render_template("commercial_analysis.html",company=company,lots=lots,rows=rows,today=datetime.utcnow().date().isoformat())
 
-    if filters.get("end_date"):
-        try:
-            query = query.filter(
-                Processing.processing_date <= datetime.strptime(
-                    filters["end_date"], "%Y-%m-%d"
-                ).date()
-            )
-        except (ValueError, TypeError):
-            pass
-
-    if filters.get("station_id"):
-        try:
-            query = query.filter(Processing.station_id == int(filters["station_id"]))
-        except (ValueError, TypeError):
-            pass
-
-    # Batch number and process type both use Batch, so join it exactly once.
-    # The previous implementation could join Batch twice when both filters
-    # were selected, producing an ambiguous PostgreSQL query.
-    needs_batch_join = bool(filters.get("batch_no") or filters.get("process_type"))
-    if needs_batch_join:
-        query = query.join(Batch, Processing.batch_id == Batch.id)
-
-    if filters.get("batch_no"):
-        batch_search = filters["batch_no"].strip().lower()
-        if batch_search:
-            query = query.filter(func.lower(Batch.batch_no).contains(batch_search))
-
-    if filters.get("process_type"):
-        query = query.filter(Batch.process_type == filters["process_type"])
-
-    rows = []
-    for p in query.order_by(Processing.processing_date.asc(), Processing.id.asc()).all():
-        drying_rows = Drying.query.filter_by(processing_id=p.id, status="Active").order_by(Drying.id.asc()).all()
-        grade_dry = {"Grade A": 0.0, "Grade B": 0.0, "Grade C": 0.0}
-        grade_drying_input = {"Grade A": 0.0, "Grade B": 0.0, "Grade C": 0.0}
-        final_moistures = []
-        drying_statuses = []
-        last_drying_date = None
-
-        for d in drying_rows:
-            grade_drying_input[d.grade] = grade_drying_input.get(d.grade, 0.0) + float(d.input_weight or 0)
-            dry_output = _dry_output_for_record(d)
-            grade_dry[d.grade] = grade_dry.get(d.grade, 0.0) + dry_output
-            if d.moisture is not None:
-                final_moistures.append(float(d.moisture))
-            drying_statuses.append(d.drying_status)
-            if d.end_date and (last_drying_date is None or d.end_date > last_drying_date):
-                last_drying_date = d.end_date
-
-        drying_input = sum(grade_drying_input.values())
-        dry_total = sum(grade_dry.values())
-        drying_loss = max(0.0, drying_input - dry_total)
-        drying_outturn = (dry_total / drying_input * 100) if drying_input else 0.0
-        overall_outturn = (dry_total / float(p.input_weight or 0) * 100) if p.input_weight else 0.0
-        overall_loss = max(0.0, float(p.input_weight or 0) - dry_total)
-        moisture = (sum(final_moistures) / len(final_moistures)) if final_moistures else None
-
-        if drying_rows and all(s == "Completed" for s in drying_statuses):
-            status = "Drying Completed"
-        elif any(s == "Partially Completed" for s in drying_statuses):
-            status = "Partially Completed"
-        elif drying_rows:
-            status = "Drying"
-        else:
-            status = "Processed - Not Yet Drying"
-
-        rows.append({
-            "processing_no": p.processing_no,
-            "processing_date": p.processing_date,
-            "station": p.station.name if p.station else "Not assigned",
-            "batch_no": p.batch.batch_no,
-            "process_type": p.batch.process_type,
-            "initial_weight": float(p.input_weight or 0),
-            "grade_a_sorted": float(p.grade_a_weight or 0),
-            "grade_b_sorted": float(p.grade_b_weight or 0),
-            "grade_c_sorted": float(p.grade_c_weight or 0),
-            "sorted_total": float(p.total_sorted_weight or 0),
-            "processing_loss": float(p.processing_loss or 0),
-            "processing_outturn": float(p.outturn_percent or 0),
-            "drying_input": drying_input,
-            "grade_a_dry": grade_dry.get("Grade A", 0.0),
-            "grade_b_dry": grade_dry.get("Grade B", 0.0),
-            "grade_c_dry": grade_dry.get("Grade C", 0.0),
-            "dry_total": dry_total,
-            "drying_loss": drying_loss,
-            "drying_outturn": drying_outturn,
-            "overall_loss": overall_loss,
-            "overall_outturn": overall_outturn,
-            "final_moisture": moisture,
-            "drying_completed_date": last_drying_date,
-            "status": status,
-        })
-
-    total_initial = sum(r["initial_weight"] for r in rows)
-    total_sorted = sum(r["sorted_total"] for r in rows)
-    total_dry = sum(r["dry_total"] for r in rows)
-    total_processing_loss = sum(r["processing_loss"] for r in rows)
-    total_drying_loss = sum(r["drying_loss"] for r in rows)
-    summary = {
-        "records": len(rows),
-        "initial_weight": total_initial,
-        "sorted_weight": total_sorted,
-        "dry_weight": total_dry,
-        "processing_loss": total_processing_loss,
-        "drying_loss": total_drying_loss,
-        "overall_loss": max(0.0, total_initial - total_dry),
-        "processing_outturn": (total_sorted / total_initial * 100) if total_initial else 0.0,
-        "drying_outturn": (total_dry / total_sorted * 100) if total_sorted else 0.0,
-        "overall_outturn": (total_dry / total_initial * 100) if total_initial else 0.0,
-        "grade_a_wet": sum(r["grade_a_sorted"] for r in rows),
-        "grade_b_wet": sum(r["grade_b_sorted"] for r in rows),
-        "grade_c_wet": sum(r["grade_c_sorted"] for r in rows),
-        "grade_a_dry": sum(r["grade_a_dry"] for r in rows),
-        "grade_b_dry": sum(r["grade_b_dry"] for r in rows),
-        "grade_c_dry": sum(r["grade_c_dry"] for r in rows),
-    }
-    return rows, summary
-
-
-@app.route("/reports/processing")
-@permission_required("reports")
-def processing_reports():
-    filters = _processed_report_filters()
-    rows, summary = build_processed_coffee_report(filters)
-    return render_template(
-        "processing_reports.html",
-        rows=rows,
-        summary=summary,
-        filters=filters,
-        stations=Station.query.order_by(Station.name).all(),
-        process_types=[
-            r[0] for r in db.session.query(Batch.process_type)
-            .filter(Batch.process_type.isnot(None))
-            .distinct()
-            .order_by(Batch.process_type)
-            .all()
-            if r[0]
-        ],
-    )
-
-
-@app.route("/reports/processing/excel")
-@permission_required("reports")
-def processing_reports_excel():
-    filters = _processed_report_filters()
-    rows, summary = build_processed_coffee_report(filters)
-
-    output = io.BytesIO()
-    wb = xlsxwriter.Workbook(output, {"in_memory": True})
-    ws = wb.add_worksheet("Processed Coffee")
-    summary_ws = wb.add_worksheet("Summary")
-
-    title_fmt = wb.add_format({"bold": True, "font_size": 16, "align": "center", "valign": "vcenter"})
-    header_fmt = wb.add_format({"bold": True, "bg_color": "#173F35", "font_color": "#FFFFFF", "border": 1, "text_wrap": True, "align": "center"})
-    number_fmt = wb.add_format({"num_format": "#,##0.00", "border": 1})
-    pct_fmt = wb.add_format({"num_format": "0.00%", "border": 1})
-    text_fmt = wb.add_format({"border": 1})
-    date_fmt = wb.add_format({"num_format": "dd-mmm-yyyy", "border": 1})
-    kpi_label = wb.add_format({"bold": True, "bg_color": "#E8F1EE", "border": 1})
-    kpi_value = wb.add_format({"bold": True, "num_format": "#,##0.00", "border": 1})
-
-    headers = [
-        "Processing No", "Processing Date", "Station", "Batch", "Process",
-        "Initial kg", "Grade A Wet kg", "Grade B Wet kg", "Grade C Wet kg",
-        "Total Sorted kg", "Processing Loss kg", "Processing Outturn %", "Drying Input kg",
-        "Grade A Dry kg", "Grade B Dry kg", "Grade C Dry kg", "Total Dry kg",
-        "Drying Loss kg", "Drying Outturn %", "Overall Loss kg", "Overall Outturn %",
-        "Final Moisture %", "Drying Completed", "Status"
-    ]
-    ws.merge_range(0, 0, 0, len(headers)-1, "STANCOFF COMPANY LIMITED – PROCESSED COFFEE REPORT", title_fmt)
-    for c, h in enumerate(headers):
-        ws.write(2, c, h, header_fmt)
-
-    for r_idx, r in enumerate(rows, start=3):
-        values = [
-            r["processing_no"], r["processing_date"], r["station"], r["batch_no"], r["process_type"],
-            r["initial_weight"], r["grade_a_sorted"], r["grade_b_sorted"], r["grade_c_sorted"],
-            r["sorted_total"], r["processing_loss"], r["processing_outturn"] / 100,
-            r["drying_input"], r["grade_a_dry"], r["grade_b_dry"], r["grade_c_dry"], r["dry_total"],
-            r["drying_loss"], r["drying_outturn"] / 100, r["overall_loss"], r["overall_outturn"] / 100,
-            (r["final_moisture"] / 100 if r["final_moisture"] is not None else None),
-            r["drying_completed_date"], r["status"]
-        ]
-        for c, value in enumerate(values):
-            if c in {1, 22} and value:
-                ws.write_datetime(r_idx, c, datetime.combine(value, datetime.min.time()), date_fmt)
-            elif c in {11, 18, 20, 21} and value is not None:
-                ws.write_number(r_idx, c, float(value), pct_fmt)
-            elif c in {5,6,7,8,9,10,12,13,14,15,16,17,19}:
-                ws.write_number(r_idx, c, float(value or 0), number_fmt)
-            else:
-                ws.write(r_idx, c, value if value is not None else "", text_fmt)
-
-    ws.freeze_panes(3, 5)
-    ws.autofilter(2, 0, max(2, 2+len(rows)), len(headers)-1)
-    ws.set_column(0, 0, 16)
-    ws.set_column(1, 1, 14)
-    ws.set_column(2, 4, 18)
-    ws.set_column(5, 21, 15)
-    ws.set_column(22, 23, 18)
-
-    summary_ws.merge_range("A1:D1", "STANCOFF COMPANY LIMITED – PROCESSING SUMMARY", title_fmt)
-    summary_rows = [
-        ("Records", summary["records"]),
-        ("Total Initial Weight (kg)", summary["initial_weight"]),
-        ("Total Sorted Weight (kg)", summary["sorted_weight"]),
-        ("Total Dry Weight (kg)", summary["dry_weight"]),
-        ("Processing Loss (kg)", summary["processing_loss"]),
-        ("Drying Loss (kg)", summary["drying_loss"]),
-        ("Overall Loss (kg)", summary["overall_loss"]),
-        ("Processing Outturn (%)", summary["processing_outturn"]),
-        ("Drying Outturn (%)", summary["drying_outturn"]),
-        ("Overall Dry Outturn (%)", summary["overall_outturn"]),
-        ("Grade A Wet (kg)", summary["grade_a_wet"]),
-        ("Grade B Wet (kg)", summary["grade_b_wet"]),
-        ("Grade C Wet (kg)", summary["grade_c_wet"]),
-        ("Grade A Dry (kg)", summary["grade_a_dry"]),
-        ("Grade B Dry (kg)", summary["grade_b_dry"]),
-        ("Grade C Dry (kg)", summary["grade_c_dry"]),
-    ]
-    for i, (label, value) in enumerate(summary_rows, start=2):
-        summary_ws.write(i, 0, label, kpi_label)
-        if "Outturn" in label:
-            summary_ws.write_number(i, 1, float(value)/100, wb.add_format({"bold": True, "num_format": "0.00%", "border": 1}))
-        else:
-            summary_ws.write_number(i, 1, float(value), kpi_value)
-    summary_ws.set_column("A:A", 30)
-    summary_ws.set_column("B:B", 18)
-    wb.close()
-    output.seek(0)
-
-    filename = f"Stancoff_Processed_Coffee_Report_{datetime.utcnow().date().isoformat()}.xlsx"
-    return send_file(output, as_attachment=True, download_name=filename,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-
-@app.route("/reports/processing/pdf")
-@permission_required("reports")
-def processing_reports_pdf():
-    filters = _processed_report_filters()
-    rows, summary = build_processed_coffee_report(filters)
-    output = io.BytesIO()
-    doc = SimpleDocTemplate(output, pagesize=landscape(A4), rightMargin=22, leftMargin=22, topMargin=24, bottomMargin=24)
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=16, leading=19, alignment=TA_CENTER, textColor=colors.HexColor("#173F35"))
-    small = ParagraphStyle("Small", parent=styles["BodyText"], fontSize=7, leading=9)
-    story = [Paragraph("STANCOFF COMPANY LIMITED", title_style), Paragraph("Processed Coffee Report", title_style), Spacer(1, 10)]
-
-    filter_parts = []
-    if filters.get("start_date"): filter_parts.append(f"From: {filters['start_date']}")
-    if filters.get("end_date"): filter_parts.append(f"To: {filters['end_date']}")
-    if filters.get("station_id"):
-        s = db.session.get(Station, int(filters["station_id"]))
-        if s: filter_parts.append(f"Station: {s.name}")
-    if filters.get("batch_no"): filter_parts.append(f"Batch: {filters['batch_no']}")
-    if filters.get("process_type"): filter_parts.append(f"Process: {filters['process_type']}")
-    story.append(Paragraph(" | ".join(filter_parts) if filter_parts else "All processed coffee", styles["BodyText"]))
-    story.append(Spacer(1, 8))
-
-    summary_data = [
-        ["Initial kg", "Sorted kg", "Dry kg", "Process Outturn", "Dry Outturn", "Overall Outturn", "Overall Loss kg"],
-        [f"{summary['initial_weight']:,.2f}", f"{summary['sorted_weight']:,.2f}", f"{summary['dry_weight']:,.2f}",
-         f"{summary['processing_outturn']:.2f}%", f"{summary['drying_outturn']:.2f}%", f"{summary['overall_outturn']:.2f}%", f"{summary['overall_loss']:,.2f}"]
-    ]
-    st = Table(summary_data, repeatRows=1, colWidths=[95]*7)
-    st.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#173F35")), ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"), ("ALIGN", (0,0), (-1,-1), "CENTER"),
-        ("GRID", (0,0), (-1,-1), 0.4, colors.HexColor("#B8C7C1")), ("FONTSIZE", (0,0), (-1,-1), 8),
-        ("BACKGROUND", (0,1), (-1,1), colors.HexColor("#F1F6F4")), ("BOTTOMPADDING", (0,0), (-1,-1), 6), ("TOPPADDING", (0,0), (-1,-1), 6)
-    ]))
-    story.extend([st, Spacer(1, 12)])
-
-    headers = ["Date","Station","Batch","Process","Initial","A Wet","B Wet","C Wet","Sorted","Proc %","A Dry","B Dry","C Dry","Dry Total","Dry %","Overall %","Status"]
-    data = [headers]
-    for r in rows:
-        data.append([
-            r["processing_date"].strftime("%d-%b-%Y"), Paragraph(r["station"], small), r["batch_no"], r["process_type"],
-            f"{r['initial_weight']:,.1f}", f"{r['grade_a_sorted']:,.1f}", f"{r['grade_b_sorted']:,.1f}", f"{r['grade_c_sorted']:,.1f}",
-            f"{r['sorted_total']:,.1f}", f"{r['processing_outturn']:.1f}%",
-            f"{r['grade_a_dry']:,.1f}", f"{r['grade_b_dry']:,.1f}", f"{r['grade_c_dry']:,.1f}",
-            f"{r['dry_total']:,.1f}", f"{r['drying_outturn']:.1f}%", f"{r['overall_outturn']:.1f}%", Paragraph(r["status"], small)
-        ])
-    if not rows:
-        data.append(["No records found"] + [""]*(len(headers)-1))
-
-    widths = [45,62,43,48,42,38,38,38,42,38,38,38,38,45,38,40,67]
-    table = Table(data, repeatRows=1, colWidths=widths)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#173F35")), ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"), ("FONTSIZE", (0,0), (-1,-1), 6.6),
-        ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#C7D3CE")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("ALIGN", (4,1), (15,-1), "RIGHT"), ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F7FAF8")]),
-        ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4)
-    ]))
-    story.append(table)
-    story.append(Spacer(1, 8))
-    story.append(Paragraph(f"Generated on {datetime.utcnow().strftime('%d %b %Y %H:%M')} UTC", small))
-    doc.build(story)
-    output.seek(0)
-    filename = f"Stancoff_Processed_Coffee_Report_{datetime.utcnow().date().isoformat()}.pdf"
-    return send_file(output, as_attachment=True, download_name=filename, mimetype="application/pdf")
+@app.route("/commercial/analysis/<int:id>/print")
+@permission_required("commercial")
+def commercial_analysis_print(id):
+    row=CommercialAnalysis.query.get_or_404(id); return render_template("commercial_analysis_print.html",row=row,company=row.company)
 
 
 @app.errorhandler(403)

@@ -11,13 +11,7 @@
     <select name="supplier_id" required><option value="">Select supplier</option>{% for s in suppliers %}<option value="{{s.id}}">{{s.code}} - {{s.name}}</option>{% endfor %}</select>
     <input type="number" step=".01" min="0.01" name="gross_weight" placeholder="Gross weight" required>
     <input type="number" step=".01" min="0" name="floaters_weight" value="0" placeholder="Floaters">
-    <select name="floaters_bought" id="floatersBought"><option>Yes</option><option>No</option></select>
-    <input type="number" step="1" min="0.01" name="cherry_price" id="cherryPrice" placeholder="Cherry price per kg (UGX)" required>
-    <input type="number" step="1" min="0" name="floater_price" id="floaterPrice" placeholder="Floater price per kg (UGX)">
-    <div class="calculation-box form-wide">
-      <div><span>Good cherry weight</span><strong id="goodWeightPreview">0.00 kg</strong></div>
-      <div><span>Estimated amount</span><strong id="purchaseTotalPreview">UGX 0</strong></div>
-    </div>
+    <select name="floaters_bought"><option>Yes</option><option>No</option></select>
     <button>Save purchase</button>
   </form>
 </section>
@@ -26,12 +20,12 @@
   <div class="panel-heading"><div><span class="eyebrow">History</span><h2>Purchase entries</h2></div></div>
   <div class="table-scroll">
     <table>
-      <thead><tr><th>Receipt</th><th>Date</th><th>Batch</th><th>Supplier</th><th>Good kg</th><th>Cherry price/kg</th><th>Total</th><th>Status</th><th>By</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Receipt</th><th>Date</th><th>Batch</th><th>Supplier</th><th>Good kg</th><th>Total</th><th>Status</th><th>By</th><th>Actions</th></tr></thead>
       <tbody>
       {% for r in rows %}
       <tr class="{% if r.status == 'Voided' %}voided-row{% endif %}">
         <td><strong>{{r.receipt_no}}</strong></td><td>{{r.purchase_date}}</td><td>{{r.batch.batch_no}}</td><td>{{r.supplier.name}}</td>
-        <td>{{"{:,.2f}".format(r.good_weight)}}</td><td>UGX {{"{:,.0f}".format(r.cherry_price)}}</td><td>{{"{:,.0f}".format(r.total_amount)}}</td><td>{{r.status}}</td><td>{{r.created_by}}</td>
+        <td>{{"{:,.2f}".format(r.good_weight)}}</td><td>{{"{:,.0f}".format(r.total_amount)}}</td><td>{{r.status}}</td><td>{{r.created_by}}</td>
         <td>
           <a class="small-button" target="_blank" href="{{ url_for('purchase_receipt', id=r.id) }}">Print</a>
           {% if r.status != 'Voided' %}
@@ -47,30 +41,9 @@
           {% endif %}
         </td>
       </tr>
-      {% else %}<tr><td colspan="10" class="empty">No purchases recorded yet.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="9" class="empty">No purchases recorded yet.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
 </section>
-{% endblock %}
-
-{% block scripts %}
-<script>
-const gross=document.querySelector('[name="gross_weight"]');
-const floaters=document.querySelector('[name="floaters_weight"]');
-const bought=document.getElementById('floatersBought');
-const cherry=document.getElementById('cherryPrice');
-const floaterPrice=document.getElementById('floaterPrice');
-function purchasePreview(){
-  const g=Number(gross.value||0), f=Number(floaters.value||0);
-  const good=Math.max(0,g-f), cp=Number(cherry.value||0);
-  const fp=bought.value==='Yes'?Number(floaterPrice.value||0):0;
-  if(bought.value==='No'){floaterPrice.value='0';floaterPrice.disabled=true}else{floaterPrice.disabled=false}
-  document.getElementById('goodWeightPreview').textContent=good.toFixed(2)+' kg';
-  document.getElementById('purchaseTotalPreview').textContent='UGX '+Math.round(good*cp+f*fp).toLocaleString();
-}
-[gross,floaters,bought,cherry,floaterPrice].forEach(x=>x.addEventListener('input',purchasePreview));
-bought.addEventListener('change',purchasePreview);
-purchasePreview();
-</script>
 {% endblock %}

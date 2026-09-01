@@ -20,12 +20,6 @@
   <div class="panel-heading"><div><span class="eyebrow">New record</span><h2>{{ next_processing }}</h2></div></div>
   <form method="post" class="processing-form" id="processingForm">
     <label>Processing date<input type="date" name="processing_date" required></label>
-    <label>Station
-      <select name="station_id" required>
-        <option value="">Select processing station</option>
-        {% for s in stations %}<option value="{{s.id}}">{{s.code}} · {{s.name}}</option>{% endfor %}
-      </select>
-    </label>
     <label>Batch
       <select name="batch_id" id="batchSelect" required>
         <option value="">Select a batch</option>
@@ -58,12 +52,12 @@
   <div class="panel-heading"><div><span class="eyebrow">History</span><h2>Processing records</h2></div></div>
   <div class="table-scroll">
     <table>
-      <thead><tr><th>No.</th><th>Date</th><th>Station</th><th>Batch</th><th>Input kg</th><th>A · Red</th><th>B · Yellow</th><th>C · Green</th><th>Loss</th><th>Outturn</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>No.</th><th>Date</th><th>Batch</th><th>Input kg</th><th>A · Red</th><th>B · Yellow</th><th>C · Green</th><th>Loss</th><th>Outturn</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>
       {% for r in rows %}
       <tr class="{% if r.status == 'Voided' %}voided-row{% endif %}">
         <td><a href="{{ url_for('processing_detail', id=r.id) }}"><strong>{{ r.processing_no }}</strong></a></td>
-        <td>{{ r.processing_date }}</td><td>{{ r.station.name if r.station else 'Not assigned' }}</td><td>{{ r.batch.batch_no }}</td>
+        <td>{{ r.processing_date }}</td><td>{{ r.batch.batch_no }}</td>
         <td>{{ "{:,.2f}".format(r.input_weight) }}</td>
         <td>{{ "{:,.2f}".format(r.grade_a_weight) }}</td><td>{{ "{:,.2f}".format(r.grade_b_weight) }}</td><td>{{ "{:,.2f}".format(r.grade_c_weight) }}</td>
         <td>{{ "{:,.2f}".format(r.processing_loss) }}</td><td>{{ "{:.1f}".format(r.outturn_percent) }}%</td><td>{{ r.status }}</td>
@@ -76,7 +70,7 @@
           {% else %}<small>{{ r.void_reason }}</small>{% endif %}
         </td>
       </tr>
-      {% else %}<tr><td colspan="12" class="empty">No processing records yet.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="11" class="empty">No processing records yet.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

@@ -1,8 +1,0 @@
-STANCOFF VERSION 7.5.1
-
-- Administrators can edit users: full name, username, role, status, and optional password.
-- Administrators can delete users.
-- The currently logged-in admin account cannot be deleted.
-- If a user already has audit-log history, Delete safely deactivates the account instead of permanently deleting it.
-- Users without audit history can be permanently deleted.
-- Existing PostgreSQL data is preserved.

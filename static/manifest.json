@@ -1,6 +1,6 @@
 {
-  "name": "Business ERP",
-  "short_name": "ERP",
+  "name": "Stancoff Operations",
+  "short_name": "Stancoff",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f4f7f5",

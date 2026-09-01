@@ -23,7 +23,7 @@
       <select name="processing_id" id="processingSelect" required>
         <option value="">Select a processed batch</option>
         {% for p in processes %}
-        <option value="{{ p.id }}" data-batch="{{ p.batch.batch_no }}" data-station="{{ p.station_id or '' }}">{{ p.batch.batch_no }} · {{ p.processing_no }} · {{ p.station.name if p.station else 'Station not assigned' }}</option>
+        <option value="{{ p.id }}" data-batch="{{ p.batch.batch_no }}">{{ p.batch.batch_no }} · {{ p.processing_no }}</option>
         {% endfor %}
       </select>
     </label>
@@ -39,15 +39,7 @@
     <label>Weight entering drying (kg)<input type="number" step="0.01" min="0.01" name="input_weight" id="inputWeight" required></label>
     <label>Dry weight (kg)<input type="number" step="0.01" min="0" name="dry_weight" id="dryWeight"><small>Enter after drying is completed.</small></label>
     <label>Moisture % <small>Optional reading; no separate approval is required.</small><input type="number" step="0.01" min="0" max="100" name="moisture"></label>
-    <label>Drying location
-      <select name="drying_location_id" id="dryingLocation" required>
-        <option value="">Select processed batch first</option>
-        {% for l in drying_locations %}
-        <option value="{{l.id}}" data-station="{{l.station_id}}">{{l.station.name}} / {{l.name}}</option>
-        {% endfor %}
-      </select>
-      <small>Only drying areas at the processing station are shown.</small>
-    </label>
+    <label>Drying location<input name="drying_location" placeholder="Drying bed, yard or section"></label>
     <label>Dried by<input name="dried_by" placeholder="Supervisor or responsible person"></label>
     <label class="form-wide">Notes<textarea name="notes" rows="3" placeholder="Weather, turning, defects or drying observations"></textarea></label>
     <div class="calculation-box form-wide">
@@ -91,14 +83,6 @@
 {% block scripts %}
 <script>
 const weights={{ grade_weights|tojson }};
-const dryingLocation=document.getElementById('dryingLocation');
-const allDryingLocations=Array.from(dryingLocation.querySelectorAll('option[data-station]'));
-function filterDryingLocations(){
-  const stationId=processSelect.selectedOptions[0]?.dataset.station||'';
-  dryingLocation.innerHTML='<option value="">Select drying area</option>';
-  allDryingLocations.filter(o=>!stationId||o.dataset.station===stationId).forEach(o=>dryingLocation.appendChild(o));
-}
-
 const processSelect=document.getElementById('processingSelect');
 const gradeSelect=document.getElementById('gradeSelect');
 const available=document.getElementById('availableWeight');
@@ -107,7 +91,7 @@ const dry=document.getElementById('dryWeight');
 function selectedWeight(){const p=processSelect.value,g=gradeSelect.value;return Number((weights[p]||{})[g]||0)}
 function refreshAvailable(){const kg=selectedWeight();available.value=kg?kg.toLocaleString(undefined,{maximumFractionDigits:2})+' kg':'No weight available';if(kg)input.value=kg;calculate()}
 function calculate(){const wet=parseFloat(input.value)||0;const dryKg=dry.value===''?null:(parseFloat(dry.value)||0);const loss=dryKg===null?0:wet-dryKg;document.getElementById('dryingLoss').textContent=loss.toFixed(2)+' kg';document.getElementById('dryingOutturn').textContent=(dryKg!==null&&wet>0?dryKg/wet*100:0).toFixed(2)+'%';document.getElementById('dryingStatus').textContent=(dryKg!==null&&document.getElementById('endDate').value)?'Completed':'Drying'}
-processSelect.addEventListener('change',()=>{refreshAvailable();filterDryingLocations();});gradeSelect.addEventListener('change',refreshAvailable);[input,dry,document.getElementById('endDate')].forEach(x=>x.addEventListener('input',calculate));
+processSelect.addEventListener('change',refreshAvailable);gradeSelect.addEventListener('change',refreshAvailable);[input,dry,document.getElementById('endDate')].forEach(x=>x.addEventListener('input',calculate));
 document.getElementById('startDate').valueAsDate=new Date();
 document.getElementById('dryingForm').addEventListener('submit',e=>{const max=selectedWeight(),wet=parseFloat(input.value)||0,dryKg=dry.value===''?null:(parseFloat(dry.value)||0);if(wet>max){e.preventDefault();alert('Weight entering drying cannot exceed the sorted grade weight.')}else if(dryKg!==null&&dryKg>wet){e.preventDefault();alert('Dry weight cannot exceed the weight entering drying.')}});
 </script>
