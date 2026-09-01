@@ -500,7 +500,14 @@ def payment_period_units(pay_type, start, end):
     if pay_type == "Weekly":
         return max(1, (days + 6) // 7)
     if pay_type == "Monthly":
-        return max(1, (end.year - start.year) * 12 + end.month - start.month + 1)
+        # Count rolling monthly cycles from the selected period start.
+        # Example: 05 Aug-04 Sep is one monthly period, not two.
+        units = 0
+        cursor = start
+        while cursor <= end:
+            units += 1
+            cursor = add_months_safe(cursor, 1)
+        return max(1, units)
     return 1
 
 def ensure_multistation_schema():
@@ -2875,53 +2882,126 @@ def attendance():
         query = query.filter(Attendance.work_date <= datetime.strptime(date_to, "%Y-%m-%d").date())
     rows = query.order_by(Attendance.work_date.desc(), Attendance.id.desc()).all()
 
-    # Monthly cards follow each worker's own start date.
-    monthly = {}
-    card_rows = Attendance.query.filter(Attendance.status != "Voided").order_by(
-        Attendance.work_date.asc(), Attendance.id.asc()
-    ).all()
+    # Rolling monthly cards follow each worker's own first-attendance date.
+    # Show several cycles per worker even when one cycle has no attendance,
+    # so an older unpaid salary period is never hidden simply because a new
+    # month has started.
+    today = datetime.utcnow().date()
+
+    card_rows = Attendance.query.filter(
+        Attendance.status != "Voided"
+    ).order_by(Attendance.work_date.asc(), Attendance.id.asc()).all()
+
+    attendance_by_worker = {}
     anchors = {}
+    workers_by_id = {}
+
     for row in card_rows:
         anchors.setdefault(row.casual_id, row.work_date)
+        workers_by_id[row.casual_id] = row.casual
+        attendance_by_worker.setdefault(row.casual_id, []).append(row)
 
-    for row in card_rows:
-        cycle_start, cycle_end = rolling_month_cycle(anchors[row.casual_id], row.work_date)
-        key = (row.casual_id, cycle_start)
-        item = monthly.setdefault(key, {
-            "casual": row.casual,
-            "start": cycle_start,
-            "end": cycle_end,
-            "month_label": f"{cycle_start.strftime('%d %b %Y')} – {cycle_end.strftime('%d %b %Y')}",
-            "days": 0.0,
-            "amount": 0.0,
-            "unpaid_amount": 0.0,
-            "paid": 0,
-            "unpaid": 0,
-            "cycle_dates": [],
-            "date_entries": {},
-        })
-        if not item["cycle_dates"]:
+    # Include active workers too. A worker needs at least one attendance entry
+    # to establish their personal rolling-month anchor.
+    for casual in Casual.query.order_by(Casual.name).all():
+        workers_by_id.setdefault(casual.id, casual)
+
+    monthly_card_groups = []
+
+    for casual_id, anchor in anchors.items():
+        casual = workers_by_id.get(casual_id)
+        if not casual:
+            continue
+
+        current_start, current_end = rolling_month_cycle(anchor, today)
+
+        # Previous two cycles + the current cycle = three scrollable cards.
+        cycle_starts = [
+            add_months_safe(current_start, -2),
+            add_months_safe(current_start, -1),
+            current_start,
+        ]
+
+        worker_cards = []
+        worker_attendance = attendance_by_worker.get(casual_id, [])
+
+        for cycle_start in cycle_starts:
+            cycle_end = add_months_safe(cycle_start, 1) - timedelta(days=1)
+
+            cycle_entries = [
+                row for row in worker_attendance
+                if cycle_start <= row.work_date <= cycle_end
+            ]
+
+            cycle_dates = []
+            date_entries = {}
             d = cycle_start
             while d <= cycle_end:
-                item["cycle_dates"].append(d)
-                item["date_entries"][d.isoformat()] = []
+                cycle_dates.append(d)
+                date_entries[d.isoformat()] = []
                 d += timedelta(days=1)
 
-        value = 1 if row.work_type == "Full Day" else 0.5
-        item["days"] += value
-        item["amount"] += float(row.amount or 0)
-        item["date_entries"][row.work_date.isoformat()].append(row)
-        if row.status == "Paid":
-            item["paid"] += 1
-        else:
-            item["unpaid"] += 1
-            item["unpaid_amount"] += float(row.amount or 0)
+            days = 0.0
+            amount = 0.0
+            unpaid_amount = 0.0
+            unpaid_count = 0
+            paid_attendance_count = 0
 
-    monthly_cards = sorted(
-        monthly.values(),
-        key=lambda x: (x["start"], x["casual"].name),
-        reverse=True,
-    )[:48]
+            for row in cycle_entries:
+                date_entries[row.work_date.isoformat()].append(row)
+                value = 1 if row.work_type == "Full Day" else 0.5
+                days += value
+                amount += float(row.amount or 0)
+                if row.status == "Paid":
+                    paid_attendance_count += 1
+                else:
+                    unpaid_count += 1
+                    unpaid_amount += float(row.amount or 0)
+
+            # A completed non-voided payment for this exact rolling period
+            # is the clearest source of truth for salary settlement.
+            payment = Payment.query.filter(
+                Payment.casual_id == casual_id,
+                Payment.status != "Voided",
+                Payment.period_start == cycle_start,
+                Payment.period_end == cycle_end,
+            ).order_by(Payment.id.desc()).first()
+
+            is_current = cycle_start <= today <= cycle_end
+            is_paid = payment is not None
+
+            if is_paid:
+                card_status = "Paid"
+            elif is_current:
+                card_status = "Current"
+            else:
+                card_status = "Unpaid"
+
+            worker_cards.append({
+                "casual": casual,
+                "start": cycle_start,
+                "end": cycle_end,
+                "month_label": f"{cycle_start.strftime('%d %b %Y')} – {cycle_end.strftime('%d %b %Y')}",
+                "days": days,
+                "amount": amount,
+                "unpaid_amount": unpaid_amount,
+                "paid": paid_attendance_count,
+                "unpaid": unpaid_count,
+                "cycle_dates": cycle_dates,
+                "date_entries": date_entries,
+                "payment": payment,
+                "is_paid": is_paid,
+                "is_current": is_current,
+                "card_status": card_status,
+            })
+
+        monthly_card_groups.append({
+            "casual": casual,
+            "cards": worker_cards,
+        })
+
+    monthly_card_groups.sort(key=lambda x: x["casual"].name.lower())
+    monthly_cards = [card for group in monthly_card_groups for card in group["cards"]]
 
     daily_date_text = request.args.get("daily_date", datetime.utcnow().date().isoformat())
     try:
@@ -2942,6 +3022,7 @@ def attendance():
         "attendance.html",
         rows=rows,
         monthly_cards=monthly_cards,
+        monthly_card_groups=monthly_card_groups,
         casuals=active_casuals,
         all_casuals=Casual.query.order_by(Casual.name).all(),
         filters={"worker_id": worker_id, "status": status, "date_from": date_from, "date_to": date_to},
@@ -3296,83 +3377,113 @@ def advance_void(id):
 @permission_required("payments")
 def payment_calculate():
     """Preview Daily, Weekly, or Monthly pay for a selected worker and period."""
-    cid = request.args.get("casual_id", type=int)
-    start_text = request.args.get("period_start", "")
-    end_text = request.args.get("period_end", "")
-    if not cid or not start_text or not end_text:
-        advance_deduction = 0.0
-    if pay_type == "Monthly":
-        advances = SalaryAdvance.query.filter(
-            SalaryAdvance.casual_id == cid,
-            SalaryAdvance.status == "Active",
-            SalaryAdvance.deducted_payment_id.is_(None),
-            SalaryAdvance.cycle_start >= start,
-            SalaryAdvance.cycle_end <= end,
-        ).all()
-        advance_deduction = sum(float(a.amount or 0) for a in advances)
-
-    return {"ok": False, "message": "Select a worker and both period dates."}, 400
     try:
-        start = datetime.strptime(start_text, "%Y-%m-%d").date()
-        end = datetime.strptime(end_text, "%Y-%m-%d").date()
-    except ValueError:
-        return {"ok": False, "message": "Enter valid dates."}, 400
-    if end < start:
-        return {"ok": False, "message": "The period end cannot be before the start."}, 400
+        cid = request.args.get("casual_id", type=int)
+        start_text = (request.args.get("period_start") or "").strip()
+        end_text = (request.args.get("period_end") or "").strip()
 
-    casual = Casual.query.get_or_404(cid)
-    pay_type = casual.pay_frequency or "Daily"
-    rate_row = get_rate(cid, start, pay_type)
-    if not rate_row:
-        return {"ok": False, "message": f"Add a {pay_type.lower()} rate for this worker first."}, 400
+        if not cid or not start_text or not end_text:
+            return {"ok": False, "message": "Select a worker and both period dates."}, 400
 
-    duplicate = Payment.query.filter(
-        Payment.casual_id == cid,
-        Payment.status != "Voided",
-        Payment.period_start <= end,
-        Payment.period_end >= start,
-    ).first()
-    if duplicate:
-        return {"ok": False, "message": f"This period overlaps payment {duplicate.payment_ref}. Edit or void that payment first."}, 400
+        try:
+            start = datetime.strptime(start_text, "%Y-%m-%d").date()
+            end = datetime.strptime(end_text, "%Y-%m-%d").date()
+        except ValueError:
+            return {"ok": False, "message": "Enter valid dates."}, 400
 
-    entries_query = Attendance.query.filter(
-        Attendance.casual_id == cid,
-        Attendance.work_date >= start,
-        Attendance.work_date <= end,
-        Attendance.status == "Unpaid",
-    ).order_by(Attendance.work_date)
-    entries = entries_query.all()
-    full_days = sum(1 for x in entries if x.work_type == "Full Day")
-    half_days = sum(1 for x in entries if x.work_type == "Half Day")
-    days_equivalent = full_days + half_days * 0.5
-    units = payment_period_units(pay_type, start, end)
-    if pay_type == "Daily":
-        gross = sum(float(x.amount or 0) for x in entries)
-        can_pay = bool(entries)
-        explanation = "Calculated from unpaid attendance."
-    else:
-        gross = float(rate_row.daily_rate) * units
-        can_pay = True
-        explanation = f"{units} {pay_type.lower()} pay period(s) × UGX {rate_row.daily_rate:,.0f}. Attendance is shown for review."
+        if end < start:
+            return {"ok": False, "message": "The period end cannot be before the start."}, 400
 
-    return {
-        "ok": True,
-        "pay_type": pay_type,
-        "rate_applied": float(rate_row.daily_rate),
-        "period_units": units,
-        "entry_count": len(entries),
-        "full_days": full_days,
-        "half_days": half_days,
-        "days_equivalent": days_equivalent,
-        "gross_pay": gross,
-        "advance_deduction": advance_deduction,
-        "can_pay": can_pay,
-        "explanation": explanation,
-        "entries": [{
-            "date": x.work_date.isoformat(), "work_type": x.work_type,
-            "work_done": x.work_done or "-", "amount": float(x.amount or 0),
-        } for x in entries],
-    }
+        casual = db.session.get(Casual, cid)
+        if not casual:
+            return {"ok": False, "message": "The selected worker could not be found."}, 404
+
+        pay_type = casual.pay_frequency or "Daily"
+        rate_row = get_rate(cid, start, pay_type)
+        if not rate_row:
+            return {
+                "ok": False,
+                "message": f"Add a {pay_type.lower()} rate for this worker first."
+            }, 400
+
+        duplicate = Payment.query.filter(
+            Payment.casual_id == cid,
+            Payment.status != "Voided",
+            Payment.period_start <= end,
+            Payment.period_end >= start,
+        ).first()
+        if duplicate:
+            return {
+                "ok": False,
+                "message": (
+                    f"This period overlaps payment {duplicate.payment_ref}. "
+                    "Edit or void that payment first."
+                )
+            }, 400
+
+        entries = Attendance.query.filter(
+            Attendance.casual_id == cid,
+            Attendance.work_date >= start,
+            Attendance.work_date <= end,
+            Attendance.status == "Unpaid",
+        ).order_by(Attendance.work_date).all()
+
+        full_days = sum(1 for x in entries if x.work_type == "Full Day")
+        half_days = sum(1 for x in entries if x.work_type == "Half Day")
+        days_equivalent = full_days + half_days * 0.5
+        units = payment_period_units(pay_type, start, end)
+
+        if pay_type == "Daily":
+            gross = sum(float(x.amount or 0) for x in entries)
+            can_pay = bool(entries)
+            explanation = "Calculated from unpaid attendance."
+        else:
+            gross = float(rate_row.daily_rate) * units
+            can_pay = True
+            explanation = (
+                f"{units} {pay_type.lower()} pay period(s) × "
+                f"UGX {rate_row.daily_rate:,.0f}. Attendance is shown for review."
+            )
+
+        # Calculate salary advances only after the worker and period are valid.
+        advance_deduction = 0.0
+        if pay_type == "Monthly":
+            advances = SalaryAdvance.query.filter(
+                SalaryAdvance.casual_id == cid,
+                SalaryAdvance.status == "Active",
+                SalaryAdvance.deducted_payment_id.is_(None),
+                SalaryAdvance.cycle_start >= start,
+                SalaryAdvance.cycle_end <= end,
+            ).all()
+            advance_deduction = sum(float(a.amount or 0) for a in advances)
+
+        return {
+            "ok": True,
+            "pay_type": pay_type,
+            "rate_applied": float(rate_row.daily_rate),
+            "period_units": units,
+            "entry_count": len(entries),
+            "full_days": full_days,
+            "half_days": half_days,
+            "days_equivalent": days_equivalent,
+            "gross_pay": gross,
+            "advance_deduction": advance_deduction,
+            "can_pay": can_pay,
+            "explanation": explanation,
+            "entries": [{
+                "date": x.work_date.isoformat(),
+                "work_type": x.work_type,
+                "work_done": x.work_done or "-",
+                "amount": float(x.amount or 0),
+            } for x in entries],
+        }
+
+    except Exception:
+        app.logger.exception("Payment preview calculation failed")
+        return {
+            "ok": False,
+            "message": "The payment preview could not be calculated. Please check the worker, dates and rate, then try again."
+        }, 500
 
 
 @app.route("/payments", methods=["GET", "POST"])
