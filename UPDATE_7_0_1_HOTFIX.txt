@@ -1,0 +1,16 @@
+STANCOFF / MOTHERS HARVEST UPDATE 7.0.1 HOTFIX
+================================================
+Fixes Render startup/runtime failure when opening the company selector.
+
+Cause:
+- The production PostgreSQL `company` table already has a NOT NULL `slug` column.
+- Update 7.0's SQLAlchemy Company model did not map that existing column.
+- Creating Mothers Harvest therefore attempted to insert NULL into `company.slug`.
+
+Fix:
+- Maps the existing `slug` column in the Company model.
+- Creates Mothers Harvest with slug `mothers-harvest`.
+- Uses slug `stancoff` if a Stancoff company row ever needs to be created.
+- Does NOT drop, recreate, truncate, or delete any database table or record.
+
+This hotfix supersedes Update 7.0.
