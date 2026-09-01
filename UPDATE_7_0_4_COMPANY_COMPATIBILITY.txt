@@ -1,0 +1,25 @@
+STANCOFF UPDATE 7.0.4 - COMPANY SCHEMA COMPATIBILITY
+
+Purpose
+-------
+Fix Mothers Harvest company creation against the existing production PostgreSQL company table.
+
+Change
+------
+The company seed INSERT explicitly supplies both required legacy columns:
+- slug
+- is_legacy_stancoff
+
+Mothers Harvest values:
+- code: MHS
+- slug: mothers-harvest
+- is_legacy_stancoff: false
+
+Stancoff values:
+- code: STANCOFF
+- slug: stancoff
+- is_legacy_stancoff: true
+
+Safety
+------
+No table is dropped or recreated. No existing coffee, supplier, batch, payroll, inventory, sales, station, user, or password data is deleted.

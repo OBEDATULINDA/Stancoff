@@ -274,6 +274,9 @@ class Company(db.Model):
     # Keep it mapped so new companies are inserted safely without altering
     # or recreating the existing company table.
     slug = db.Column(db.String(120), unique=True, nullable=False)
+    # Existing production schema uses this NOT NULL flag to identify the
+    # original Stancoff company. Mothers Harvest must explicitly be False.
+    is_legacy_stancoff = db.Column(db.Boolean, nullable=False, default=False)
     business_type = db.Column(db.String(60), nullable=False)
     status = db.Column(db.String(20), nullable=False, default="Active")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -492,6 +495,8 @@ def get_rate(casual_id, d):
         CasualRate.effective_date <= d
     ).order_by(CasualRate.effective_date.desc(), CasualRate.id.desc()).first()
 
+UPDATE_7_0_4_COMPANY_COMPAT = "7.0.4 explicit company NOT NULL compatibility"
+
 def ensure_multistation_schema():
     """Add multi-station support without deleting or recreating existing data."""
     inspector = inspect(db.engine)
@@ -508,46 +513,53 @@ def ensure_multistation_schema():
             db.session.commit()
     db.create_all()
 
-    # The production company table predates this release and already contains a
-    # NOT NULL slug column.  Insert seed companies with explicit SQL so startup
-    # remains safe even if an older ORM mapping is present on a deployed worker.
+    # The production company table predates this release. Some deployments
+    # contain NOT NULL compatibility columns (currently slug and
+    # is_legacy_stancoff) that older ORM mappings did not know about. Build
+    # the seed INSERT from the columns actually present so no existing table
+    # needs to be dropped or recreated.
+    inspector = inspect(db.engine)
+    table_names = inspector.get_table_names()
     company_columns = {c["name"] for c in inspector.get_columns("company")} if "company" in table_names else set()
+
+    def insert_company_seed(code, name, slug, business_type, is_legacy_stancoff):
+        # Update 7.0.4: the live PostgreSQL company table already requires
+        # both slug and is_legacy_stancoff. Insert them explicitly rather than
+        # depending on ORM/inspector compatibility behavior.
+        db.session.execute(text(
+            "INSERT INTO company "
+            "(code, name, slug, business_type, status, is_legacy_stancoff, created_at) "
+            "VALUES (:code, :name, :slug, :business_type, :status, :is_legacy_stancoff, :created_at)"
+        ), {
+            "code": code,
+            "name": name,
+            "slug": slug,
+            "business_type": business_type,
+            "status": "Active",
+            "is_legacy_stancoff": is_legacy_stancoff,
+            "created_at": datetime.utcnow(),
+        })
+        db.session.commit()
 
     stancoff_company = Company.query.filter_by(code="STANCOFF").first()
     if not stancoff_company:
-        if "slug" in company_columns:
-            db.session.execute(text(
-                "INSERT INTO company (code, name, slug, business_type, status, created_at) "
-                "VALUES (:code, :name, :slug, :business_type, :status, :created_at)"
-            ), {
-                "code": "STANCOFF",
-                "name": "Stancoff Company Limited",
-                "slug": "stancoff",
-                "business_type": "Specialty Coffee",
-                "status": "Active",
-                "created_at": datetime.utcnow(),
-            })
-        else:
-            db.session.add(Company(code="STANCOFF", name="Stancoff Company Limited", business_type="Specialty Coffee", status="Active"))
-        db.session.commit()
+        insert_company_seed(
+            "STANCOFF",
+            "Stancoff Company Limited",
+            "stancoff",
+            "Specialty Coffee",
+            True,
+        )
 
     mothers = Company.query.filter_by(code="MHS").first()
     if not mothers:
-        if "slug" in company_columns:
-            db.session.execute(text(
-                "INSERT INTO company (code, name, slug, business_type, status, created_at) "
-                "VALUES (:code, :name, :slug, :business_type, :status, :created_at)"
-            ), {
-                "code": "MHS",
-                "name": "Mothers Harvest Suppliers",
-                "slug": "mothers-harvest",
-                "business_type": "Commercial Coffee",
-                "status": "Active",
-                "created_at": datetime.utcnow(),
-            })
-        else:
-            db.session.add(Company(code="MHS", name="Mothers Harvest Suppliers", business_type="Commercial Coffee", status="Active"))
-        db.session.commit()
+        insert_company_seed(
+            "MHS",
+            "Mothers Harvest Suppliers",
+            "mothers-harvest",
+            "Commercial Coffee",
+            False,
+        )
         mothers = Company.query.filter_by(code="MHS").first()
 
     if mothers and not CommercialSetting.query.filter_by(company_id=mothers.id).first():
