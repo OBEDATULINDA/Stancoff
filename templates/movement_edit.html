@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Edit Movement · Stancoff{% endblock %}
+{% block page_title %}Edit inventory movement{% endblock %}
+{% block page_subtitle %}Correct movement {{ movement.movement_no }} without losing its audit history{% endblock %}
+{% block content %}
+<section class="panel processing-intro">
+  <div>
+    <span class="eyebrow">Movement correction</span>
+    <h2>{{ movement.batch.batch_no }} · {{ movement.grade }}</h2>
+    <p>{{ movement.from_location.station.name if movement.from_location.station else 'Unassigned' }} / {{ movement.from_location.name }} → {{ movement.to_location.station.name if movement.to_location.station else 'Unassigned' }} / {{ movement.to_location.name }}</p>
+  </div>
+  <a class="secondary-button" href="{{ url_for('inventory') }}">Back to inventory</a>
+</section>
+
+{% if not can_change_stock %}
+<div class="flash">
+  <strong>Weight and destination are locked.</strong>
+  {% if protected_type %}This movement was created by Finish Drying.{% endif %}
+  {% if linked_transfer %}It has a linked station transfer.{% endif %}
+  {% if later_movement %}Coffee from this destination has already moved onward.{% endif %}
+  {% if later_dispatch %}Coffee from this destination has already been dispatched.{% endif %}
+  You may still correct the date, moisture, responsible person and notes. To correct stock quantities, void the related transaction and enter it again.
+</div>
+{% endif %}
+
+<section class="panel">
+<form method="post" class="processing-form">
+  <label>Movement number<input value="{{ movement.movement_no }}" disabled></label>
+  <label>Source location<input value="{{ movement.from_location.station.name if movement.from_location.station else 'Unassigned' }} / {{ movement.from_location.name }}" disabled></label>
+  <label>Destination location
+    <select name="to_location_id" {% if not can_change_stock %}disabled{% endif %} required>
+      {% for l in locations %}
+      <option value="{{ l.id }}" {% if l.id == movement.to_location_id %}selected{% endif %}>{{ l.station.name if l.station else 'Unassigned' }} / {{ l.name }} · {{ l.location_type }}</option>
+      {% endfor %}
+    </select>
+    {% if not can_change_stock %}<input type="hidden" name="to_location_id" value="{{ movement.to_location_id }}">{% endif %}
+  </label>
+  <label>Movement date<input type="date" name="movement_date" value="{{ movement.movement_date.isoformat() }}" required></label>
+  <label>Source weight (kg)<input type="number" min="0.01" step="0.01" name="source_weight" value="{{ movement.source_weight if movement.source_weight is not none else movement.weight }}" {% if not can_change_stock %}readonly{% endif %} required></label>
+  <label>New / current destination weight (kg)<input type="number" min="0.01" step="0.01" name="weight" value="{{ movement.weight }}" {% if not can_change_stock %}readonly{% endif %} required></label>
+  <label>Moisture %<input type="number" min="0" max="100" step="0.01" name="moisture" value="{{ movement.moisture if movement.moisture is not none else '' }}"></label>
+  <label>Moved by<input name="moved_by" value="{{ movement.moved_by or '' }}"></label>
+  <label class="form-wide">Reason / notes<textarea name="reason" rows="3">{{ movement.reason or '' }}</textarea></label>
+  <div class="form-wide" style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="primary-button">Save changes</button>
+    <a class="secondary-button" href="{{ url_for('inventory') }}">Cancel</a>
+  </div>
+</form>
+</section>
+{% endblock %}

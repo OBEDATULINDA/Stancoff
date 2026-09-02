@@ -1,0 +1,19 @@
+STANCOFF VERSION 7.5.5
+
+MONTHLY PAYMENT PERIOD CARDS
+- Each worker now shows three rolling monthly cards:
+  1. Previous two personal monthly cycles
+  2. Current personal monthly cycle
+- Cards are grouped by employee and scroll horizontally.
+- The cycle dates continue to follow each employee's own first-attendance date.
+- A completed payment for the exact period marks the card Paid.
+- A completed previous period with no payment is clearly marked Unpaid.
+- The current period is marked Current.
+- Every unpaid card has a button that opens Workforce Payments with the correct
+  employee, period start and period end already selected.
+- Paid cards link to the payment receipt.
+
+This makes it easier to notice an older unpaid month even after a new month begins.
+
+DATABASE SAFETY
+- No database tables or PostgreSQL records are changed.

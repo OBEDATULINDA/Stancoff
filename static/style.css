@@ -77,3 +77,109 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
 .nav-group-links a{position:relative;padding-left:18px}
 .nav-group-links a::before{content:'';position:absolute;left:8px;top:50%;width:3px;height:3px;border-radius:50%;background:#78998e;transform:translateY(-50%)}
 .nav-group-links a.active::before{background:#fff}
+.negative{color:#b42318;font-weight:700}.positive{color:#16794f;font-weight:700}.status-badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#e8f1ee;color:#1f6b57;font-size:12px;font-weight:700}
+
+
+/* Version 7.1 - Monthly attendance cards */
+.monthly-card-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(390px,1fr));
+  gap:16px;
+}
+.monthly-card{
+  background:#fff;
+  border:1px solid var(--line,#dfe7e3);
+  border-radius:14px;
+  padding:16px;
+  box-shadow:0 8px 24px rgba(22,55,46,.06);
+}
+.month-title{
+  font-size:18px;
+  font-weight:750;
+  margin:14px 0 10px;
+}
+.month-calendar{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  gap:5px;
+}
+.month-weekday{
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  color:#6d7c76;
+  text-align:center;
+  padding:4px 0;
+}
+.month-day{
+  min-height:58px;
+  border:1px solid #e3ebe7;
+  border-radius:8px;
+  padding:5px;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  background:#fafcfb;
+}
+.month-day.worked{
+  background:#eef7f3;
+  border-color:#b9d7cb;
+}
+.month-day.empty-day{
+  border-color:transparent;
+  background:transparent;
+}
+.month-day .day-number{
+  font-size:11px;
+  color:#6d7c76;
+}
+.month-day strong{
+  font-size:15px;
+  color:#173f35;
+}
+.month-day small{
+  font-size:9px;
+  color:#6d7c76;
+}
+@media(max-width:600px){
+  .monthly-card-grid{grid-template-columns:1fr}
+  .monthly-card{padding:11px}
+  .month-calendar{gap:3px}
+  .month-day{min-height:50px;padding:4px}
+}
+
+
+/* Version 7.3 - Processing reports */
+.report-filter-form{align-items:end}.report-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.grade-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.grade-summary-grid>div{background:#f7faf8;border:1px solid var(--line,#dfe7e3);border-radius:10px;padding:14px}.grade-summary-grid span{display:block;color:#6d7c76;font-size:12px}.grade-summary-grid strong{display:block;margin-top:6px;font-size:20px}.report-table{min-width:1600px}.report-table td:nth-child(n+5):nth-child(-n+16){text-align:right;font-variant-numeric:tabular-nums}@media(max-width:760px){.grade-summary-grid{grid-template-columns:1fr 1fr}.report-actions .button{flex:1;text-align:center}}
+
+.cycle-date-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin-top:10px}
+.cycle-day{min-height:60px;border:1px solid #e3ebe7;border-radius:8px;padding:5px;display:flex;flex-direction:column;justify-content:space-between;background:#fafcfb}
+.cycle-day.worked{background:#eef7f3;border-color:#b9d7cb}
+.cycle-weekday{font-size:9px;text-transform:uppercase;color:#6d7c76}
+.cycle-day .day-number{font-size:10px;color:#6d7c76}
+.workforce-notice-list{display:grid;gap:8px}
+.workforce-notice{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid #e1e8e4;border-radius:9px;background:#fafcfb}
+.workforce-notice small{display:block;color:#6d7c76;margin-top:3px}
+@media(max-width:650px){.cycle-date-grid{grid-template-columns:repeat(4,1fr)}.workforce-notice{grid-template-columns:1fr}}
+
+.advance-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.advance-actions form{display:flex;gap:6px;align-items:center;margin:0}.advance-actions input{max-width:130px}
+
+.user-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.user-actions form{margin:0}.user-actions input{max-width:135px}
+
+
+.employee-cycle-groups{display:grid;gap:20px}
+.employee-cycle-group{border:1px solid #e2e7e5;border-radius:14px;padding:14px;background:#fff}
+.employee-cycle-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.employee-cycle-heading strong{display:block;font-size:1.05rem}
+.employee-cycle-heading small{display:block;margin-top:2px;opacity:.72}
+.scroll-hint{font-size:.82rem;opacity:.65;white-space:nowrap}
+.monthly-card-scroll{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 12px;overscroll-behavior-x:contain}
+.monthly-card-scroll .payment-cycle-card{flex:0 0 min(620px,92vw);scroll-snap-align:start}
+.payment-cycle-card.cycle-unpaid{border-left:5px solid #b94444}
+.payment-cycle-card.cycle-paid{border-left:5px solid #3d795c}
+.payment-cycle-card.cycle-current{border-left:5px solid #b98a2f}
+.compact-cycle-grid{min-width:560px}
+@media(max-width:700px){
+  .employee-cycle-heading{align-items:flex-start;flex-direction:column}
+  .monthly-card-scroll .payment-cycle-card{flex-basis:94vw}
+}

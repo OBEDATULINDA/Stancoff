@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block page_title %}Edit worker{% endblock %}{% block page_subtitle %}Change worker details and pay frequency{% endblock %}
+{% block content %}<div class="section-card"><form method="post" class="form">
+<label>Full name<input name="name" value="{{casual.name}}" required></label>
+<label>Sex<select name="sex"><option {% if casual.sex=='Male' %}selected{% endif %}>Male</option><option {% if casual.sex=='Female' %}selected{% endif %}>Female</option></select></label>
+<label>Phone<input name="phone" value="{{casual.phone or ''}}"></label>
+<label>Pay frequency<select name="pay_frequency"><option {% if casual.pay_frequency=='Daily' %}selected{% endif %}>Daily</option><option {% if casual.pay_frequency=='Weekly' %}selected{% endif %}>Weekly</option><option {% if casual.pay_frequency=='Monthly' %}selected{% endif %}>Monthly</option></select></label>
+<label>Status<select name="status"><option {% if casual.status=='Active' %}selected{% endif %}>Active</option><option {% if casual.status=='Inactive' %}selected{% endif %}>Inactive</option></select></label>
+<button>Save changes</button></form></div>{% endblock %}

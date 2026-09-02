@@ -1,8 +1,108 @@
-{% extends "base.html" %}{% block content %}<h2>User Management</h2><form method=post class=form>
-<input name=full_name placeholder="Full name" required><input name=username placeholder=Username required><input type=password name=password placeholder=Password required>
-<select name=role>{% for r in roles %}<option>{{r}}</option>{% endfor %}</select><select name=status><option>Active</option><option>Inactive</option></select><button>Create User</button></form>
-<table><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr>{% for r in rows %}<tr>
-<td>{{r.full_name}}</td><td>{{r.username}}</td><td>{{r.role}}</td><td>{{r.status}}</td><td>{{r.last_login or ''}}</td><td>
-<form class=inline method=post action="/users/{{r.id}}/toggle"><button>Toggle Status</button></form>
-<form class=inline method=post action="/users/{{r.id}}/reset-password"><input type=password name=password placeholder="New password" required><button>Reset</button></form>
-</td></tr>{% endfor %}</table>{% endblock %}
+{% extends "base.html" %}
+{% block title %}User Management · Stancoff{% endblock %}
+{% block page_title %}User Management{% endblock %}
+{% block page_subtitle %}Create, edit, disable and manage system users{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <span class="eyebrow">Administration</span>
+      <h2>Create user</h2>
+    </div>
+  </div>
+
+  <form method="post" class="form">
+    <label>Full name
+      <input name="full_name" placeholder="Full name" required>
+    </label>
+
+    <label>Username
+      <input name="username" placeholder="Username" required>
+    </label>
+
+    <label>Password
+      <input type="password" name="password" placeholder="Password" required>
+    </label>
+
+    <label>Role
+      <select name="role">
+        {% for role in roles %}
+        <option>{{role}}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>Status
+      <select name="status">
+        <option>Active</option>
+        <option>Inactive</option>
+      </select>
+    </label>
+
+    <button>Create User</button>
+  </form>
+</section>
+
+<section class="panel" style="margin-top:18px">
+  <div class="panel-heading">
+    <div>
+      <span class="eyebrow">Accounts</span>
+      <h2>Existing users</h2>
+    </div>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Last Login</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{r.full_name}}</td>
+          <td>{{r.username}}</td>
+          <td>{{r.role}}</td>
+          <td>{{r.status}}</td>
+          <td>{{r.last_login or '—'}}</td>
+          <td>
+            <div class="user-actions">
+              <a class="small-button" href="{{ url_for('user_edit', id=r.id) }}">Edit</a>
+
+              <form class="inline" method="post" action="{{ url_for('user_toggle', id=r.id) }}">
+                <button class="small-button" type="submit">
+                  {% if r.status == 'Active' %}Disable{% else %}Enable{% endif %}
+                </button>
+              </form>
+
+              <form class="inline" method="post" action="{{ url_for('reset_password', id=r.id) }}">
+                <input type="password" name="password" placeholder="New password" required>
+                <button class="small-button" type="submit">Reset</button>
+              </form>
+
+              {% if r.id != session.get('user_id') %}
+              <form class="inline" method="post" action="{{ url_for('user_delete', id=r.id) }}"
+                    onsubmit="return confirm('Delete this user? If the user has system history, the account will be deactivated instead.');">
+                <button class="small-button danger" type="submit">Delete</button>
+              </form>
+              {% else %}
+              <small>Current account</small>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="empty">No users found.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

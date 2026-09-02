@@ -1,0 +1,15 @@
+STANCOFF VERSION 7.5.2
+
+FIX
+The backend Edit/Delete user routes existed in Version 7.5.1, but the
+User Management HTML template did not actually display the new buttons.
+
+This update replaces the User Management page so the Actions column now shows:
+- Edit
+- Enable/Disable
+- Reset Password
+- Delete
+
+The currently logged-in account does not show a Delete button.
+
+No PostgreSQL records or database tables are changed.

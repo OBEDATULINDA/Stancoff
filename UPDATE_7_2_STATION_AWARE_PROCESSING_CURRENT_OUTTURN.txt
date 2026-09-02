@@ -1,0 +1,26 @@
+STANCOFF VERSION 7.2
+
+CHANGES
+1. Processing now requires an active station.
+2. Processing history shows the station.
+3. Drying creation only offers drying areas belonging to the processing station.
+4. Semi-dry inventory movements now record:
+   - weight leaving the source;
+   - new/current weight at the destination;
+   - weight difference;
+   - movement outturn.
+5. Only the new/current destination weight is carried forward in inventory.
+   Finish Drying therefore uses the latest current balance, not an old wet weight.
+6. Live inventory shows the current overall outturn for each drying record.
+7. Finish Drying shows the current tracked weight/outturn and no longer
+   redirects automatically to a printing page after saving.
+8. Moving forms remain available from movement/transfer history.
+
+DATABASE SAFETY
+The update adds only processing.station_id when missing. No existing table is
+dropped or recreated. Historical processing records may show "Not assigned"
+until edited; all new processing records require a station.
+
+DEPLOYMENT
+Upload the contents of Stancoff-main to the existing GitHub repository and
+let Render redeploy. Do not delete PostgreSQL or change DATABASE_URL.

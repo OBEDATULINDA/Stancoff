@@ -20,7 +20,7 @@
     <nav class="side-nav">
       <a href="/" class="{% if request.path=='/' %}active{% endif %}">Dashboard</a>
 
-      {% set coffee_open = request.path.startswith('/suppliers') or request.path.startswith('/batches') or request.path.startswith('/purchases') or request.path.startswith('/processing') or request.path.startswith('/drying') or request.path.startswith('/inventory') or request.path.startswith('/locations') or request.path.startswith('/stations') or request.path.startswith('/station-transfers') or request.path.startswith('/sales') or request.path.startswith('/dispatch') or request.path.startswith('/prices') %}
+      {% set coffee_open = request.path.startswith('/suppliers') or request.path.startswith('/batches') or request.path.startswith('/purchases') or request.path.startswith('/processing') or request.path.startswith('/drying') or request.path.startswith('/inventory') or request.path.startswith('/locations') or request.path.startswith('/stations') or request.path.startswith('/station-transfers') or request.path.startswith('/sales') or request.path.startswith('/dispatch') or request.path.startswith('/prices') or request.path.startswith('/reports/processing') %}
       {% if current_role in ['Admin','Manager','Receiving Clerk','Processing Supervisor','Storekeeper'] %}
       <details class="nav-group" data-nav-group="coffee" {% if coffee_open %}open{% endif %}>
         <summary>Coffee operations</summary>
@@ -44,27 +44,14 @@
           {% if current_role in ['Admin','Manager'] %}
           <a href="/prices" class="{% if request.path.startswith('/prices') %}active{% endif %}">Price history</a>
           {% endif %}
+          {% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
+          <a href="/reports/processing" class="{% if request.path.startswith('/reports/processing') %}active{% endif %}">Processing Reports</a>
+          {% endif %}
         </div>
       </details>
       {% endif %}
 
-      {% if current_role in ['Admin','Manager','Receiving Clerk','Processing Supervisor','Storekeeper'] %}
-      <details class="nav-group" data-nav-group="commercial" {% if request.path.startswith('/commercial') %}open{% endif %}>
-        <summary>Mothers Harvest</summary>
-        <div class="nav-group-links">
-          <a href="/commercial" class="{% if request.path=='/commercial' %}active{% endif %}">Commercial dashboard</a>
-          <a href="/commercial/suppliers" class="{% if request.path.startswith('/commercial/suppliers') %}active{% endif %}">Suppliers</a>
-          <a href="/commercial/purchases" class="{% if request.path.startswith('/commercial/purchases') %}active{% endif %}">Purchases</a>
-          <a href="/commercial/lots" class="{% if request.path.startswith('/commercial/lots') %}active{% endif %}">Lots</a>
-          <a href="/commercial/drying" class="{% if request.path.startswith('/commercial/drying') %}active{% endif %}">Drying</a>
-          <a href="/commercial/analysis" class="{% if request.path.startswith('/commercial/analysis') %}active{% endif %}">Analysis</a>
-          <a href="/commercial/production" class="{% if request.path.startswith('/commercial/production') %}active{% endif %}">Production</a>
-          {% if current_role in ['Admin','Manager'] %}<a href="/commercial/settings" class="{% if request.path.startswith('/commercial/settings') %}active{% endif %}">Settings</a>{% endif %}
-        </div>
-      </details>
-      {% endif %}
-
-      {% set workforce_open = request.path.startswith('/casuals') or request.path.startswith('/casual-rates') or request.path.startswith('/attendance') or request.path.startswith('/payments') %}
+      {% set workforce_open = request.path.startswith('/casuals') or request.path.startswith('/casual-rates') or request.path.startswith('/attendance') or request.path.startswith('/payments') or request.path.startswith('/advances') %}
       {% if current_role in ['Admin','Manager','Payroll Officer'] %}
       <details class="nav-group" data-nav-group="workforce" {% if workforce_open %}open{% endif %}>
         <summary>Workforce</summary>
@@ -73,6 +60,7 @@
           <a href="/casual-rates" class="{% if request.path.startswith('/casual-rates') %}active{% endif %}">Rate history</a>
           <a href="/attendance" class="{% if request.path.startswith('/attendance') %}active{% endif %}">Attendance</a>
           <a href="/payments" class="{% if request.path.startswith('/payments') %}active{% endif %}">Payments</a>
+          <a href="/advances" class="{% if request.path.startswith('/advances') %}active{% endif %}">Salary advances</a>
         </div>
       </details>
       {% endif %}
@@ -102,7 +90,7 @@
         <h1>{% block page_title %}Dashboard{% endblock %}</h1>
         <p>{% block page_subtitle %}Stancoff Company Limited{% endblock %}</p>
       </div>
-      <div style="display:flex;gap:10px;align-items:center"><select onchange="if(this.value) location.href=this.value" aria-label="Company"><option value="/" {% if not request.path.startswith('/commercial') %}selected{% endif %}>Stancoff — Specialty</option><option value="/commercial" {% if request.path.startswith('/commercial') %}selected{% endif %}>Mothers Harvest — Commercial</option></select><div class="topbar-date" id="today"></div></div>
+      <div class="topbar-date" id="today"></div>
     </header>
     <main>
       {% with messages=get_flashed_messages() %}

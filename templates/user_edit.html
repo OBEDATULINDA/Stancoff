@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Edit user · Stancoff{% endblock %}
+{% block page_title %}Edit user{% endblock %}
+{% block page_subtitle %}Administrator user management{% endblock %}
+{% block content %}
+<section class="panel">
+  <form method="post" class="form">
+    <label>Full name<input name="full_name" value="{{row.full_name}}" required></label>
+    <label>Username<input name="username" value="{{row.username}}" required></label>
+    <label>Role<select name="role" required>
+      {% for role in roles %}<option value="{{role}}" {% if row.role == role %}selected{% endif %}>{{role}}</option>{% endfor %}
+    </select></label>
+    <label>Status<select name="status" required>
+      <option value="Active" {% if row.status == 'Active' %}selected{% endif %}>Active</option>
+      <option value="Inactive" {% if row.status == 'Inactive' %}selected{% endif %}>Inactive</option>
+    </select></label>
+    <label>New password<input type="password" name="password" placeholder="Leave blank to keep current password"></label>
+    <div class="form-wide"><button>Save changes</button><a class="secondary-button" href="/users">Cancel</a></div>
+  </form>
+</section>
+{% endblock %}

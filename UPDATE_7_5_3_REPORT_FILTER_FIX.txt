@@ -1,0 +1,16 @@
+STANCOFF VERSION 7.5.3
+
+REPORT FILTER FIX
+- Fixed an Internal Server Error in Processed Coffee Reports.
+- Batch and Process filters now share one Batch-table join instead of
+  potentially joining the table twice.
+- Any combination of the following filters can now be used together:
+  * From date
+  * To date
+  * Station
+  * Batch
+  * Process type
+- Invalid/blank dates and station values are safely ignored.
+- Blank process types are excluded from the filter dropdown.
+
+No database tables or PostgreSQL records are changed.
