@@ -1,0 +1,17 @@
+STANCOFF UPDATE 7.1.7 — FINISH DRYING DIRECT FIX
+
+Built directly from the uploaded Stancoff-main(3).zip project.
+
+Changes:
+- Finish Drying form now posts explicitly to /drying/<id>/finish.
+- Removed JavaScript submit interception so browser validation cannot silently prevent the POST.
+- Destination stock now increases by actual dry_weight.
+- Source drying stock now decreases by wet_weight consumed.
+- CoffeeMovement continues to record dry output as weight and wet input as source_weight.
+- Added Render log marker when the Finish Drying POST reaches Flask.
+- Added rollback + visible flash message if PostgreSQL rejects the final save.
+
+Database safety:
+- No tables dropped.
+- No database recreation.
+- No existing records deleted.
