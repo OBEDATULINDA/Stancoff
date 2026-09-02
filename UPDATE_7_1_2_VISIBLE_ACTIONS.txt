@@ -1,0 +1,2 @@
+Update 7.1.2
+Moves Mothers Harvest Edit/Delete actions beside each record number so they are visible without horizontal scrolling. Delete remains Admin-only and retains dependency protection.
