@@ -295,6 +295,9 @@ class CommercialSupplier(db.Model):
 class CommercialLot(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    # Nullable traceability links added in Phase 2. Existing lots remain valid.
+    parent_lot_id = db.Column(db.Integer)
+    source_production_id = db.Column(db.Integer)
     lot_no = db.Column(db.String(30), nullable=False)
     coffee_type = db.Column(db.String(50), nullable=False)
     current_state = db.Column(db.String(50), nullable=False)
@@ -395,6 +398,44 @@ class CommercialAnalysis(db.Model):
     company = db.relationship("Company")
     lot = db.relationship("CommercialLot")
     __table_args__ = (db.UniqueConstraint("company_id", "analysis_no", name="uq_commercial_analysis_company_no"),)
+
+class CommercialProduction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    production_no = db.Column(db.String(30), nullable=False)
+    production_date = db.Column(db.Date, nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey("commercial_lot.id"), nullable=False)
+    analysis_id = db.Column(db.Integer, db.ForeignKey("commercial_analysis.id"))
+    process_type = db.Column(db.String(50), nullable=False)
+    input_weight = db.Column(db.Float, nullable=False)
+    input_state = db.Column(db.String(60))
+    bulk_output_weight = db.Column(db.Float, nullable=False, default=0)
+    aa_weight = db.Column(db.Float, nullable=False, default=0)
+    ab_weight = db.Column(db.Float, nullable=False, default=0)
+    cpb_weight = db.Column(db.Float, nullable=False, default=0)
+    wugar_weight = db.Column(db.Float, nullable=False, default=0)
+    defects_weight = db.Column(db.Float, nullable=False, default=0)
+    byproduct_weight = db.Column(db.Float, nullable=False, default=0)
+    processing_loss = db.Column(db.Float, nullable=False, default=0)
+    total_saleable = db.Column(db.Float, nullable=False, default=0)
+    total_accounted = db.Column(db.Float, nullable=False, default=0)
+    actual_outturn = db.Column(db.Float, nullable=False, default=0)
+    expected_general_outturn = db.Column(db.Float, default=0)
+    expected_net_outturn = db.Column(db.Float, default=0)
+    expected_bulk_weight = db.Column(db.Float, default=0)
+    expected_aa_weight = db.Column(db.Float, default=0)
+    expected_ab_weight = db.Column(db.Float, default=0)
+    expected_cpb_weight = db.Column(db.Float, default=0)
+    expected_wugar_weight = db.Column(db.Float, default=0)
+    processed_by = db.Column(db.String(120))
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(20), nullable=False, default="Completed")
+    created_by = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company = db.relationship("Company")
+    lot = db.relationship("CommercialLot", foreign_keys=[lot_id])
+    analysis = db.relationship("CommercialAnalysis")
+    __table_args__ = (db.UniqueConstraint("company_id", "production_no", name="uq_commercial_production_company_no"),)
 
 class Casual(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -510,6 +551,16 @@ def ensure_multistation_schema():
         movement_columns = {c["name"] for c in inspector.get_columns("coffee_movement")}
         if "source_weight" not in movement_columns:
             db.session.execute(text("ALTER TABLE coffee_movement ADD COLUMN source_weight FLOAT"))
+            db.session.commit()
+    # Phase 2 traceability columns are nullable and added in place. No existing
+    # Mothers Harvest or Stancoff records are deleted or recreated.
+    if "commercial_lot" in table_names:
+        lot_columns = {c["name"] for c in inspector.get_columns("commercial_lot")}
+        if "parent_lot_id" not in lot_columns:
+            db.session.execute(text("ALTER TABLE commercial_lot ADD COLUMN parent_lot_id INTEGER"))
+            db.session.commit()
+        if "source_production_id" not in lot_columns:
+            db.session.execute(text("ALTER TABLE commercial_lot ADD COLUMN source_production_id INTEGER"))
             db.session.commit()
     db.create_all()
 
@@ -2546,6 +2597,7 @@ def commercial_dashboard():
         "purchase_value": sum(float(x.total_amount or 0) for x in purchases),
         "needs_drying": sum(1 for x in lots if x.current_state == "Needs Drying"),
         "analysed": CommercialAnalysis.query.filter_by(company_id=company.id, status="Active").count(),
+        "production_runs": CommercialProduction.query.filter_by(company_id=company.id, status="Completed").count(),
     }
     return render_template("commercial_dashboard.html", company=company, stats=stats, drying=drying, analyses=analyses)
 
@@ -2554,20 +2606,26 @@ def commercial_dashboard():
 def commercial_suppliers():
     company = get_mhs_company()
     if request.method == "POST":
-        code=(request.form.get("code") or "").strip().upper()
         name=(request.form.get("name") or "").strip()
-        if not code or not name:
-            flash("Supplier code and name are required.")
+        if not name:
+            flash("Supplier name is required.")
             return redirect(url_for("commercial_suppliers"))
-        if CommercialSupplier.query.filter_by(company_id=company.id, code=code).first():
-            flash("That supplier code already exists for Mothers Harvest.")
-            return redirect(url_for("commercial_suppliers"))
+        # Supplier codes are system-generated. Users never type or reuse them.
+        code=next_company_code(CommercialSupplier,"code",company.id,"MHS-S",4)
+        while CommercialSupplier.query.filter_by(company_id=company.id, code=code).first():
+            # Defensive collision handling in case a historical code skipped the sequence.
+            try:
+                n=int(code.replace("MHS-S", ""))+1
+            except Exception:
+                n=CommercialSupplier.query.filter_by(company_id=company.id).count()+1
+            code=f"MHS-S{n:04d}"
         row=CommercialSupplier(company_id=company.id,code=code,name=name,phone=request.form.get("phone"),location=request.form.get("location"))
-        db.session.add(row); db.session.commit(); log_action("CREATE","Commercial Suppliers",row.id,row.name)
-        flash("Commercial supplier added.")
+        db.session.add(row); db.session.commit(); log_action("CREATE","Commercial Suppliers",row.id,f"{row.code} / {row.name}")
+        flash(f"Commercial supplier added with code {row.code}.")
         return redirect(url_for("commercial_suppliers"))
-    rows=CommercialSupplier.query.filter_by(company_id=company.id).order_by(CommercialSupplier.name).all()
-    return render_template("commercial_suppliers.html", company=company, rows=rows)
+    rows=CommercialSupplier.query.filter_by(company_id=company.id).order_by(CommercialSupplier.id.desc()).all()
+    next_supplier_code=next_company_code(CommercialSupplier,"code",company.id,"MHS-S",4)
+    return render_template("commercial_suppliers.html", company=company, rows=rows, next_supplier_code=next_supplier_code)
 
 @app.route("/commercial/settings", methods=["GET","POST"])
 @permission_required("commercial")
@@ -2667,6 +2725,165 @@ def commercial_analysis():
 @permission_required("commercial")
 def commercial_analysis_print(id):
     row=CommercialAnalysis.query.get_or_404(id); return render_template("commercial_analysis_print.html",row=row,company=row.company)
+
+
+
+def commercial_output_state(process_type, source_type):
+    if process_type == "Hulling":
+        return "Hulled Coffee"
+    if process_type == "Grading":
+        return "Graded Coffee"
+    if process_type == "Gravity Table":
+        return "Gravity Table Processed"
+    if process_type == "Color Sorting":
+        return "Color Sorted"
+    if process_type == "Full Processing":
+        return "Finished Coffee"
+    return source_type or "Processed Coffee"
+
+def latest_lot_analysis(company_id, lot_id):
+    """Return the latest analysis for a lot or its source ancestry.
+
+    This lets later processing stages keep using the analysis made on the
+    original dry parchment/DRUGAR lot without duplicating analysis records.
+    """
+    seen=set()
+    current_id=lot_id
+    while current_id and current_id not in seen:
+        seen.add(current_id)
+        row=CommercialAnalysis.query.filter_by(company_id=company_id, lot_id=current_id, status="Active").order_by(CommercialAnalysis.analysis_date.desc(), CommercialAnalysis.id.desc()).first()
+        if row:
+            return row
+        lot=CommercialLot.query.get(current_id)
+        current_id=lot.parent_lot_id if lot else None
+    return None
+
+def create_commercial_output_lot(company, source_lot, production, coffee_type, state, weight, moisture=None):
+    if weight <= 0:
+        return None
+    row=CommercialLot(
+        company_id=company.id,
+        parent_lot_id=source_lot.id,
+        source_production_id=production.id,
+        lot_no=next_company_code(CommercialLot,"lot_no",company.id,"MHS",4),
+        coffee_type=coffee_type,
+        current_state=state,
+        original_weight=weight,
+        available_weight=weight,
+        moisture=moisture if moisture is not None else source_lot.moisture,
+        notes=f"Produced from {source_lot.lot_no} in {production.production_no}."
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
+
+@app.route("/commercial/production", methods=["GET","POST"])
+@permission_required("commercial")
+def commercial_production():
+    company=get_mhs_company()
+    if request.method=="POST":
+        lot=CommercialLot.query.get_or_404(int(request.form["lot_id"]))
+        if lot.company_id != company.id:
+            abort(403)
+        process_type=request.form.get("process_type") or ""
+        allowed={"Hulling","Grading","Gravity Table","Color Sorting","Full Processing"}
+        if process_type not in allowed:
+            flash("Select a valid process type.")
+            return redirect(url_for("commercial_production"))
+        if lot.current_state in {"Needs Drying","Drying"}:
+            flash("This lot must finish drying before processing.")
+            return redirect(url_for("commercial_production"))
+        input_weight=float(request.form.get("input_weight") or 0)
+        if input_weight<=0 or input_weight>float(lot.available_weight or 0)+0.0001:
+            flash("Production input must be greater than zero and cannot exceed the available lot weight.")
+            return redirect(url_for("commercial_production"))
+        is_drugar=(lot.coffee_type=="DRUGAR FAQ" or "DRUGAR" in (lot.current_state or "").upper())
+        if is_drugar and process_type=="Grading":
+            flash("DRUGAR is not graded. Choose Hulling, Gravity Table, Color Sorting or Full Processing.")
+            return redirect(url_for("commercial_production"))
+        analysis=latest_lot_analysis(company.id, lot.id)
+        bulk=float(request.form.get("bulk_output_weight") or 0)
+        aa=float(request.form.get("aa_weight") or 0)
+        ab=float(request.form.get("ab_weight") or 0)
+        cpb=float(request.form.get("cpb_weight") or 0)
+        wugar=float(request.form.get("wugar_weight") or 0)
+        defects=float(request.form.get("defects_weight") or 0)
+        byproduct=float(request.form.get("byproduct_weight") or 0)
+        grade_mode=(not is_drugar and process_type in {"Grading","Full Processing"})
+        if grade_mode:
+            saleable=aa+ab+cpb+wugar
+            bulk=0
+        else:
+            saleable=bulk
+            aa=ab=cpb=wugar=0
+        if saleable < 0 or defects < 0 or byproduct < 0:
+            flash("Output and defect weights cannot be negative.")
+            return redirect(url_for("commercial_production"))
+        subtotal=saleable+defects+byproduct
+        if subtotal>input_weight+0.0001:
+            flash("Saleable production plus defects/by-products cannot exceed the input weight.")
+            return redirect(url_for("commercial_production"))
+        loss=max(0,input_weight-subtotal)
+        actual=(saleable/input_weight*100) if input_weight else 0
+        expected_general=float(analysis.general_outturn or 0) if analysis else 0
+        expected_net=float(analysis.net_outturn or 0) if analysis else 0
+        expected_clean=input_weight*expected_net/100 if analysis else 0
+        if grade_mode:
+            expected_bulk=0
+        elif process_type=="Hulling" and analysis:
+            expected_bulk=input_weight*expected_general/100
+        else:
+            expected_bulk=expected_clean
+        expected_aa=expected_ab=expected_cpb=expected_wugar=0
+        if grade_mode and analysis:
+            expected_aa=expected_clean*float(analysis.aa_percent or 0)/100
+            expected_ab=expected_clean*float(analysis.ab_percent or 0)/100
+            expected_cpb=expected_clean*float(analysis.cpb_percent or 0)/100
+            expected_wugar=expected_clean*float(analysis.wugar_percent or 0)/100
+        row=CommercialProduction(
+            company_id=company.id, production_no=next_company_code(CommercialProduction,"production_no",company.id,"PRD",5),
+            production_date=datetime.strptime(request.form["production_date"],"%Y-%m-%d").date(),
+            lot_id=lot.id, analysis_id=analysis.id if analysis else None, process_type=process_type,
+            input_weight=input_weight, input_state=lot.current_state, bulk_output_weight=bulk,
+            aa_weight=aa, ab_weight=ab, cpb_weight=cpb, wugar_weight=wugar, defects_weight=defects,
+            byproduct_weight=byproduct, processing_loss=loss, total_saleable=saleable, total_accounted=saleable+defects+byproduct+loss,
+            actual_outturn=actual, expected_general_outturn=expected_general, expected_net_outturn=expected_net,
+            expected_bulk_weight=expected_bulk, expected_aa_weight=expected_aa, expected_ab_weight=expected_ab,
+            expected_cpb_weight=expected_cpb, expected_wugar_weight=expected_wugar, processed_by=request.form.get("processed_by"),
+            notes=request.form.get("notes"), created_by=session.get("username")
+        )
+        db.session.add(row); db.session.flush()
+        # Consume only the quantity selected for this production run. Remaining source coffee stays available.
+        lot.available_weight=max(0,float(lot.available_weight or 0)-input_weight)
+        if lot.available_weight <= 0.0001:
+            lot.available_weight=0
+            lot.status="Processed"
+        output_state=commercial_output_state(process_type, lot.coffee_type)
+        if grade_mode:
+            for grade,weight in (("AA",aa),("AB",ab),("CPB",cpb),("WUGAR",wugar)):
+                create_commercial_output_lot(company,lot,row,grade,f"{output_state} - {grade}",weight,lot.moisture)
+        else:
+            output_type="DRUGAR FAQ" if is_drugar else ("WUGAR" if lot.coffee_type=="WUGAR" else "Commercial Coffee")
+            create_commercial_output_lot(company,lot,row,output_type,output_state,bulk,lot.moisture)
+        db.session.commit(); log_action("CREATE","Commercial Production",row.id,f"{row.production_no} / {lot.lot_no} / {process_type}")
+        flash(f"Production {row.production_no} saved. Mass balance reconciled and output lot(s) created automatically.")
+        return redirect(url_for("commercial_production"))
+    lots=CommercialLot.query.filter(
+        CommercialLot.company_id==company.id, CommercialLot.status=="Active", CommercialLot.available_weight>0,
+        ~CommercialLot.current_state.in_(["Needs Drying","Drying"])
+    ).order_by(CommercialLot.lot_no).all()
+    rows=CommercialProduction.query.filter_by(company_id=company.id).order_by(CommercialProduction.id.desc()).all()
+    analyses={l.id: latest_lot_analysis(company.id,l.id) for l in lots}
+    return render_template("commercial_production.html",company=company,lots=lots,rows=rows,analyses=analyses,today=datetime.utcnow().date().isoformat())
+
+@app.route("/commercial/production/<int:id>/print")
+@permission_required("commercial")
+def commercial_production_print(id):
+    row=CommercialProduction.query.get_or_404(id)
+    if row.company_id != get_mhs_company().id:
+        abort(403)
+    outputs=CommercialLot.query.filter_by(company_id=row.company_id, source_production_id=row.id).order_by(CommercialLot.id).all()
+    return render_template("commercial_production_print.html",row=row,company=row.company,outputs=outputs)
 
 
 @app.errorhandler(403)

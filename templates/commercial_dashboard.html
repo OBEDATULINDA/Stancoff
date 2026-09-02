@@ -9,6 +9,7 @@
   <div class="metric-card compact"><span>Available coffee</span><strong>{{ '%.1f'|format(stats.stock) }} kg</strong></div>
   <div class="metric-card compact"><span>Purchase value</span><strong>UGX {{ '{:,.0f}'.format(stats.purchase_value) }}</strong></div>
   <div class="metric-card compact"><span>Needs drying</span><strong>{{ stats.needs_drying }}</strong></div>
+  <div class="metric-card compact"><span>Production runs</span><strong>{{ stats.production_runs }}</strong></div>
 </div>
 <div class="data-grid">
   <section class="panel"><div class="panel-heading"><div><span class="eyebrow">Quick actions</span><h2>Commercial operations</h2></div></div>
@@ -16,6 +17,7 @@
       <a href="{{ url_for('commercial_purchases') }}"><strong>Purchases</strong><span>Buy parchment, DRUGAR FAQ or processed coffee.</span></a>
       <a href="{{ url_for('commercial_drying') }}"><strong>Drying</strong><span>Dry wet/high-moisture commercial coffee.</span></a>
       <a href="{{ url_for('commercial_analysis') }}"><strong>Analysis</strong><span>General outturn, defects and net outturn.</span></a>
+      <a href="{{ url_for('commercial_production') }}"><strong>Production</strong><span>Hulling, grading, gravity table, color sorting and full processing.</span></a>
       <a href="{{ url_for('commercial_lots') }}"><strong>Lots</strong><span>See current state and available quantity.</span></a>
     </div>
   </section>

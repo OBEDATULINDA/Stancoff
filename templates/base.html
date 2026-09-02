@@ -58,6 +58,7 @@
           <a href="/commercial/lots" class="{% if request.path.startswith('/commercial/lots') %}active{% endif %}">Lots</a>
           <a href="/commercial/drying" class="{% if request.path.startswith('/commercial/drying') %}active{% endif %}">Drying</a>
           <a href="/commercial/analysis" class="{% if request.path.startswith('/commercial/analysis') %}active{% endif %}">Analysis</a>
+          <a href="/commercial/production" class="{% if request.path.startswith('/commercial/production') %}active{% endif %}">Production</a>
           {% if current_role in ['Admin','Manager'] %}<a href="/commercial/settings" class="{% if request.path.startswith('/commercial/settings') %}active{% endif %}">Settings</a>{% endif %}
         </div>
       </details>

@@ -1,0 +1,35 @@
+STANCOFF / MOTHERS HARVEST UPDATE 7.1
+=====================================
+
+Mothers Harvest Commercial Phase 2
+
+1. AUTOMATIC SUPPLIER CODES
+- Users no longer type supplier codes.
+- New Mothers Harvest suppliers receive codes automatically in the form MHS-S0001, MHS-S0002, ...
+- Existing supplier records/codes are left unchanged.
+
+2. COMMERCIAL PRODUCTION
+- New process types: Hulling, Grading, Gravity Table, Color Sorting, Full Processing.
+- Input is weighed once per production run.
+- Parchment grading/full processing captures AA, AB, CPB and WUGAR final outputs.
+- DRUGAR is never graded; it uses bulk/clean output.
+- Defects and by-products are captured separately.
+- Processing loss is calculated automatically to reconcile the mass balance.
+- A lot still in Needs Drying/Drying cannot be processed.
+
+3. EXPECTED VS ACTUAL
+- Latest analysis is linked automatically where available.
+- Expected clean production is calculated from net outturn.
+- Expected AA/AB/CPB/WUGAR are calculated from the analysis distribution for parchment.
+- Actual outturn and variance are shown in the printable Production Report.
+
+4. TRACEABILITY / OUTPUT LOTS
+- Production consumes only the selected source quantity.
+- Remaining source coffee stays available if partially processed.
+- Output lots are created automatically and linked back to the source lot and production run.
+- Existing commercial lots get only nullable traceability columns; no records are deleted.
+
+5. DATABASE SAFETY
+- Existing Stancoff and Mothers Harvest PostgreSQL records are preserved.
+- No DROP TABLE, database reset, or data recreation is used.
+- New tables are created with db.create_all(); existing commercial_lot receives only nullable columns.
