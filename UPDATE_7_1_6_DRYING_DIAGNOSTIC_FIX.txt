@@ -1,0 +1,10 @@
+Update 7.1.6 - Stancoff Finish Drying diagnostic and submission fix
+
+- Explicit Finish Drying form POST action
+- Explicit submit button type
+- Logs every /drying POST immediately to stdout
+- Wraps Finish Drying POST in rollback-safe exception handling
+- Shows exact exception on the form instead of generic 500
+- Adds X-Stancoff-Release: 7.1.6 header and no-cache HTML headers
+- Adds visible Drying diagnostic release v7.1.6 marker
+- Does not delete or recreate database data
