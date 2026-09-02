@@ -1,0 +1,17 @@
+STANCOFF / MOTHERS HARVEST UPDATE 7.1.1
+========================================
+Adds safe Edit and Delete controls to the Mothers Harvest commercial module.
+
+Included:
+- Commercial Suppliers: Edit; Admin Delete if no purchases use supplier.
+- Commercial Purchases: Edit; Admin Delete if the source lot has no downstream activity.
+- Commercial Drying: Edit; Admin Delete with lot-weight restoration when safe.
+- Commercial Analysis: Edit and recalculate outturn; Admin Delete when not linked to production.
+- Commercial Production: Edit when output lots are untouched; Admin Delete restores source stock and removes unused output lots.
+- Automatic supplier codes remain unchanged/permanent during edits.
+
+DATA SAFETY
+-----------
+Existing Stancoff and Mothers Harvest data is not recreated or reset.
+Deletes are dependency-protected. If a trial record has downstream history, remove trial records in reverse order (production -> analysis/drying -> purchase -> supplier).
+Delete buttons are visible to Admin users only. Edit remains available to users with Commercial permission.
