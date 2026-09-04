@@ -1,0 +1,51 @@
+STANCOFF / BUSINESS ERP VERSION 8.0
+MULTI-COMPANY FOUNDATION
+
+WHAT THIS RELEASE DOES
+- Converts the application shell into a multi-company ERP foundation.
+- Preserves Stancoff Company Limited as the protected legacy company.
+- Adds a company selector after login.
+- Adds a separate dashboard for every non-Stancoff company.
+- Adds System Administrator company management.
+- Adds per-company user access and per-company roles.
+- Adds per-company module configuration.
+- Supports custom module placeholders for businesses with different operations.
+- Adds a Switch Company option in the sidebar.
+- Makes the header/sidebar show the selected company's name and business type.
+
+STANCOFF SAFETY
+- All existing Stancoff users are automatically assigned to Stancoff using
+  their existing roles.
+- The oldest existing Admin is automatically made the first System Administrator.
+- Existing Stancoff coffee/workforce/report modules remain enabled.
+- Existing operational Stancoff routes are BLOCKED while another company is
+  selected, preventing a new company from seeing Stancoff's operational data.
+- No existing suppliers, purchases, batches, processing, drying, inventory,
+  movements, workforce, payments, advances or other Stancoff operational records
+  are deleted or recreated.
+
+IMPORTANT ARCHITECTURE
+- Version 8.0 is the company/core layer.
+- New companies DO NOT reuse Stancoff operational tables.
+- Each new company's modules should now be designed separately based on that
+  company's real workflow.
+- As individual modules are built, their business tables should be company-scoped.
+- Legacy Stancoff operational tables remain dedicated to Stancoff until each
+  relevant module is migrated deliberately.
+
+DATABASE CHANGES
+- New additive tables:
+  company
+  company_user
+  company_module
+  system_admin
+- Additive column:
+  audit_log.company_id
+- Existing audit records are assigned to Stancoff because they predate the
+  multi-company system.
+- No PostgreSQL database reset is required or permitted.
+
+DEPLOYMENT
+- Replace matching repository files with this package.
+- Do NOT delete the PostgreSQL database.
+- Do NOT change DATABASE_URL.

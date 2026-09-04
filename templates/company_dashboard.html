@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block page_title %}{{company.name}} Dashboard{% endblock %}
+{% block page_subtitle %}{{company.business_type or 'Company operations'}}{% endblock %}
+{% block content %}
+<div class="hero-card company-hero">
+  <div>
+    <span class="eyebrow">{{company.code}}</span>
+    <h2>{{company.name}}</h2>
+    <p>This company has its own workspace. Its operational modules are separate from Stancoff and will be designed around how this business actually works.</p>
+  </div>
+  <a class="button secondary" href="/companies/select">Switch company</a>
+</div>
+
+<div class="section-card">
+  <div class="section-heading-row">
+    <div>
+      <h2>Company modules</h2>
+      <p class="help-text">These are the modules enabled for this company. A module marked “Design next” is configured but does not reuse Stancoff’s workflow.</p>
+    </div>
+    {% if current_is_super_admin %}
+      <a class="button secondary" href="/system/companies/{{company.id}}">Configure modules</a>
+    {% endif %}
+  </div>
+
+  {% if modules %}
+  <div class="module-card-grid">
+    {% for module in modules %}
+    <div class="module-card" id="module-{{module.module_key}}">
+      <div class="module-icon">{{module.label[0]}}</div>
+      <div>
+        <small>{{module.module_kind}}</small>
+        <h3>{{module.label}}</h3>
+        <p>Ready for this company’s workflow to be designed.</p>
+      </div>
+      <span class="module-state">Design next</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No operational modules enabled yet</h3>
+    <p>This is intentional. Configure only the modules this company actually needs, then build each workflow separately.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
