@@ -1,47 +1,39 @@
 {% extends "base.html" %}
-{% block page_title %}Mothers Harvest Dashboard{% endblock %}
-{% block page_subtitle %}Commercial coffee operations · Version 8.1{% endblock %}
+{% block page_title %}Mothers Harvest Suppliers{% endblock %}
+{% block page_subtitle %}Commercial Coffee Operations · Version 8.2.1{% endblock %}
 {% block content %}
-<div class="hero-card">
-  <div>
-    <span class="eyebrow">MHS · PHASE 8.1</span>
-    <h2>Commercial coffee workflow</h2>
-    <p>Purchases create traceable Mothers Harvest lots automatically. Moisture rules determine whether coffee needs drying or is ready for the next stage.</p>
+<div class="mhs-page">
+  <div class="mhs-hero">
+    <div><span class="eyebrow">MOTHERS HARVEST SUPPLIERS</span><h2>Commercial Coffee Operations</h2><p>One workspace for receiving coffee, lot traceability, moisture decisions, drying and quality analysis. Production will connect here in Phase 8.3.</p></div>
+    <a class="button" href="{{url_for('mhs_purchases')}}">+ Record purchase</a>
   </div>
-  <a class="button" href="{{url_for('mhs_purchases')}}">Record purchase</a>
-</div>
 
-<div class="stats-grid">
-  <div class="stat-card"><span>Active suppliers</span><strong>{{suppliers}}</strong></div>
-  <div class="stat-card"><span>Purchases</span><strong>{{purchases}}</strong></div>
-  <div class="stat-card"><span>Active lots</span><strong>{{lots}}</strong></div>
-  <div class="stat-card"><span>Needs drying</span><strong>{{needs_drying}}</strong></div>
-  <div class="stat-card"><span>Current lot weight</span><strong>{{"{:,.0f}".format(total_weight)}} kg</strong></div>
-</div>
-
-<div class="section-card">
-  <div class="section-heading-row">
-    <div><h2>Phase 8.2 workflow</h2><p class="help-text">Drying and analysis are now active. Production remains isolated for Phase 8.3.</p></div>
+  <div class="mhs-kpis">
+    <div class="mhs-kpi"><span>Active suppliers</span><strong>{{suppliers}}</strong></div>
+    <div class="mhs-kpi"><span>Purchases</span><strong>{{purchases}}</strong></div>
+    <div class="mhs-kpi"><span>Active lots</span><strong>{{lots}}</strong></div>
+    <div class="mhs-kpi"><span>Lots needing drying</span><strong>{{needs_drying}}</strong></div>
+    <div class="mhs-kpi"><span>Current coffee</span><strong>{{"{:,.0f}".format(total_weight)}} <small>kg</small></strong></div>
   </div>
-  <div class="module-card-grid">
-    <a class="module-card" href="{{url_for('mhs_suppliers')}}"><div><small>01</small><h3>Suppliers</h3><p>Automatic MHS supplier codes.</p></div></a>
-    <a class="module-card" href="{{url_for('mhs_purchases')}}"><div><small>02</small><h3>Purchases</h3><p>Receive parchment, DRUGAR or processed coffee.</p></div></a>
-    <a class="module-card" href="{{url_for('mhs_lots')}}"><div><small>03</small><h3>Lots</h3><p>Trace coffee by MHS lot and readiness.</p></div></a>
-    <a class="module-card" href="{{url_for('mhs_drying')}}"><div><small>04</small><h3>Drying</h3><p>Independent commercial drying and actual dry output.</p></div></a>
-    <a class="module-card" href="{{url_for('mhs_analysis')}}"><div><small>05</small><h3>Analysis</h3><p>Parchment outturn and DRUGAR physical analysis.</p></div></a>
-    <a class="module-card" href="{{url_for('mhs_settings')}}"><div><small>06</small><h3>Moisture rules</h3><p>Configure readiness thresholds.</p></div></a>
-  </div>
-</div>
 
-<div class="section-card">
-  <h2>Recent purchases</h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th>Purchase</th><th>Date</th><th>Lot</th><th>Supplier</th><th>Coffee</th><th>Weight</th><th>MC</th><th>Status</th></tr></thead>
-    <tbody>
-    {% for r in recent %}
-      <tr><td>{{r.purchase_no}}</td><td>{{r.purchase_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.supplier.name}}</td><td>{{r.coffee_type}}</td><td>{{"{:,.2f}".format(r.weight)}} kg</td><td>{{r.moisture if r.moisture is not none else '—'}}{% if r.moisture is not none %}%{% endif %}</td><td>{{r.lot.readiness}}</td></tr>
-    {% else %}<tr><td colspan="8">No Mothers Harvest purchases recorded yet.</td></tr>{% endfor %}
-    </tbody>
-  </table></div>
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Operational workflow</h2><p>The lot number follows the coffee from purchase through every operational stage.</p></div><span class="mhs-badge">Phase 8.2 active</span></div>
+    <div class="mhs-workflow">
+      <a class="mhs-step" href="{{url_for('mhs_suppliers')}}"><small>01</small><strong>Suppliers</strong><span>Register commercial coffee suppliers.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_purchases')}}"><small>02</small><strong>Purchase</strong><span>Receive coffee and create the MHS lot.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_lots')}}"><small>03</small><strong>Lot control</strong><span>Track weight, state, moisture and readiness.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_drying')}}"><small>04</small><strong>Drying</strong><span>Record actual dry weight and final moisture.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_analysis')}}"><small>05</small><strong>Analysis</strong><span>Calculate outturn and expected grades.</span></a>
+      <div class="mhs-step"><small>06 · NEXT</small><strong>Production</strong><span>Hulling, grading, gravity table and colour sorting.</span></div>
+    </div>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Recent purchases</h2><p>Latest commercial coffee received into Mothers Harvest.</p></div><a class="button secondary" href="{{url_for('mhs_purchases')}}">View all purchases</a></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Purchase</th><th>Date</th><th>Lot</th><th>Supplier</th><th>Coffee</th><th>Weight</th><th>Moisture</th><th>Readiness</th></tr></thead>
+      <tbody>{% for r in recent %}<tr><td><strong>{{r.purchase_no}}</strong></td><td>{{r.purchase_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.supplier.name}}</td><td>{{r.coffee_type}}</td><td>{{"{:,.2f}".format(r.weight)}} kg</td><td>{{r.moisture if r.moisture is not none else '—'}}{% if r.moisture is not none %}%{% endif %}</td><td><span class="mhs-badge">{{r.lot.readiness}}</span></td></tr>{% else %}<tr><td colspan="8" class="empty">No purchases recorded yet.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
 </div>
 {% endblock %}

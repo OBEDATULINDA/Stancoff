@@ -1,0 +1,15 @@
+VERSION 8.2.1 - MOTHERS HARVEST UI POLISH
+
+Corrects the rushed visual layout in 8.2.
+
+- Redesigned Mothers Harvest dashboard with KPI cards and a clear workflow.
+- Completely reorganized Analysis into four sections:
+  1. Sample details
+  2. Expected parchment grades
+  3. Physical defects
+  4. Appearance & remarks
+- Responsive 4-column desktop / 2-column tablet / 1-column mobile forms.
+- Added proper spacing, cards, labels, table scrolling and action styling.
+- Improved all other Mothers Harvest form layouts.
+- No database/model/route logic changed from 8.2.
+- Stancoff operational code remains untouched.

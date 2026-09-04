@@ -3,14 +3,14 @@
 {% block page_subtitle %}{{row.code}}{% endblock %}
 {% block content %}
 <div class="section-card narrow-card">
-<form method="post" class="form-grid">
+<form method="post" class="mhs-form-grid">
   <label>Supplier code<input value="{{row.code}}" disabled></label>
   <label>Supplier name<input name="name" value="{{row.name}}" required></label>
   <label>Phone<input name="phone" value="{{row.phone or ''}}"></label>
   <label>Location<input name="location" value="{{row.location or ''}}"></label>
   <label>Status<select name="status"><option {% if row.status=='Active' %}selected{% endif %}>Active</option><option {% if row.status=='Inactive' %}selected{% endif %}>Inactive</option></select></label>
-  <label class="full">Notes<textarea name="notes">{{row.notes or ''}}</textarea></label>
-  <div class="full"><button class="button" type="submit">Save changes</button> <a class="button secondary" href="{{url_for('mhs_suppliers')}}">Cancel</a></div>
+  <label class="mhs-span-all">Notes<textarea name="notes">{{row.notes or ''}}</textarea></label>
+  <div class="mhs-span-all"><button class="button" type="submit">Save changes</button> <a class="button secondary" href="{{url_for('mhs_suppliers')}}">Cancel</a></div>
 </form>
 </div>
 {% endblock %}

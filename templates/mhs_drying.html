@@ -4,14 +4,14 @@
 {% block content %}
 <div class="section-card">
 <h2>Start drying</h2>
-<form method="post" class="form-grid">
+<form method="post" class="mhs-form-grid">
 <label>Lot<select name="lot_id" required><option value="">Select lot</option>{% for l in lots %}<option value="{{l.id}}">{{l.lot_no}} · {{l.coffee_state}} · {{'{:,.2f}'.format(l.current_weight)}} kg · MC {{l.current_moisture if l.current_moisture is not none else '—'}}%</option>{% endfor %}</select></label>
 <label>Start date<input type="date" name="start_date" value="{{today}}" required></label>
 <label>Input weight (kg)<input type="number" step="0.01" min="0.01" name="input_weight" required></label>
 <label>Start moisture %<input type="number" step="0.01" min="0" max="100" name="start_moisture"></label>
 <label>Drying location<input name="location"></label><label>Supervisor<input name="supervisor"></label>
-<label class="full">Notes<textarea name="notes"></textarea></label>
-<div class="full"><button class="button" type="submit">Start drying</button></div>
+<label class="mhs-span-all">Notes<textarea name="notes"></textarea></label>
+<div class="mhs-span-all"><button class="button" type="submit">Start drying</button></div>
 </form></div>
 <div class="section-card"><h2>Drying records</h2><div class="table-wrap"><table>
 <thead><tr><th>Drying No.</th><th>Actions</th><th>Lot</th><th>Start</th><th>Input kg</th><th>Start MC</th><th>Dry kg</th><th>Final MC</th><th>Outturn</th><th>Status</th></tr></thead>

@@ -1,15 +1,62 @@
 {% extends "base.html" %}
-{% block page_title %}Mothers Harvest Analysis{% endblock %}{% block page_subtitle %}Parchment outturn & DRUGAR physical analysis · Version 8.2{% endblock %}
+{% block page_title %}Mothers Harvest Analysis{% endblock %}
+{% block page_subtitle %}Quality & outturn analysis · Version 8.2.1{% endblock %}
 {% block content %}
-<div class="section-card"><h2>New analysis</h2><p class="help-text">For parchment, enter original sample and hulled sample. General and net outturn are calculated automatically. For DRUGAR, hulled weight and grade percentages are not required.</p>
-<form method="post" class="form-grid">
-<label>Lot<select name="lot_id" required><option value="">Select ready lot</option>{% for l in lots %}<option value="{{l.id}}">{{l.lot_no}} · {{l.coffee_state}} · {{l.readiness}}</option>{% endfor %}</select></label>
-<label>Date<input type="date" name="analysis_date" value="{{today}}" required></label><label>Sample size (g)<input type="number" step="0.01" min="0.01" name="sample_size" required></label><label>Hulled sample weight (g)<input type="number" step="0.01" name="hulled_sample_weight"></label><label>Moisture %<input type="number" step="0.01" name="moisture"></label><label>Total defects weight (g)<input type="number" step="0.01" min="0" name="defects_weight"></label>
-<label>AA %<input type="number" step="0.01" min="0" name="aa_percent"></label><label>AB %<input type="number" step="0.01" min="0" name="ab_percent"></label><label>CPB %<input type="number" step="0.01" min="0" name="cpb_percent"></label><label>WUGAR %<input type="number" step="0.01" min="0" name="wugar_percent"></label>
-<div class="full"><h3>Physical defects (grams)</h3></div>
-{% for key,label in [('blacks','Blacks'),('partly_blacks','Partly Blacks'),('insect_damaged','Insect Damaged'),('ut200','UT200'),('diseased','Diseased / Tourney Oils'),('chalky_whites','Chalky Whites'),('faded','Faded'),('withered','Withered / Fools'),('broken_pulp_nipped','Badly Broken / Pulp Nipped'),('pods','Pods'),('foreign_matter','Foreign Matter')] %}<label>{{label}}<input type="number" step="0.01" min="0" name="{{key}}"></label>{% endfor %}
-<label>Color<input name="color"></label><label>Smell<input name="smell"></label><label>Analysed by<input name="analysed_by"></label><label class="full">Remarks<textarea name="remarks"></textarea></label><div class="full"><button class="button">Save analysis</button></div>
-</form></div>
-<div class="section-card"><h2>Analysis records</h2><div class="table-wrap"><table><thead><tr><th>Analysis</th><th>Actions</th><th>Date</th><th>Lot</th><th>Coffee</th><th>General OT</th><th>Net OT</th><th>Defects</th></tr></thead><tbody>
-{% for r in rows %}<tr><td><strong>{{r.analysis_no}}</strong></td><td class="record-actions"><a class="small-button" href="{{url_for('mhs_analysis_edit',id=r.id)}}">Edit</a><a class="small-button" href="{{url_for('mhs_analysis_print',id=r.id)}}" target="_blank">Print</a>{% if current_role=='Admin' or current_is_super_admin %}<form method="post" action="{{url_for('mhs_analysis_delete',id=r.id)}}" style="display:inline" onsubmit="return confirm('Delete this analysis?')"><button class="small-button">Delete</button></form>{% endif %}</td><td>{{r.analysis_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.lot.coffee_type}}</td><td>{{'{:.2f}%'.format(r.general_outturn) if r.general_outturn is not none else '—'}}</td><td>{{'{:.2f}%'.format(r.net_outturn)}}</td><td>{{'{:,.2f}'.format(r.defects_weight)}} g</td></tr>{% else %}<tr><td colspan="8">No analyses yet.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="mhs-page">
+  <div class="mhs-hero">
+    <div><span class="eyebrow">QUALITY CONTROL</span><h2>Grading & Physical Analysis</h2><p>Record the sample, calculate parchment outturn, capture physical defects and keep every result linked to its MHS lot.</p></div>
+    <span class="mhs-badge">Mothers Harvest · Commercial Coffee</span>
+  </div>
+
+  <div class="mhs-analysis-layout">
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h2>New analysis</h2><p>Start with the lot and sample details, then complete the relevant quality section.</p></div></div>
+      <form method="post" class="mhs-form-grid">
+        <div class="mhs-form-section"><h3>1. Sample details</h3><p>Identify the coffee being analysed.</p></div>
+        <label class="mhs-span-2">Lot<select name="lot_id" required><option value="">Select ready lot</option>{% for l in lots %}<option value="{{l.id}}">{{l.lot_no}} · {{l.coffee_state}} · {{l.readiness}}</option>{% endfor %}</select></label>
+        <label>Analysis date<input type="date" name="analysis_date" value="{{today}}" required></label>
+        <label>Moisture %<input type="number" step="0.01" name="moisture" placeholder="e.g. 12.8"></label>
+        <label>Original sample (g)<input type="number" step="0.01" min="0.01" name="sample_size" placeholder="e.g. 500" required></label>
+        <label>Hulled sample (g)<input type="number" step="0.01" name="hulled_sample_weight" placeholder="Parchment only"></label>
+        <label>Total defects (g)<input type="number" step="0.01" min="0" name="defects_weight" placeholder="Auto from defects if blank"></label>
+        <label>Analysed by<input name="analysed_by" placeholder="Name"></label>
+
+        <div class="mhs-form-section"><h3>2. Expected parchment grades</h3><p>Use AA, AB, CPB and WUGAR for parchment. Leave these blank for DRUGAR.</p></div>
+        <label>AA %<input type="number" step="0.01" min="0" max="100" name="aa_percent"></label>
+        <label>AB %<input type="number" step="0.01" min="0" max="100" name="ab_percent"></label>
+        <label>CPB %<input type="number" step="0.01" min="0" max="100" name="cpb_percent"></label>
+        <label>WUGAR %<input type="number" step="0.01" min="0" max="100" name="wugar_percent"></label>
+
+        <div class="mhs-form-section"><h3>3. Physical defects</h3><p>Enter defect weights in grams. If Total defects above is blank, these entries are summed automatically.</p></div>
+        <div class="mhs-defect-grid">
+          {% for key,label in [('blacks','Blacks'),('partly_blacks','Partly Blacks'),('insect_damaged','Insect Damaged'),('ut200','UT200'),('diseased','Diseased / Tourney Oils'),('chalky_whites','Chalky Whites'),('faded','Faded'),('withered','Withered / Fools'),('broken_pulp_nipped','Badly Broken / Pulp Nipped'),('pods','Pods'),('foreign_matter','Foreign Matter')] %}
+          <label>{{label}}<input type="number" step="0.01" min="0" name="{{key}}" placeholder="0.00"></label>
+          {% endfor %}
+        </div>
+
+        <div class="mhs-form-section"><h3>4. Appearance & remarks</h3></div>
+        <label>Color<input name="color" placeholder="Appearance / colour"></label>
+        <label>Smell<input name="smell" placeholder="Clean / unusual smell"></label>
+        <label class="mhs-span-2">Remarks<textarea name="remarks" rows="3" placeholder="Quality observations"></textarea></label>
+        <div class="mhs-actions"><button class="button" type="submit">Save analysis</button></div>
+      </form>
+    </div>
+
+    <div>
+      <div class="mhs-analysis-note"><strong>How the calculation works</strong>For parchment, General Outturn = hulled sample ÷ original sample. Net Outturn = clean coffee after defects ÷ original sample. DRUGAR does not require hulled sample or parchment grade percentages.</div>
+      <div class="mhs-card" style="margin-top:18px"><div class="mhs-card-header"><div><h3>Workflow</h3><p>Only lots ready for analysis appear in the selector.</p></div></div>
+        <div class="mhs-step"><small>READY</small><strong>Lot selected</strong><span>Traceability remains linked to the purchase and any drying record.</span></div>
+        <div class="mhs-step" style="margin-top:10px"><small>ANALYSE</small><strong>Quality recorded</strong><span>Outturn and expected production are calculated from the sample.</span></div>
+        <div class="mhs-step" style="margin-top:10px"><small>NEXT</small><strong>Production</strong><span>Phase 8.3 will compare these expectations against actual production.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Analysis records</h2><p>Edit, print or delete trial entries directly from the Actions column.</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Analysis</th><th>Actions</th><th>Date</th><th>Lot</th><th>Coffee</th><th>General OT</th><th>Net OT</th><th>Defects</th></tr></thead><tbody>
+    {% for r in rows %}<tr><td><strong>{{r.analysis_no}}</strong></td><td class="record-actions"><a class="small-button" href="{{url_for('mhs_analysis_edit',id=r.id)}}">Edit</a><a class="small-button" href="{{url_for('mhs_analysis_print',id=r.id)}}" target="_blank">Print</a>{% if current_role=='Admin' or current_is_super_admin %}<form method="post" action="{{url_for('mhs_analysis_delete',id=r.id)}}" onsubmit="return confirm('Delete this analysis?')"><button class="small-button" type="submit">Delete</button></form>{% endif %}</td><td>{{r.analysis_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.lot.coffee_type}}</td><td>{{'{:.2f}%'.format(r.general_outturn) if r.general_outturn is not none else '—'}}</td><td>{{'{:.2f}%'.format(r.net_outturn)}}</td><td>{{'{:,.2f}'.format(r.defects_weight)}} g</td></tr>{% else %}<tr><td colspan="8" class="empty">No analyses yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</div>
 {% endblock %}

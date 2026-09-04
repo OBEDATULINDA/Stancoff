@@ -221,3 +221,39 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
   .company-hero{align-items:flex-start;flex-direction:column}
   .topbar-company>span{display:none}
 }
+
+
+/* Version 8.2.1 - Mothers Harvest polished workspace */
+.mhs-page{max-width:1450px;margin:0 auto}
+.mhs-hero{background:linear-gradient(135deg,#173f35,#245f50);color:#fff;border-radius:18px;padding:24px 26px;margin-bottom:20px;display:flex;justify-content:space-between;gap:24px;align-items:center;box-shadow:var(--shadow)}
+.mhs-hero h2{margin:4px 0 7px;font-size:24px}.mhs-hero p{margin:0;max-width:760px;color:#dce9e4;line-height:1.5}
+.mhs-hero .eyebrow{color:#e8bd79}
+.mhs-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:20px}
+.mhs-kpi{background:#fff;border:1px solid var(--line);border-radius:14px;padding:17px 18px;box-shadow:var(--shadow)}
+.mhs-kpi span{display:block;color:var(--muted);font-size:12px;margin-bottom:8px}.mhs-kpi strong{font-size:24px}
+.mhs-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
+.mhs-card-header{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px}
+.mhs-card-header h2,.mhs-card-header h3{margin:0 0 5px}.mhs-card-header p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}
+.mhs-form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px 16px}
+.mhs-form-grid label{display:grid;gap:6px;font-size:12px;font-weight:700;color:#35433e}
+.mhs-form-grid input,.mhs-form-grid select,.mhs-form-grid textarea{width:100%;min-width:0}
+.mhs-span-2{grid-column:span 2}.mhs-span-all{grid-column:1/-1}
+.mhs-form-section{grid-column:1/-1;margin-top:6px;padding-top:16px;border-top:1px solid var(--line)}
+.mhs-form-section h3{margin:0 0 4px;font-size:15px}.mhs-form-section p{margin:0;color:var(--muted);font-size:12px}
+.mhs-defect-grid{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px 16px}
+.mhs-defect-grid label{display:grid;gap:6px;font-size:12px;font-weight:650}
+.mhs-actions{grid-column:1/-1;display:flex;gap:9px;align-items:center;padding-top:4px}
+.button,.small-button{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:8px;background:var(--green-700);color:#fff;font-weight:650;cursor:pointer}
+.button{padding:10px 15px}.button.secondary{background:#eef3f1;color:var(--green-900);border:1px solid #d5e0dc}.small-button{padding:7px 10px;font-size:12px}
+.record-actions{white-space:nowrap}.record-actions form{display:inline}.record-actions .small-button{margin:2px}
+.table-wrap{overflow:auto;width:100%}.table-wrap table{min-width:850px}
+.mhs-workflow{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:16px 0 4px}
+.mhs-step{background:#f7faf8;border:1px solid var(--line);border-radius:12px;padding:14px;min-height:105px}
+.mhs-step small{color:var(--amber);font-weight:800}.mhs-step strong{display:block;margin:7px 0 4px}.mhs-step span{font-size:12px;color:var(--muted);line-height:1.4}
+.mhs-analysis-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:18px;align-items:start}
+.mhs-analysis-note{background:#eef5f2;border:1px solid #d5e5df;border-radius:12px;padding:14px;font-size:13px;line-height:1.5}
+.mhs-analysis-note strong{display:block;margin-bottom:5px}
+.mhs-badge{display:inline-flex;padding:5px 9px;border-radius:999px;background:#eef5f2;color:#245f50;font-size:11px;font-weight:800}
+@media(max-width:1180px){.mhs-kpis{grid-template-columns:repeat(3,1fr)}.mhs-form-grid,.mhs-defect-grid{grid-template-columns:repeat(2,1fr)}.mhs-workflow{grid-template-columns:repeat(3,1fr)}.mhs-analysis-layout{grid-template-columns:1fr}}
+@media(max-width:700px){.mhs-hero{align-items:flex-start;flex-direction:column}.mhs-kpis{grid-template-columns:1fr 1fr}.mhs-form-grid,.mhs-defect-grid{grid-template-columns:1fr}.mhs-span-2{grid-column:auto}.mhs-workflow{grid-template-columns:1fr 1fr}.mhs-card{padding:15px}}
+@media(max-width:480px){.mhs-kpis,.mhs-workflow{grid-template-columns:1fr}}

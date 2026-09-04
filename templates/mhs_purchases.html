@@ -4,7 +4,7 @@
 {% block content %}
 <div class="section-card">
   <div class="section-heading-row"><div><h2>Record purchase</h2><p class="help-text">Each purchase creates a new traceable MHS lot automatically.</p></div></div>
-  <form method="post" class="form-grid">
+  <form method="post" class="mhs-form-grid">
     <label>Date<input type="date" name="purchase_date" value="{{today}}" required></label>
     <label>Supplier<select name="supplier_id" required><option value="">Select supplier</option>{% for s in suppliers %}<option value="{{s.id}}">{{s.code}} · {{s.name}}</option>{% endfor %}</select></label>
     <label>Coffee type<select name="coffee_type" required><option value="">Select coffee</option>{% for t in purchase_types %}<option>{{t}}</option>{% endfor %}</select></label>
@@ -12,8 +12,8 @@
     <label>Moisture %<input type="number" step="0.01" min="0" max="100" name="moisture"></label>
     <label>Price / kg<input type="number" step="0.01" min="0" name="price_per_kg" required></label>
     <label>Source / location<input name="source_location"></label>
-    <label class="full">Notes<textarea name="notes" rows="2"></textarea></label>
-    <div class="full"><button class="button" type="submit">Save purchase &amp; create lot</button></div>
+    <label class="mhs-span-all">Notes<textarea name="notes" rows="2"></textarea></label>
+    <div class="mhs-span-all"><button class="button" type="submit">Save purchase &amp; create lot</button></div>
   </form>
 </div>
 <div class="section-card">
