@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block page_title %}Mothers Harvest Suppliers{% endblock %}
+{% block page_subtitle %}Automatic supplier codes · Phase 8.1{% endblock %}
+{% block content %}
+<div class="grid-2">
+  <div class="section-card">
+    <h2>New supplier</h2>
+    <p class="help-text">Next code: <strong>{{next_code}}</strong>. The system assigns it automatically.</p>
+    <form method="post" class="form-grid">
+      <label>Supplier name<input name="name" required></label>
+      <label>Phone<input name="phone"></label>
+      <label>Location<input name="location"></label>
+      <label class="full">Notes<textarea name="notes" rows="3"></textarea></label>
+      <div class="full"><button class="button" type="submit">Add supplier</button></div>
+    </form>
+  </div>
+  <div class="section-card">
+    <h2>Supplier control</h2>
+    <p>Supplier identity stays with the purchase and lot. Existing codes are never renumbered.</p>
+  </div>
+</div>
+<div class="section-card">
+  <h2>Suppliers</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Code</th><th>Actions</th><th>Name</th><th>Phone</th><th>Location</th><th>Status</th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr><td><strong>{{r.code}}</strong></td><td class="record-actions"><a class="small-button" href="{{url_for('mhs_supplier_edit',id=r.id)}}">Edit</a>{% if current_role=='Admin' or current_is_super_admin %}<form method="post" action="{{url_for('mhs_supplier_delete',id=r.id)}}" style="display:inline" onsubmit="return confirm('Delete this unused supplier?')"><button class="small-button" type="submit">Delete</button></form>{% endif %}</td><td>{{r.name}}</td><td>{{r.phone or '—'}}</td><td>{{r.location or '—'}}</td><td>{{r.status}}</td></tr>
+    {% else %}<tr><td colspan="6">No suppliers yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

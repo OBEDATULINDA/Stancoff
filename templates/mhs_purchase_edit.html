@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block page_title %}Edit MHS Purchase{% endblock %}
+{% block page_subtitle %}{{row.purchase_no}} · {{row.lot.lot_no}}{% endblock %}
+{% block content %}
+<div class="section-card">
+<p class="help-text">Phase 8.1 allows editing while this source lot has no downstream drying, analysis or production record.</p>
+<form method="post" class="form-grid">
+  <label>Date<input type="date" name="purchase_date" value="{{row.purchase_date.isoformat()}}" required></label>
+  <label>Supplier<select name="supplier_id" required>{% for s in suppliers %}<option value="{{s.id}}" {% if s.id==row.supplier_id %}selected{% endif %}>{{s.code}} · {{s.name}}</option>{% endfor %}</select></label>
+  <label>Coffee type<select name="coffee_type" required>{% for t in purchase_types %}<option {% if t==row.coffee_type %}selected{% endif %}>{{t}}</option>{% endfor %}</select></label>
+  <label>Weight (kg)<input type="number" step="0.01" min="0.01" name="weight" value="{{row.weight}}" required></label>
+  <label>Moisture %<input type="number" step="0.01" min="0" max="100" name="moisture" value="{{row.moisture if row.moisture is not none else ''}}"></label>
+  <label>Price / kg<input type="number" step="0.01" min="0" name="price_per_kg" value="{{row.price_per_kg}}" required></label>
+  <label>Source / location<input name="source_location" value="{{row.source_location or ''}}"></label>
+  <label class="full">Notes<textarea name="notes">{{row.notes or ''}}</textarea></label>
+  <div class="full"><button class="button" type="submit">Save changes</button> <a class="button secondary" href="{{url_for('mhs_purchases')}}">Cancel</a></div>
+</form>
+</div>
+{% endblock %}

@@ -110,6 +110,98 @@ COMPANY_ROLES = [
     "Viewer",
 ]
 
+
+# ---------------------------------------------------------------------------
+# Mothers Harvest Suppliers - Version 8.1 isolated operational foundation
+# IMPORTANT: These tables are intentionally separate from Stancoff's legacy
+# Supplier/Purchase/Batch/Drying/Inventory models.
+# ---------------------------------------------------------------------------
+
+class MHSSupplier(db.Model):
+    __tablename__ = "mhs_supplier"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    code = db.Column(db.String(30), nullable=False)
+    name = db.Column(db.String(160), nullable=False)
+    phone = db.Column(db.String(60))
+    location = db.Column(db.String(160))
+    status = db.Column(db.String(20), nullable=False, default="Active")
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company = db.relationship("Company")
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "code", name="uq_mhs_supplier_company_code"),
+    )
+
+
+class MHSLot(db.Model):
+    __tablename__ = "mhs_lot"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    lot_no = db.Column(db.String(30), nullable=False)
+    coffee_type = db.Column(db.String(50), nullable=False)
+    coffee_state = db.Column(db.String(50), nullable=False)
+    current_weight = db.Column(db.Float, nullable=False, default=0)
+    current_moisture = db.Column(db.Float)
+    source_location = db.Column(db.String(160))
+    readiness = db.Column(db.String(40), nullable=False, default="Ready")
+    status = db.Column(db.String(30), nullable=False, default="Active")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company = db.relationship("Company")
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "lot_no", name="uq_mhs_lot_company_no"),
+    )
+
+
+class MHSPurchase(db.Model):
+    __tablename__ = "mhs_purchase"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    purchase_no = db.Column(db.String(30), nullable=False)
+    purchase_date = db.Column(db.Date, nullable=False)
+    supplier_id = db.Column(db.Integer, db.ForeignKey("mhs_supplier.id"), nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey("mhs_lot.id"), nullable=False)
+    coffee_type = db.Column(db.String(50), nullable=False)
+    weight = db.Column(db.Float, nullable=False)
+    moisture = db.Column(db.Float)
+    price_per_kg = db.Column(db.Float, nullable=False, default=0)
+    total_amount = db.Column(db.Float, nullable=False, default=0)
+    source_location = db.Column(db.String(160))
+    needs_drying = db.Column(db.Boolean, nullable=False, default=False)
+    status = db.Column(db.String(30), nullable=False, default="Active")
+    notes = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    supplier = db.relationship("MHSSupplier")
+    lot = db.relationship("MHSLot")
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "purchase_no", name="uq_mhs_purchase_company_no"),
+    )
+
+
+class MHSSetting(db.Model):
+    __tablename__ = "mhs_setting"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    setting_key = db.Column(db.String(80), nullable=False)
+    setting_value = db.Column(db.String(120), nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "setting_key", name="uq_mhs_setting_company_key"),
+    )
+
+
+MHS_PURCHASE_TYPES = [
+    "Parchment Cherries",
+    "Wet Parchment",
+    "Dry Parchment",
+    "DRUGAR FAQ",
+    "Processed AA",
+    "Processed AB",
+    "Processed CPB",
+    "Processed WUGAR",
+]
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     full_name = db.Column(db.String(120), nullable=False)
@@ -859,6 +951,7 @@ def ensure_db():
         db.session.commit()
 
     stancoff = ensure_company_foundation()
+    ensure_mhs_foundation()
 
     # Legacy Stancoff operational routes remain isolated from every newly
     # created company until each company's own modules are designed.
@@ -976,6 +1069,9 @@ def company_dashboard():
         return redirect(url_for("company_select"))
     if company.is_legacy_stancoff:
         return redirect(url_for("dashboard"))
+    mhs_company = _mhs_company()
+    if mhs_company and company.id == mhs_company.id:
+        return redirect(url_for("mhs_dashboard"))
 
     modules = enabled_company_modules(company.id)
     return render_template(
@@ -4587,6 +4683,453 @@ def processing_reports_pdf():
     filename = f"Stancoff_Processed_Coffee_Report_{datetime.utcnow().date().isoformat()}.pdf"
     return send_file(output, as_attachment=True, download_name=filename, mimetype="application/pdf")
 
+
+
+# ---------------------------------------------------------------------------
+# Mothers Harvest Suppliers - Version 8.1 routes
+# These routes live only under /mhs and never call Stancoff operational models.
+# ---------------------------------------------------------------------------
+
+def _mhs_company():
+    company = Company.query.filter(func.lower(Company.code) == "mhs").first()
+    if not company:
+        company = Company.query.filter(
+            func.lower(Company.name) == "mothers harvest suppliers"
+        ).first()
+    return company
+
+
+def ensure_mhs_foundation():
+    """Safely create/complete the Mothers Harvest company workspace."""
+    company = _mhs_company()
+    if not company:
+        company = Company(
+            code="MHS",
+            name="Mothers Harvest Suppliers",
+            slug="mothers-harvest-suppliers",
+            business_type="Commercial coffee trading and processing",
+            status="Active",
+            is_legacy_stancoff=False,
+        )
+        db.session.add(company)
+        db.session.flush()
+
+    # Make the coffee module available without changing any Stancoff module.
+    module = CompanyModule.query.filter_by(
+        company_id=company.id, module_key="coffee_operations"
+    ).first()
+    if not module:
+        db.session.add(CompanyModule(
+            company_id=company.id,
+            module_key="coffee_operations",
+            label="Coffee Operations",
+            enabled=True,
+            module_kind="Configured",
+        ))
+
+    defaults = {
+        "dry_parchment_ready_moisture": "13.5",
+        "drugar_ready_moisture": "13.5",
+    }
+    for key, value in defaults.items():
+        row = MHSSetting.query.filter_by(company_id=company.id, setting_key=key).first()
+        if not row:
+            db.session.add(MHSSetting(
+                company_id=company.id,
+                setting_key=key,
+                setting_value=value,
+            ))
+
+    # Existing system administrators always receive access to the MHS company.
+    for system_admin in SystemAdmin.query.all():
+        membership = CompanyUser.query.filter_by(
+            company_id=company.id, user_id=system_admin.user_id
+        ).first()
+        if not membership:
+            db.session.add(CompanyUser(
+                company_id=company.id,
+                user_id=system_admin.user_id,
+                role="Admin",
+                status="Active",
+            ))
+    db.session.commit()
+    return company
+
+
+def _require_mhs():
+    company = current_company()
+    if not company or company.is_legacy_stancoff or company.id != (_mhs_company().id if _mhs_company() else None):
+        abort(403)
+    return company
+
+
+def _mhs_can_edit():
+    return session.get("role") in {"Admin", "Manager", "Receiving Clerk"}
+
+
+def _mhs_admin():
+    if session.get("role") != "Admin" and not user_is_super_admin():
+        abort(403)
+
+
+def _mhs_setting_float(company_id, key, default):
+    row = MHSSetting.query.filter_by(company_id=company_id, setting_key=key).first()
+    try:
+        return float(row.setting_value) if row else float(default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _mhs_next_code(model, company_id, field_name, prefix, width=4):
+    rows = model.query.filter_by(company_id=company_id).all()
+    highest = 0
+    pattern = re.compile(r"^" + re.escape(prefix) + r"(\d+)$")
+    for row in rows:
+        value = getattr(row, field_name, "") or ""
+        match = pattern.match(value)
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f"{prefix}{highest + 1:0{width}d}"
+
+
+def _mhs_purchase_readiness(company_id, coffee_type, moisture):
+    dry_parchment_limit = _mhs_setting_float(
+        company_id, "dry_parchment_ready_moisture", 13.5
+    )
+    drugar_limit = _mhs_setting_float(
+        company_id, "drugar_ready_moisture", 13.5
+    )
+
+    if coffee_type in {"Parchment Cherries", "Wet Parchment"}:
+        return True, "Needs Drying"
+
+    if coffee_type == "Dry Parchment":
+        if moisture is not None and moisture >= dry_parchment_limit:
+            return True, "Needs Drying"
+        return False, "Ready for Analysis"
+
+    if coffee_type == "DRUGAR FAQ":
+        if moisture is not None and moisture >= drugar_limit:
+            return True, "Needs Drying"
+        return False, "Ready for Analysis"
+
+    return False, "Processed / Ready"
+
+
+@app.route("/mhs")
+@login_required
+def mhs_dashboard():
+    company = _require_mhs()
+    suppliers = MHSSupplier.query.filter_by(company_id=company.id, status="Active").count()
+    purchases = MHSPurchase.query.filter_by(company_id=company.id, status="Active").count()
+    lots = MHSLot.query.filter_by(company_id=company.id, status="Active").count()
+    needs_drying = MHSLot.query.filter_by(
+        company_id=company.id, status="Active", readiness="Needs Drying"
+    ).count()
+    total_weight = db.session.query(func.coalesce(func.sum(MHSLot.current_weight), 0)).filter(
+        MHSLot.company_id == company.id,
+        MHSLot.status == "Active",
+    ).scalar() or 0
+    recent = MHSPurchase.query.filter_by(
+        company_id=company.id, status="Active"
+    ).order_by(MHSPurchase.purchase_date.desc(), MHSPurchase.id.desc()).limit(8).all()
+    return render_template(
+        "mhs_dashboard.html",
+        company=company,
+        suppliers=suppliers,
+        purchases=purchases,
+        lots=lots,
+        needs_drying=needs_drying,
+        total_weight=total_weight,
+        recent=recent,
+    )
+
+
+@app.route("/mhs/suppliers", methods=["GET", "POST"])
+@login_required
+def mhs_suppliers():
+    company = _require_mhs()
+    if request.method == "POST":
+        if not _mhs_can_edit():
+            abort(403)
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("Supplier name is required.")
+            return redirect(url_for("mhs_suppliers"))
+        code = _mhs_next_code(MHSSupplier, company.id, "code", "MHS-S", 4)
+        supplier = MHSSupplier(
+            company_id=company.id,
+            code=code,
+            name=name,
+            phone=(request.form.get("phone") or "").strip() or None,
+            location=(request.form.get("location") or "").strip() or None,
+            notes=(request.form.get("notes") or "").strip() or None,
+            status="Active",
+        )
+        db.session.add(supplier)
+        db.session.commit()
+        log_action("CREATE", "MHS Suppliers", supplier.id, f"{supplier.code} - {supplier.name}")
+        flash(f"Supplier {supplier.code} added.")
+        return redirect(url_for("mhs_suppliers"))
+
+    rows = MHSSupplier.query.filter_by(company_id=company.id).order_by(MHSSupplier.id.desc()).all()
+    next_code = _mhs_next_code(MHSSupplier, company.id, "code", "MHS-S", 4)
+    return render_template("mhs_suppliers.html", rows=rows, next_code=next_code)
+
+
+@app.route("/mhs/suppliers/<int:id>/edit", methods=["GET", "POST"])
+@login_required
+def mhs_supplier_edit(id):
+    company = _require_mhs()
+    if not _mhs_can_edit():
+        abort(403)
+    row = MHSSupplier.query.filter_by(id=id, company_id=company.id).first_or_404()
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("Supplier name is required.")
+            return redirect(url_for("mhs_supplier_edit", id=id))
+        row.name = name
+        row.phone = (request.form.get("phone") or "").strip() or None
+        row.location = (request.form.get("location") or "").strip() or None
+        row.notes = (request.form.get("notes") or "").strip() or None
+        row.status = request.form.get("status") if request.form.get("status") in {"Active", "Inactive"} else "Active"
+        db.session.commit()
+        log_action("EDIT", "MHS Suppliers", row.id, row.code)
+        flash("Supplier updated.")
+        return redirect(url_for("mhs_suppliers"))
+    return render_template("mhs_supplier_edit.html", row=row)
+
+
+@app.route("/mhs/suppliers/<int:id>/delete", methods=["POST"])
+@login_required
+def mhs_supplier_delete(id):
+    company = _require_mhs()
+    _mhs_admin()
+    row = MHSSupplier.query.filter_by(id=id, company_id=company.id).first_or_404()
+    if MHSPurchase.query.filter_by(company_id=company.id, supplier_id=row.id, status="Active").first():
+        flash("This supplier has purchases and cannot be deleted.")
+        return redirect(url_for("mhs_suppliers"))
+    db.session.delete(row)
+    db.session.commit()
+    log_action("DELETE", "MHS Suppliers", id, "Unused supplier deleted")
+    flash("Supplier deleted.")
+    return redirect(url_for("mhs_suppliers"))
+
+
+@app.route("/mhs/purchases", methods=["GET", "POST"])
+@login_required
+def mhs_purchases():
+    company = _require_mhs()
+    if request.method == "POST":
+        if not _mhs_can_edit():
+            abort(403)
+        try:
+            supplier_id = int(request.form.get("supplier_id") or 0)
+            weight = float(request.form.get("weight") or 0)
+            price = float(request.form.get("price_per_kg") or 0)
+            moisture_raw = (request.form.get("moisture") or "").strip()
+            moisture = float(moisture_raw) if moisture_raw else None
+            purchase_date = datetime.strptime(request.form.get("purchase_date"), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            flash("Check the date, weight, moisture and price values.")
+            return redirect(url_for("mhs_purchases"))
+
+        supplier = MHSSupplier.query.filter_by(
+            id=supplier_id, company_id=company.id, status="Active"
+        ).first()
+        coffee_type = (request.form.get("coffee_type") or "").strip()
+        if not supplier:
+            flash("Select an active Mothers Harvest supplier.")
+            return redirect(url_for("mhs_purchases"))
+        if coffee_type not in MHS_PURCHASE_TYPES:
+            flash("Select a valid coffee type.")
+            return redirect(url_for("mhs_purchases"))
+        if weight <= 0 or price < 0:
+            flash("Weight must be above zero and price cannot be negative.")
+            return redirect(url_for("mhs_purchases"))
+        if moisture is not None and (moisture < 0 or moisture > 100):
+            flash("Moisture must be between 0 and 100%.")
+            return redirect(url_for("mhs_purchases"))
+
+        purchase_no = _mhs_next_code(MHSPurchase, company.id, "purchase_no", "MHS-PUR", 4)
+        lot_no = _mhs_next_code(MHSLot, company.id, "lot_no", "MHS", 4)
+        needs_drying, readiness = _mhs_purchase_readiness(company.id, coffee_type, moisture)
+        source_location = (request.form.get("source_location") or "").strip() or None
+
+        lot = MHSLot(
+            company_id=company.id,
+            lot_no=lot_no,
+            coffee_type=coffee_type,
+            coffee_state=coffee_type,
+            current_weight=weight,
+            current_moisture=moisture,
+            source_location=source_location,
+            readiness=readiness,
+            status="Active",
+        )
+        db.session.add(lot)
+        db.session.flush()
+
+        purchase = MHSPurchase(
+            company_id=company.id,
+            purchase_no=purchase_no,
+            purchase_date=purchase_date,
+            supplier_id=supplier.id,
+            lot_id=lot.id,
+            coffee_type=coffee_type,
+            weight=weight,
+            moisture=moisture,
+            price_per_kg=price,
+            total_amount=weight * price,
+            source_location=source_location,
+            needs_drying=needs_drying,
+            status="Active",
+            notes=(request.form.get("notes") or "").strip() or None,
+            created_by=session.get("user_id"),
+        )
+        db.session.add(purchase)
+        db.session.commit()
+        log_action("CREATE", "MHS Purchases", purchase.id, f"{purchase.purchase_no} / {lot.lot_no}")
+        flash(f"Purchase {purchase.purchase_no} saved. Lot {lot.lot_no} created automatically.")
+        return redirect(url_for("mhs_purchases"))
+
+    rows = MHSPurchase.query.filter_by(company_id=company.id, status="Active").order_by(
+        MHSPurchase.purchase_date.desc(), MHSPurchase.id.desc()
+    ).all()
+    suppliers = MHSSupplier.query.filter_by(company_id=company.id, status="Active").order_by(MHSSupplier.name).all()
+    return render_template(
+        "mhs_purchases.html",
+        rows=rows,
+        suppliers=suppliers,
+        purchase_types=MHS_PURCHASE_TYPES,
+        today=datetime.utcnow().date().isoformat(),
+    )
+
+
+@app.route("/mhs/purchases/<int:id>/edit", methods=["GET", "POST"])
+@login_required
+def mhs_purchase_edit(id):
+    company = _require_mhs()
+    if not _mhs_can_edit():
+        abort(403)
+    row = MHSPurchase.query.filter_by(id=id, company_id=company.id, status="Active").first_or_404()
+    lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first_or_404()
+    if request.method == "POST":
+        try:
+            supplier_id = int(request.form.get("supplier_id") or 0)
+            weight = float(request.form.get("weight") or 0)
+            price = float(request.form.get("price_per_kg") or 0)
+            moisture_raw = (request.form.get("moisture") or "").strip()
+            moisture = float(moisture_raw) if moisture_raw else None
+            purchase_date = datetime.strptime(request.form.get("purchase_date"), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            flash("Check the date, weight, moisture and price values.")
+            return redirect(url_for("mhs_purchase_edit", id=id))
+        supplier = MHSSupplier.query.filter_by(id=supplier_id, company_id=company.id, status="Active").first()
+        coffee_type = (request.form.get("coffee_type") or "").strip()
+        if not supplier or coffee_type not in MHS_PURCHASE_TYPES or weight <= 0 or price < 0:
+            flash("Check supplier, coffee type, weight and price.")
+            return redirect(url_for("mhs_purchase_edit", id=id))
+        if moisture is not None and (moisture < 0 or moisture > 100):
+            flash("Moisture must be between 0 and 100%.")
+            return redirect(url_for("mhs_purchase_edit", id=id))
+
+        needs_drying, readiness = _mhs_purchase_readiness(company.id, coffee_type, moisture)
+        source_location = (request.form.get("source_location") or "").strip() or None
+        row.purchase_date = purchase_date
+        row.supplier_id = supplier.id
+        row.coffee_type = coffee_type
+        row.weight = weight
+        row.moisture = moisture
+        row.price_per_kg = price
+        row.total_amount = weight * price
+        row.source_location = source_location
+        row.needs_drying = needs_drying
+        row.notes = (request.form.get("notes") or "").strip() or None
+        lot.coffee_type = coffee_type
+        lot.coffee_state = coffee_type
+        lot.current_weight = weight
+        lot.current_moisture = moisture
+        lot.source_location = source_location
+        lot.readiness = readiness
+        db.session.commit()
+        log_action("EDIT", "MHS Purchases", row.id, row.purchase_no)
+        flash("Purchase and its source lot updated.")
+        return redirect(url_for("mhs_purchases"))
+
+    suppliers = MHSSupplier.query.filter_by(company_id=company.id, status="Active").order_by(MHSSupplier.name).all()
+    return render_template(
+        "mhs_purchase_edit.html",
+        row=row,
+        suppliers=suppliers,
+        purchase_types=MHS_PURCHASE_TYPES,
+    )
+
+
+@app.route("/mhs/purchases/<int:id>/delete", methods=["POST"])
+@login_required
+def mhs_purchase_delete(id):
+    company = _require_mhs()
+    _mhs_admin()
+    row = MHSPurchase.query.filter_by(id=id, company_id=company.id, status="Active").first_or_404()
+    lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first()
+    # In 8.1 the source lot has no downstream MHS drying/analysis/production tables yet.
+    # Future phases will extend this guard before allowing deletion.
+    purchase_no = row.purchase_no
+    lot_no = lot.lot_no if lot else ""
+    db.session.delete(row)
+    if lot:
+        db.session.delete(lot)
+    db.session.commit()
+    log_action("DELETE", "MHS Purchases", id, f"{purchase_no} / {lot_no}")
+    flash("Unused trial purchase and its source lot deleted.")
+    return redirect(url_for("mhs_purchases"))
+
+
+@app.route("/mhs/lots")
+@login_required
+def mhs_lots():
+    company = _require_mhs()
+    rows = MHSLot.query.filter_by(company_id=company.id).order_by(MHSLot.id.desc()).all()
+    return render_template("mhs_lots.html", rows=rows)
+
+
+@app.route("/mhs/settings", methods=["GET", "POST"])
+@login_required
+def mhs_settings():
+    company = _require_mhs()
+    if request.method == "POST":
+        _mhs_admin()
+        values = {
+            "dry_parchment_ready_moisture": request.form.get("dry_parchment_ready_moisture"),
+            "drugar_ready_moisture": request.form.get("drugar_ready_moisture"),
+        }
+        try:
+            parsed = {k: float(v) for k, v in values.items()}
+        except (TypeError, ValueError):
+            flash("Enter valid moisture percentages.")
+            return redirect(url_for("mhs_settings"))
+        if any(v <= 0 or v > 30 for v in parsed.values()):
+            flash("Processing moisture thresholds must be above 0 and not more than 30%.")
+            return redirect(url_for("mhs_settings"))
+        for key, value in parsed.items():
+            row = MHSSetting.query.filter_by(company_id=company.id, setting_key=key).first()
+            if not row:
+                row = MHSSetting(company_id=company.id, setting_key=key, setting_value=str(value))
+                db.session.add(row)
+            else:
+                row.setting_value = str(value)
+        db.session.commit()
+        log_action("EDIT", "MHS Settings", company.id, "Updated moisture thresholds")
+        flash("Mothers Harvest moisture rules updated.")
+        return redirect(url_for("mhs_settings"))
+
+    return render_template(
+        "mhs_settings.html",
+        dry_parchment=_mhs_setting_float(company.id, "dry_parchment_ready_moisture", 13.5),
+        drugar=_mhs_setting_float(company.id, "drugar_ready_moisture", 13.5),
+    )
 
 @app.errorhandler(403)
 def forbidden(_):

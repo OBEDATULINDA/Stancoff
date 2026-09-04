@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block page_title %}Mothers Harvest Purchases{% endblock %}
+{% block page_subtitle %}Purchase → automatic lot → moisture decision{% endblock %}
+{% block content %}
+<div class="section-card">
+  <div class="section-heading-row"><div><h2>Record purchase</h2><p class="help-text">Each purchase creates a new traceable MHS lot automatically.</p></div></div>
+  <form method="post" class="form-grid">
+    <label>Date<input type="date" name="purchase_date" value="{{today}}" required></label>
+    <label>Supplier<select name="supplier_id" required><option value="">Select supplier</option>{% for s in suppliers %}<option value="{{s.id}}">{{s.code}} · {{s.name}}</option>{% endfor %}</select></label>
+    <label>Coffee type<select name="coffee_type" required><option value="">Select coffee</option>{% for t in purchase_types %}<option>{{t}}</option>{% endfor %}</select></label>
+    <label>Weight (kg)<input type="number" step="0.01" min="0.01" name="weight" required></label>
+    <label>Moisture %<input type="number" step="0.01" min="0" max="100" name="moisture"></label>
+    <label>Price / kg<input type="number" step="0.01" min="0" name="price_per_kg" required></label>
+    <label>Source / location<input name="source_location"></label>
+    <label class="full">Notes<textarea name="notes" rows="2"></textarea></label>
+    <div class="full"><button class="button" type="submit">Save purchase &amp; create lot</button></div>
+  </form>
+</div>
+<div class="section-card">
+  <h2>Purchase history</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Purchase</th><th>Actions</th><th>Date</th><th>Lot</th><th>Supplier</th><th>Coffee</th><th>Weight</th><th>MC</th><th>Drying?</th><th>Value</th></tr></thead>
+    <tbody>{% for r in rows %}
+    <tr>
+      <td><strong>{{r.purchase_no}}</strong></td>
+      <td class="record-actions"><a class="small-button" href="{{url_for('mhs_purchase_edit',id=r.id)}}">Edit</a>{% if current_role=='Admin' or current_is_super_admin %}<form method="post" action="{{url_for('mhs_purchase_delete',id=r.id)}}" style="display:inline" onsubmit="return confirm('Delete this trial purchase and its unused source lot?')"><button class="small-button" type="submit">Delete</button></form>{% endif %}</td>
+      <td>{{r.purchase_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.supplier.name}}</td><td>{{r.coffee_type}}</td>
+      <td>{{"{:,.2f}".format(r.weight)}} kg</td><td>{{r.moisture if r.moisture is not none else '—'}}{% if r.moisture is not none %}%{% endif %}</td>
+      <td>{{'Yes' if r.needs_drying else 'No'}}</td><td>{{"{:,.0f}".format(r.total_amount)}}</td>
+    </tr>
+    {% else %}<tr><td colspan="10">No purchases yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

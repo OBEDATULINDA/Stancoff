@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block page_title %}Mothers Harvest Lots{% endblock %}
+{% block page_subtitle %}Current coffee state and readiness · Phase 8.1{% endblock %}
+{% block content %}
+<div class="section-card">
+  <div class="section-heading-row"><div><h2>Lot register</h2><p class="help-text">Lot identity will follow the coffee through drying, analysis, production, movement and sale.</p></div></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Lot</th><th>Coffee state</th><th>Weight</th><th>Moisture</th><th>Source / location</th><th>Readiness</th><th>Status</th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr><td><strong>{{r.lot_no}}</strong></td><td>{{r.coffee_state}}</td><td>{{"{:,.2f}".format(r.current_weight)}} kg</td><td>{{r.current_moisture if r.current_moisture is not none else '—'}}{% if r.current_moisture is not none %}%{% endif %}</td><td>{{r.source_location or '—'}}</td><td>{{r.readiness}}</td><td>{{r.status}}</td></tr>
+    {% else %}<tr><td colspan="7">No lots yet. Recording a purchase creates the first lot.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

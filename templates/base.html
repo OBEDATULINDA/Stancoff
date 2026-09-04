@@ -90,10 +90,25 @@
       {% endif %}
 
       {% else %}
+      {% if active_company and active_company.code|lower == 'mhs' %}
+      <a href="/mhs" class="{% if request.path=='/mhs' %}active{% endif %}">Dashboard</a>
+      <details class="nav-group" data-nav-group="mhs-coffee" {% if request.path.startswith('/mhs/') %}open{% endif %}>
+        <summary>Coffee operations</summary>
+        <div class="nav-group-links">
+          <a href="/mhs/suppliers" class="{% if request.path.startswith('/mhs/suppliers') %}active{% endif %}">Suppliers</a>
+          <a href="/mhs/purchases" class="{% if request.path.startswith('/mhs/purchases') %}active{% endif %}">Purchases</a>
+          <a href="/mhs/lots" class="{% if request.path.startswith('/mhs/lots') %}active{% endif %}">Lots</a>
+          {% if current_role=='Admin' or current_is_super_admin %}
+          <a href="/mhs/settings" class="{% if request.path.startswith('/mhs/settings') %}active{% endif %}">Moisture settings</a>
+          {% endif %}
+        </div>
+      </details>
+      {% else %}
       <a href="/company-dashboard" class="{% if request.path=='/company-dashboard' %}active{% endif %}">Dashboard</a>
       {% for module in active_module_rows %}
       <a href="/company-dashboard#module-{{module.module_key}}">{{module.label}}</a>
       {% endfor %}
+      {% endif %}
       {% endif %}
 
       {% if current_is_super_admin %}

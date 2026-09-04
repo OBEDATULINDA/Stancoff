@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block page_title %}Mothers Harvest Moisture Rules{% endblock %}
+{% block page_subtitle %}Configurable readiness thresholds{% endblock %}
+{% block content %}
+<div class="section-card narrow-card">
+  <h2>Ready-for-processing thresholds</h2>
+  <p class="help-text">At or above the threshold, the lot is marked <strong>Needs Drying</strong>. These settings affect new and edited purchases.</p>
+  <form method="post" class="form-grid">
+    <label>Dry Parchment threshold %<input type="number" step="0.01" min="0.01" max="30" name="dry_parchment_ready_moisture" value="{{dry_parchment}}" required></label>
+    <label>DRUGAR FAQ threshold %<input type="number" step="0.01" min="0.01" max="30" name="drugar_ready_moisture" value="{{drugar}}" required></label>
+    <div class="full"><button class="button" type="submit">Save moisture rules</button></div>
+  </form>
+</div>
+{% endblock %}

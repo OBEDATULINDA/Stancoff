@@ -1,0 +1,37 @@
+STANCOFF / BUSINESS ERP - VERSION 8.1
+MOTHERS HARVEST SUPPLIERS CORE
+
+Built directly on Version 8.0 Multi-Company Foundation.
+
+ADDED
+- Isolated Mothers Harvest database tables:
+  mhs_supplier, mhs_lot, mhs_purchase, mhs_setting
+- Mothers Harvest company workspace (MHS)
+- MHS dashboard
+- Automatic supplier codes: MHS-S0001...
+- Purchases with automatic purchase numbers: MHS-PUR0001...
+- Automatic lot numbers: MHS0001...
+- Purchase types:
+  Parchment Cherries, Wet Parchment, Dry Parchment, DRUGAR FAQ,
+  Processed AA, Processed AB, Processed CPB, Processed WUGAR
+- Moisture-based readiness decisions
+- Configurable Dry Parchment and DRUGAR thresholds (default 13.5%)
+- Lot register
+- Edit/Delete controls for suppliers and purchases
+- Admin-safe deletion rules
+
+DATA SAFETY
+- No Stancoff tables are dropped, renamed, or recreated.
+- Existing Stancoff operational routes remain unchanged.
+- Mothers Harvest routes use /mhs/... only.
+- Mothers Harvest operational records do not use Stancoff Supplier,
+  Purchase, Batch, Drying, CoffeeStock, or CoffeeMovement tables.
+
+VERIFIED BEFORE PACKAGING
+- app.py compiles successfully.
+- New Jinja templates parse successfully.
+- Existing Stancoff finish_drying(), drying(), processing(), and inventory()
+  functions are byte-for-byte unchanged from Version 8.0.
+
+NEXT PHASE
+Version 8.2: independent Mothers Harvest Drying + Analysis.
