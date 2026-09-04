@@ -179,6 +179,75 @@ class MHSPurchase(db.Model):
     )
 
 
+
+class MHSDrying(db.Model):
+    __tablename__ = "mhs_drying"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    drying_no = db.Column(db.String(30), nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey("mhs_lot.id"), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date)
+    input_weight = db.Column(db.Float, nullable=False)
+    start_moisture = db.Column(db.Float)
+    dry_weight = db.Column(db.Float)
+    final_moisture = db.Column(db.Float)
+    drying_loss = db.Column(db.Float)
+    outturn = db.Column(db.Float)
+    location = db.Column(db.String(160))
+    supervisor = db.Column(db.String(160))
+    status = db.Column(db.String(30), nullable=False, default="Drying")
+    notes = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    lot = db.relationship("MHSLot")
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "drying_no", name="uq_mhs_drying_company_no"),
+    )
+
+
+class MHSAnalysis(db.Model):
+    __tablename__ = "mhs_analysis"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    analysis_no = db.Column(db.String(30), nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey("mhs_lot.id"), nullable=False)
+    analysis_date = db.Column(db.Date, nullable=False)
+    sample_size = db.Column(db.Float, nullable=False)
+    hulled_sample_weight = db.Column(db.Float)
+    moisture = db.Column(db.Float)
+    defects_weight = db.Column(db.Float, nullable=False, default=0)
+    sound_weight = db.Column(db.Float)
+    general_outturn = db.Column(db.Float)
+    net_outturn = db.Column(db.Float)
+    aa_percent = db.Column(db.Float)
+    ab_percent = db.Column(db.Float)
+    cpb_percent = db.Column(db.Float)
+    wugar_percent = db.Column(db.Float)
+    blacks = db.Column(db.Float, default=0)
+    partly_blacks = db.Column(db.Float, default=0)
+    insect_damaged = db.Column(db.Float, default=0)
+    ut200 = db.Column(db.Float, default=0)
+    diseased = db.Column(db.Float, default=0)
+    chalky_whites = db.Column(db.Float, default=0)
+    faded = db.Column(db.Float, default=0)
+    withered = db.Column(db.Float, default=0)
+    broken_pulp_nipped = db.Column(db.Float, default=0)
+    pods = db.Column(db.Float, default=0)
+    foreign_matter = db.Column(db.Float, default=0)
+    color = db.Column(db.String(120))
+    smell = db.Column(db.String(120))
+    remarks = db.Column(db.Text)
+    analysed_by = db.Column(db.String(160))
+    status = db.Column(db.String(30), nullable=False, default="Active")
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    lot = db.relationship("MHSLot")
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "analysis_no", name="uq_mhs_analysis_company_no"),
+    )
+
+
 class MHSSetting(db.Model):
     __tablename__ = "mhs_setting"
     id = db.Column(db.Integer, primary_key=True)
@@ -5015,6 +5084,9 @@ def mhs_purchase_edit(id):
         abort(403)
     row = MHSPurchase.query.filter_by(id=id, company_id=company.id, status="Active").first_or_404()
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first_or_404()
+    if _mhs_downstream_exists_for_lot(company.id, lot.id):
+        flash("This purchase already has drying or analysis records. Edit/delete those downstream records first.")
+        return redirect(url_for("mhs_purchases"))
     if request.method == "POST":
         try:
             supplier_id = int(request.form.get("supplier_id") or 0)
@@ -5074,8 +5146,9 @@ def mhs_purchase_delete(id):
     _mhs_admin()
     row = MHSPurchase.query.filter_by(id=id, company_id=company.id, status="Active").first_or_404()
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first()
-    # In 8.1 the source lot has no downstream MHS drying/analysis/production tables yet.
-    # Future phases will extend this guard before allowing deletion.
+    if lot and _mhs_downstream_exists_for_lot(company.id, lot.id):
+        flash("This purchase has drying or analysis records. Delete those downstream records first.")
+        return redirect(url_for("mhs_purchases"))
     purchase_no = row.purchase_no
     lot_no = lot.lot_no if lot else ""
     db.session.delete(row)
@@ -5130,6 +5203,397 @@ def mhs_settings():
         dry_parchment=_mhs_setting_float(company.id, "dry_parchment_ready_moisture", 13.5),
         drugar=_mhs_setting_float(company.id, "drugar_ready_moisture", 13.5),
     )
+
+
+# ---------------------------------------------------------------------------
+# Mothers Harvest Suppliers - Version 8.2 Drying & Analysis
+# ---------------------------------------------------------------------------
+
+def _mhs_downstream_exists_for_lot(company_id, lot_id):
+    return (
+        MHSDrying.query.filter_by(company_id=company_id, lot_id=lot_id).first()
+        or MHSAnalysis.query.filter_by(company_id=company_id, lot_id=lot_id, status="Active").first()
+    )
+
+
+def _mhs_refresh_lot_readiness(company, lot):
+    if lot.coffee_type in {"Parchment Cherries", "Wet Parchment"}:
+        # Once a drying record is completed the lot becomes Dry Parchment.
+        lot.readiness = "Needs Drying"
+        return
+    needs_drying, readiness = _mhs_purchase_readiness(
+        company.id, lot.coffee_type, lot.current_moisture
+    )
+    lot.readiness = readiness
+
+
+@app.route("/mhs/drying", methods=["GET", "POST"])
+@login_required
+def mhs_drying():
+    company = _require_mhs()
+    if request.method == "POST":
+        if not _mhs_can_edit():
+            abort(403)
+        try:
+            lot_id = int(request.form.get("lot_id") or 0)
+            start_date = datetime.strptime(request.form.get("start_date"), "%Y-%m-%d").date()
+            input_weight = float(request.form.get("input_weight") or 0)
+            start_mc_raw = (request.form.get("start_moisture") or "").strip()
+            start_mc = float(start_mc_raw) if start_mc_raw else None
+        except (TypeError, ValueError):
+            flash("Check the lot, date, input weight and moisture.")
+            return redirect(url_for("mhs_drying"))
+
+        lot = MHSLot.query.filter_by(id=lot_id, company_id=company.id, status="Active").first()
+        if not lot:
+            flash("Select a valid Mothers Harvest lot.")
+            return redirect(url_for("mhs_drying"))
+        if input_weight <= 0 or input_weight > float(lot.current_weight or 0) + 0.0001:
+            flash("Drying input must be above zero and cannot exceed the lot's current weight.")
+            return redirect(url_for("mhs_drying"))
+        if MHSDrying.query.filter_by(company_id=company.id, lot_id=lot.id, status="Drying").first():
+            flash("This lot already has an open drying record.")
+            return redirect(url_for("mhs_drying"))
+
+        row = MHSDrying(
+            company_id=company.id,
+            drying_no=_mhs_next_code(MHSDrying, company.id, "drying_no", "MHS-DRY", 4),
+            lot_id=lot.id,
+            start_date=start_date,
+            input_weight=input_weight,
+            start_moisture=start_mc if start_mc is not None else lot.current_moisture,
+            location=(request.form.get("location") or "").strip() or None,
+            supervisor=(request.form.get("supervisor") or "").strip() or None,
+            notes=(request.form.get("notes") or "").strip() or None,
+            status="Drying",
+            created_by=session.get("user_id"),
+        )
+        lot.readiness = "Drying"
+        db.session.add(row)
+        db.session.commit()
+        log_action("CREATE", "MHS Drying", row.id, f"{row.drying_no} / {lot.lot_no}")
+        flash(f"Drying record {row.drying_no} started.")
+        return redirect(url_for("mhs_drying"))
+
+    rows = MHSDrying.query.filter_by(company_id=company.id).order_by(MHSDrying.id.desc()).all()
+    lots = MHSLot.query.filter(
+        MHSLot.company_id == company.id,
+        MHSLot.status == "Active",
+        MHSLot.readiness.in_(["Needs Drying", "Drying"]),
+    ).order_by(MHSLot.lot_no).all()
+    return render_template(
+        "mhs_drying.html", rows=rows, lots=lots,
+        today=datetime.utcnow().date().isoformat()
+    )
+
+
+@app.route("/mhs/drying/<int:id>/edit", methods=["GET", "POST"])
+@login_required
+def mhs_drying_edit(id):
+    company = _require_mhs()
+    if not _mhs_can_edit():
+        abort(403)
+    row = MHSDrying.query.filter_by(id=id, company_id=company.id).first_or_404()
+    if request.method == "POST":
+        try:
+            row.start_date = datetime.strptime(request.form.get("start_date"), "%Y-%m-%d").date()
+            input_weight = float(request.form.get("input_weight") or 0)
+            start_mc_raw = (request.form.get("start_moisture") or "").strip()
+            start_mc = float(start_mc_raw) if start_mc_raw else None
+        except (TypeError, ValueError):
+            flash("Check the date, weight and moisture.")
+            return redirect(url_for("mhs_drying_edit", id=id))
+        if input_weight <= 0:
+            flash("Input weight must be above zero.")
+            return redirect(url_for("mhs_drying_edit", id=id))
+        row.input_weight = input_weight
+        row.start_moisture = start_mc
+        row.location = (request.form.get("location") or "").strip() or None
+        row.supervisor = (request.form.get("supervisor") or "").strip() or None
+        row.notes = (request.form.get("notes") or "").strip() or None
+        db.session.commit()
+        log_action("EDIT", "MHS Drying", row.id, row.drying_no)
+        flash("Drying record updated.")
+        return redirect(url_for("mhs_drying"))
+    return render_template("mhs_drying_edit.html", row=row)
+
+
+@app.route("/mhs/drying/<int:id>/finish", methods=["GET", "POST"])
+@login_required
+def mhs_drying_finish(id):
+    company = _require_mhs()
+    if not _mhs_can_edit():
+        abort(403)
+    row = MHSDrying.query.filter_by(id=id, company_id=company.id).first_or_404()
+    lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first_or_404()
+    if row.status == "Completed":
+        flash("This drying record is already completed.")
+        return redirect(url_for("mhs_drying"))
+
+    if request.method == "POST":
+        try:
+            end_date = datetime.strptime(request.form.get("end_date"), "%Y-%m-%d").date()
+            dry_weight = float(request.form.get("dry_weight") or 0)
+            final_moisture = float(request.form.get("final_moisture") or 0)
+        except (TypeError, ValueError):
+            flash("Check the finish date, dry weight and final moisture.")
+            return redirect(url_for("mhs_drying_finish", id=id))
+        if dry_weight <= 0 or dry_weight > row.input_weight + 0.0001:
+            flash("Actual dry weight must be above zero and cannot exceed drying input.")
+            return redirect(url_for("mhs_drying_finish", id=id))
+        if final_moisture <= 0 or final_moisture > 30:
+            flash("Enter a valid final moisture percentage.")
+            return redirect(url_for("mhs_drying_finish", id=id))
+
+        row.end_date = end_date
+        row.dry_weight = dry_weight
+        row.final_moisture = final_moisture
+        row.drying_loss = max(0, row.input_weight - dry_weight)
+        row.outturn = (dry_weight / row.input_weight * 100) if row.input_weight else 0
+        row.status = "Completed"
+
+        # Phase 8.2 uses one source lot per drying record. Completion replaces
+        # the drying input with actual dry output; no Stancoff inventory is used.
+        original_lot_weight = float(lot.current_weight or 0)
+        lot.current_weight = max(0, original_lot_weight - row.input_weight) + dry_weight
+        lot.current_moisture = final_moisture
+        if lot.coffee_type in {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}:
+            lot.coffee_type = "Dry Parchment"
+            lot.coffee_state = "Dry Parchment"
+        needs_drying, readiness = _mhs_purchase_readiness(
+            company.id, lot.coffee_type, final_moisture
+        )
+        lot.readiness = readiness
+
+        db.session.commit()
+        log_action("FINISH", "MHS Drying", row.id, f"{row.drying_no} / {lot.lot_no}")
+        flash(f"{row.drying_no} completed. Actual dry weight is now {dry_weight:,.2f} kg.")
+        return redirect(url_for("mhs_drying"))
+
+    return render_template(
+        "mhs_drying_finish.html", row=row, lot=lot,
+        today=datetime.utcnow().date().isoformat()
+    )
+
+
+@app.route("/mhs/drying/<int:id>/delete", methods=["POST"])
+@login_required
+def mhs_drying_delete(id):
+    company = _require_mhs()
+    _mhs_admin()
+    row = MHSDrying.query.filter_by(id=id, company_id=company.id).first_or_404()
+    lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first()
+    if MHSAnalysis.query.filter_by(company_id=company.id, lot_id=row.lot_id, status="Active").first():
+        flash("Delete the linked analysis first before deleting this drying record.")
+        return redirect(url_for("mhs_drying"))
+
+    if lot:
+        if row.status == "Completed" and row.dry_weight is not None:
+            # Reverse the completion mass change safely.
+            lot.current_weight = max(0, float(lot.current_weight or 0) - float(row.dry_weight or 0)) + float(row.input_weight or 0)
+            lot.current_moisture = row.start_moisture
+            # Restore the purchase state where available.
+            purchase = MHSPurchase.query.filter_by(company_id=company.id, lot_id=lot.id, status="Active").first()
+            if purchase:
+                lot.coffee_type = purchase.coffee_type
+                lot.coffee_state = purchase.coffee_type
+                lot.current_moisture = purchase.moisture
+                _, readiness = _mhs_purchase_readiness(company.id, purchase.coffee_type, purchase.moisture)
+                lot.readiness = readiness
+            else:
+                _mhs_refresh_lot_readiness(company, lot)
+        elif row.status == "Drying":
+            _, readiness = _mhs_purchase_readiness(company.id, lot.coffee_type, lot.current_moisture)
+            lot.readiness = readiness
+
+    drying_no = row.drying_no
+    db.session.delete(row)
+    db.session.commit()
+    log_action("DELETE", "MHS Drying", id, drying_no)
+    flash("Drying record deleted and the lot was restored.")
+    return redirect(url_for("mhs_drying"))
+
+
+def _mhs_analysis_values(form, lot):
+    sample = float(form.get("sample_size") or 0)
+    moisture_raw = (form.get("moisture") or "").strip()
+    moisture = float(moisture_raw) if moisture_raw else None
+    defect_fields = [
+        "blacks", "partly_blacks", "insect_damaged", "ut200", "diseased",
+        "chalky_whites", "faded", "withered", "broken_pulp_nipped", "pods",
+        "foreign_matter",
+    ]
+    defects = {key: float(form.get(key) or 0) for key in defect_fields}
+    defects_weight_raw = (form.get("defects_weight") or "").strip()
+    defects_weight = float(defects_weight_raw) if defects_weight_raw else sum(defects.values())
+
+    parchment = lot.coffee_type in {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}
+    hulled_raw = (form.get("hulled_sample_weight") or "").strip()
+    hulled = float(hulled_raw) if hulled_raw else None
+
+    if sample <= 0:
+        raise ValueError("Sample size must be above zero.")
+    if defects_weight < 0:
+        raise ValueError("Defects cannot be negative.")
+
+    if parchment:
+        if hulled is None or hulled <= 0 or hulled > sample:
+            raise ValueError("Parchment analysis requires a valid hulled sample weight.")
+        if defects_weight > hulled:
+            raise ValueError("Defects cannot exceed hulled sample weight.")
+        sound = hulled - defects_weight
+        general = hulled / sample * 100
+        net = sound / sample * 100
+        aa = float(form.get("aa_percent") or 0)
+        ab = float(form.get("ab_percent") or 0)
+        cpb = float(form.get("cpb_percent") or 0)
+        wugar = float(form.get("wugar_percent") or 0)
+        if min(aa, ab, cpb, wugar) < 0:
+            raise ValueError("Grade percentages cannot be negative.")
+        if aa + ab + cpb + wugar > 100.0001:
+            raise ValueError("AA + AB + CPB + WUGAR percentages cannot exceed 100%.")
+    else:
+        if defects_weight > sample:
+            raise ValueError("Defects cannot exceed sample size.")
+        sound = sample - defects_weight
+        hulled = None
+        general = None
+        net = sound / sample * 100
+        aa = ab = cpb = wugar = None
+
+    return {
+        "sample_size": sample, "moisture": moisture, "defects_weight": defects_weight,
+        "sound_weight": sound, "hulled_sample_weight": hulled,
+        "general_outturn": general, "net_outturn": net,
+        "aa_percent": aa, "ab_percent": ab, "cpb_percent": cpb,
+        "wugar_percent": wugar, **defects,
+    }
+
+
+@app.route("/mhs/analysis", methods=["GET", "POST"])
+@login_required
+def mhs_analysis():
+    company = _require_mhs()
+    if request.method == "POST":
+        if not _mhs_can_edit():
+            abort(403)
+        try:
+            lot_id = int(request.form.get("lot_id") or 0)
+            analysis_date = datetime.strptime(request.form.get("analysis_date"), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            flash("Select a lot and valid analysis date.")
+            return redirect(url_for("mhs_analysis"))
+        lot = MHSLot.query.filter_by(id=lot_id, company_id=company.id, status="Active").first()
+        if not lot:
+            flash("Select a valid Mothers Harvest lot.")
+            return redirect(url_for("mhs_analysis"))
+        if lot.readiness in {"Needs Drying", "Drying"}:
+            flash("This lot must complete drying before analysis.")
+            return redirect(url_for("mhs_analysis"))
+        try:
+            values = _mhs_analysis_values(request.form, lot)
+        except ValueError as exc:
+            flash(str(exc))
+            return redirect(url_for("mhs_analysis"))
+
+        row = MHSAnalysis(
+            company_id=company.id,
+            analysis_no=_mhs_next_code(MHSAnalysis, company.id, "analysis_no", "MHS-AN", 4),
+            lot_id=lot.id,
+            analysis_date=analysis_date,
+            color=(request.form.get("color") or "").strip() or None,
+            smell=(request.form.get("smell") or "").strip() or None,
+            remarks=(request.form.get("remarks") or "").strip() or None,
+            analysed_by=(request.form.get("analysed_by") or "").strip() or None,
+            created_by=session.get("user_id"),
+            **values,
+        )
+        db.session.add(row)
+        lot.readiness = "Analysed"
+        db.session.commit()
+        log_action("CREATE", "MHS Analysis", row.id, f"{row.analysis_no} / {lot.lot_no}")
+        flash(f"Analysis {row.analysis_no} saved.")
+        return redirect(url_for("mhs_analysis"))
+
+    rows = MHSAnalysis.query.filter_by(company_id=company.id, status="Active").order_by(MHSAnalysis.id.desc()).all()
+    lots = MHSLot.query.filter(
+        MHSLot.company_id == company.id,
+        MHSLot.status == "Active",
+        ~MHSLot.readiness.in_(["Needs Drying", "Drying"]),
+    ).order_by(MHSLot.lot_no).all()
+    return render_template(
+        "mhs_analysis.html", rows=rows, lots=lots,
+        today=datetime.utcnow().date().isoformat()
+    )
+
+
+@app.route("/mhs/analysis/<int:id>/edit", methods=["GET", "POST"])
+@login_required
+def mhs_analysis_edit(id):
+    company = _require_mhs()
+    if not _mhs_can_edit():
+        abort(403)
+    row = MHSAnalysis.query.filter_by(id=id, company_id=company.id, status="Active").first_or_404()
+    lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first_or_404()
+    if request.method == "POST":
+        try:
+            row.analysis_date = datetime.strptime(request.form.get("analysis_date"), "%Y-%m-%d").date()
+            values = _mhs_analysis_values(request.form, lot)
+        except (TypeError, ValueError) as exc:
+            flash(str(exc))
+            return redirect(url_for("mhs_analysis_edit", id=id))
+        for key, value in values.items():
+            setattr(row, key, value)
+        row.color = (request.form.get("color") or "").strip() or None
+        row.smell = (request.form.get("smell") or "").strip() or None
+        row.remarks = (request.form.get("remarks") or "").strip() or None
+        row.analysed_by = (request.form.get("analysed_by") or "").strip() or None
+        db.session.commit()
+        log_action("EDIT", "MHS Analysis", row.id, row.analysis_no)
+        flash("Analysis updated.")
+        return redirect(url_for("mhs_analysis"))
+    return render_template("mhs_analysis_edit.html", row=row, lot=lot)
+
+
+@app.route("/mhs/analysis/<int:id>/delete", methods=["POST"])
+@login_required
+def mhs_analysis_delete(id):
+    company = _require_mhs()
+    _mhs_admin()
+    row = MHSAnalysis.query.filter_by(id=id, company_id=company.id, status="Active").first_or_404()
+    lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first()
+    analysis_no = row.analysis_no
+    db.session.delete(row)
+    if lot:
+        other = MHSAnalysis.query.filter(
+            MHSAnalysis.company_id == company.id,
+            MHSAnalysis.lot_id == lot.id,
+            MHSAnalysis.id != id,
+            MHSAnalysis.status == "Active",
+        ).first()
+        if not other:
+            _, readiness = _mhs_purchase_readiness(company.id, lot.coffee_type, lot.current_moisture)
+            lot.readiness = readiness
+    db.session.commit()
+    log_action("DELETE", "MHS Analysis", id, analysis_no)
+    flash("Analysis deleted.")
+    return redirect(url_for("mhs_analysis"))
+
+
+@app.route("/mhs/analysis/<int:id>/print")
+@login_required
+def mhs_analysis_print(id):
+    company = _require_mhs()
+    row = MHSAnalysis.query.filter_by(id=id, company_id=company.id, status="Active").first_or_404()
+    expected = {}
+    if row.lot and row.lot.current_weight:
+        net_kg = float(row.lot.current_weight) * float(row.net_outturn or 0) / 100
+        expected["net_kg"] = net_kg
+        expected["aa_kg"] = net_kg * float(row.aa_percent or 0) / 100
+        expected["ab_kg"] = net_kg * float(row.ab_percent or 0) / 100
+        expected["cpb_kg"] = net_kg * float(row.cpb_percent or 0) / 100
+        expected["wugar_kg"] = net_kg * float(row.wugar_percent or 0) / 100
+    return render_template("mhs_analysis_print.html", row=row, expected=expected, company=company)
 
 @app.errorhandler(403)
 def forbidden(_):

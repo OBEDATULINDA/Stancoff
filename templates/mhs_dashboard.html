@@ -21,13 +21,15 @@
 
 <div class="section-card">
   <div class="section-heading-row">
-    <div><h2>Phase 8.1 workflow</h2><p class="help-text">Drying, analysis and production will be added as separate MHS modules in the next phases.</p></div>
+    <div><h2>Phase 8.2 workflow</h2><p class="help-text">Drying and analysis are now active. Production remains isolated for Phase 8.3.</p></div>
   </div>
   <div class="module-card-grid">
     <a class="module-card" href="{{url_for('mhs_suppliers')}}"><div><small>01</small><h3>Suppliers</h3><p>Automatic MHS supplier codes.</p></div></a>
     <a class="module-card" href="{{url_for('mhs_purchases')}}"><div><small>02</small><h3>Purchases</h3><p>Receive parchment, DRUGAR or processed coffee.</p></div></a>
     <a class="module-card" href="{{url_for('mhs_lots')}}"><div><small>03</small><h3>Lots</h3><p>Trace coffee by MHS lot and readiness.</p></div></a>
-    <a class="module-card" href="{{url_for('mhs_settings')}}"><div><small>04</small><h3>Moisture rules</h3><p>Configure readiness thresholds.</p></div></a>
+    <a class="module-card" href="{{url_for('mhs_drying')}}"><div><small>04</small><h3>Drying</h3><p>Independent commercial drying and actual dry output.</p></div></a>
+    <a class="module-card" href="{{url_for('mhs_analysis')}}"><div><small>05</small><h3>Analysis</h3><p>Parchment outturn and DRUGAR physical analysis.</p></div></a>
+    <a class="module-card" href="{{url_for('mhs_settings')}}"><div><small>06</small><h3>Moisture rules</h3><p>Configure readiness thresholds.</p></div></a>
   </div>
 </div>
 

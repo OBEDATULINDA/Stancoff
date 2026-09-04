@@ -98,6 +98,8 @@
           <a href="/mhs/suppliers" class="{% if request.path.startswith('/mhs/suppliers') %}active{% endif %}">Suppliers</a>
           <a href="/mhs/purchases" class="{% if request.path.startswith('/mhs/purchases') %}active{% endif %}">Purchases</a>
           <a href="/mhs/lots" class="{% if request.path.startswith('/mhs/lots') %}active{% endif %}">Lots</a>
+          <a href="/mhs/drying" class="{% if request.path.startswith('/mhs/drying') %}active{% endif %}">Drying</a>
+          <a href="/mhs/analysis" class="{% if request.path.startswith('/mhs/analysis') %}active{% endif %}">Analysis</a>
           {% if current_role=='Admin' or current_is_super_admin %}
           <a href="/mhs/settings" class="{% if request.path.startswith('/mhs/settings') %}active{% endif %}">Moisture settings</a>
           {% endif %}

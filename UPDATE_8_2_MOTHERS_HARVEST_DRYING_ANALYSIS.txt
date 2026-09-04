@@ -1,0 +1,38 @@
+BUSINESS ERP VERSION 8.2
+MOTHERS HARVEST DRYING + ANALYSIS
+
+Built on Version 8.1.
+
+ADDED
+- Separate mhs_drying table and /mhs/drying workflow
+- Start, Edit, Finish and Admin Delete drying records
+- Actual dry weight, final moisture, drying loss and outturn
+- Safe reversal of lot weight when a drying record is deleted
+- Separate mhs_analysis table and /mhs/analysis workflow
+- Parchment General Outturn and Net Outturn calculations
+- DRUGAR analysis without AA/AB/CPB grading
+- AA, AB, CPB and WUGAR expected percentages for parchment
+- Physical defect fields based on the supplied grading analysis form
+- Printable analysis form
+- Edit, Print and Admin Delete controls for analysis
+- 8.1 supplier/purchase Edit/Delete controls retained
+- Purchase edit/delete is now blocked once drying or analysis exists
+
+EDIT/DELETE POLICY
+- Suppliers: Edit; Admin Delete if unused
+- Purchases: Edit; Admin Delete if no downstream drying/analysis
+- Drying: Edit; Finish; Admin Delete with lot restoration
+- Analysis: Edit; Print; Admin Delete
+- Lots: system-generated traceability records; changed through their source workflow,
+  not directly deleted independently
+- Moisture settings: Admin editable configuration, not transactional entries
+
+STANCOFF PROTECTION
+Verified against Version 8.0 baseline:
+- finish_drying unchanged
+- drying unchanged
+- processing unchanged
+- inventory unchanged
+- purchases unchanged
+
+No Stancoff operational table is used by MHS drying or analysis.
