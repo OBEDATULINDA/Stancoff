@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block page_title %}Mothers Harvest Users{% endblock %}
+{% block page_subtitle %}Company access & role administration · Version 8.3.1{% endblock %}
+{% block content %}
+<div class="mhs-page">
+  <div class="mhs-hero">
+    <div>
+      <span class="eyebrow">MOTHERS HARVEST ADMINISTRATION</span>
+      <h2>Users & Access</h2>
+      <p>Create Mothers Harvest-only users, assign operational roles and manage access without granting Stancoff access.</p>
+    </div>
+    <span class="mhs-badge">Admin only</span>
+  </div>
+
+  <div class="mhs-analysis-layout">
+    <div class="mhs-card">
+      <div class="mhs-card-header">
+        <div><h2>Create user</h2><p>The username must be unique across the ERP. Company access is restricted to Mothers Harvest unless a System Administrator separately grants another company.</p></div>
+      </div>
+      <form method="post" class="mhs-form-grid">
+        <label class="mhs-span-2">Full name<input name="full_name" required placeholder="Employee name"></label>
+        <label>Username<input name="username" required autocomplete="off" placeholder="Login username"></label>
+        <label>Password<input type="password" name="password" required autocomplete="new-password" placeholder="Temporary password"></label>
+        <label class="mhs-span-2">Mothers Harvest role
+          <select name="role" required>
+            {% for role in roles %}<option>{{role}}</option>{% endfor %}
+          </select>
+        </label>
+        <div class="mhs-actions"><button class="button" type="submit">Create MHS user</button></div>
+      </form>
+    </div>
+
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h3>Role guide</h3><p>Access is separated by the work each person performs.</p></div></div>
+      <div class="mhs-analysis-note"><strong>Admin</strong>Full Mothers Harvest access, including users and settings.</div>
+      <div class="mhs-analysis-note" style="margin-top:10px"><strong>Manager</strong>Operational access across receiving, quality and production.</div>
+      <div class="mhs-analysis-note" style="margin-top:10px"><strong>Receiving Clerk</strong>Suppliers, purchases and drying intake.</div>
+      <div class="mhs-analysis-note" style="margin-top:10px"><strong>Quality / Analysis</strong>Analysis and quality records.</div>
+      <div class="mhs-analysis-note" style="margin-top:10px"><strong>Production Supervisor</strong>Production intake, finishing and reports.</div>
+      <div class="mhs-analysis-note" style="margin-top:10px"><strong>Storekeeper</strong>Reserved for the 8.4 Inventory & Movement module.</div>
+      <div class="mhs-analysis-note" style="margin-top:10px"><strong>Viewer</strong>Read-only company access.</div>
+    </div>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header">
+      <div><h2>Mothers Harvest users</h2><p>Edit role/details, activate or deactivate access, reset passwords and remove unused accounts.</p></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>User</th><th>Actions</th><th>Username</th><th>MHS Role</th><th>Access</th><th>Account</th><th>Created</th></tr></thead>
+      <tbody>
+      {% for m in memberships %}
+      <tr>
+        <td><strong>{{m.user.full_name}}</strong>{% if current_is_super_admin and m.user.id==session.get('user_id') %}<br><small>Current System Administrator</small>{% endif %}</td>
+        <td class="record-actions">
+          <a class="small-button" href="{{url_for('mhs_user_edit',user_id=m.user.id)}}">Edit</a>
+          <form method="post" action="{{url_for('mhs_user_toggle',user_id=m.user.id)}}"><button class="small-button" type="submit">{{'Deactivate' if m.status=='Active' else 'Activate'}}</button></form>
+          <form method="post" action="{{url_for('mhs_user_reset_password',user_id=m.user.id)}}" class="mhs-inline-reset" onsubmit="return confirm('Reset password for this user?')">
+            <input type="password" name="password" required placeholder="New password" autocomplete="new-password">
+            <button class="small-button" type="submit">Reset</button>
+          </form>
+          <form method="post" action="{{url_for('mhs_user_delete',user_id=m.user.id)}}" onsubmit="return confirm('Remove this Mothers Harvest user? Accounts with history will be deactivated instead of deleted.')"><button class="small-button" type="submit">Delete</button></form>
+        </td>
+        <td>{{m.user.username}}</td><td>{{m.role}}</td>
+        <td><span class="mhs-badge">{{m.status}}</span></td>
+        <td>{{m.user.status}}</td><td>{{m.created_at.strftime('%d %b %Y') if m.created_at else '—'}}</td>
+      </tr>
+      {% else %}<tr><td colspan="7" class="empty">No Mothers Harvest users yet.</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+{% endblock %}

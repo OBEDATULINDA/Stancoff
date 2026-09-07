@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block page_title %}Edit Mothers Harvest User{% endblock %}
+{% block page_subtitle %}{{user.full_name}} · {{user.username}}{% endblock %}
+{% block content %}
+<div class="mhs-page">
+  <div class="mhs-card">
+    <div class="mhs-card-header">
+      <div><h2>User details & access</h2><p>Changes here apply to this user's Mothers Harvest membership. A new password is optional.</p></div>
+      <span class="mhs-badge">{{membership.status}}</span>
+    </div>
+    <form method="post" class="mhs-form-grid">
+      <label class="mhs-span-2">Full name<input name="full_name" value="{{user.full_name}}" required></label>
+      <label>Username<input name="username" value="{{user.username}}" required></label>
+      <label>New password<input type="password" name="password" autocomplete="new-password" placeholder="Leave blank to keep current"></label>
+      <label>MHS role<select name="role">{% for role in roles %}<option {% if role==membership.role %}selected{% endif %}>{{role}}</option>{% endfor %}</select></label>
+      <label>Access status<select name="status"><option {% if membership.status=='Active' %}selected{% endif %}>Active</option><option {% if membership.status=='Inactive' %}selected{% endif %}>Inactive</option></select></label>
+      <div class="mhs-actions"><button class="button" type="submit">Save changes</button><a class="button secondary" href="{{url_for('mhs_users')}}">Cancel</a></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

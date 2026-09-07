@@ -1,0 +1,55 @@
+BUSINESS ERP VERSION 8.3.1
+MOTHERS HARVEST USER ADMINISTRATION
+
+Built on Version 8.3 Production.
+
+ADDED
+- Mothers Harvest Administration -> Users & Access
+- Create Mothers Harvest-only users
+- Edit full name, username, MHS role and access status
+- Optional password change from Edit
+- Quick password reset from user list
+- Activate / Deactivate MHS access
+- Delete unused MHS-only users
+- If a user has transaction/audit history, Delete safely deactivates instead
+- If a user belongs to another company, Delete removes only MHS access
+- System Administrators cannot be deleted from the MHS screen
+
+MHS ROLES
+- Admin
+- Manager
+- Receiving Clerk
+- Quality / Analysis
+- Production Supervisor
+- Storekeeper
+- Viewer
+
+ROLE ACCESS
+- Admin: full Mothers Harvest access + users/settings
+- Manager: receiving, quality and production
+- Receiving Clerk: suppliers, purchases and drying
+- Quality / Analysis: analysis
+- Production Supervisor: production
+- Storekeeper: reserved for 8.4 Inventory & Movement
+- Viewer: dashboard / read-only company access
+
+IMPORTANT MULTI-COMPANY SAFETY FIX
+Version 8.0 originally granted every newly-created ERP user a Stancoff membership
+because its migration-preservation loop ran on every request.
+
+8.3.1 changes that behavior:
+- Existing Stancoff users remain untouched.
+- The bulk legacy membership grant runs only on the first Version 8 migration.
+- New Mothers Harvest users are NOT automatically added to Stancoff.
+- Their global ERP role is Viewer; their actual MHS role comes from CompanyUser.
+- A System Administrator can still separately grant another company if needed.
+
+STANCOFF PROTECTION
+The following Stancoff operational functions remain unchanged from Version 8.3:
+- purchases
+- processing
+- drying
+- finish_drying
+- inventory
+
+Only multi-company user isolation and MHS permission checks were changed.
