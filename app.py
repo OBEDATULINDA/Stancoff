@@ -104,7 +104,8 @@ COMPANY_ROLES = [
     "Admin",
     "Manager",
     "Receiving Clerk",
-    "Processing Supervisor",
+    "Quality / Analysis",
+    "Production Supervisor",
     "Storekeeper",
     "Payroll Officer",
     "Viewer",
@@ -838,14 +839,15 @@ def ensure_company_foundation():
         if not stancoff.slug:
             stancoff.slug = "stancoff"
 
-    # Preserve all existing users by granting them access to Stancoff with
-    # the same role they already had before Version 8.0.
-    for user in User.query.all():
-        membership = CompanyUser.query.filter_by(
-            company_id=stancoff.id,
-            user_id=user.id,
-        ).first()
-        if not membership:
+    # Version 8 migration safeguard:
+    # bulk-grant the pre-existing users to Stancoff ONLY on the first migration.
+    # Once Stancoff memberships exist, future users may belong only to another
+    # company (for example Mothers Harvest) and must not be auto-added here.
+    existing_stancoff_memberships = CompanyUser.query.filter_by(
+        company_id=stancoff.id
+    ).count()
+    if existing_stancoff_memberships == 0:
+        for user in User.query.all():
             db.session.add(CompanyUser(
                 company_id=stancoff.id,
                 user_id=user.id,
@@ -4909,8 +4911,25 @@ def _require_mhs():
     return company
 
 
-def _mhs_can_edit():
+def _mhs_can_receive():
     return session.get("role") in {"Admin", "Manager", "Receiving Clerk"}
+
+
+def _mhs_can_quality():
+    return session.get("role") in {"Admin", "Manager", "Quality / Analysis"}
+
+
+def _mhs_can_produce():
+    return session.get("role") in {"Admin", "Manager", "Production Supervisor"}
+
+
+def _mhs_can_store():
+    return session.get("role") in {"Admin", "Manager", "Storekeeper"}
+
+
+# Backward-compatible alias used by the existing supplier/purchase screens.
+def _mhs_can_edit():
+    return _mhs_can_receive()
 
 
 def _mhs_admin():
@@ -5556,7 +5575,7 @@ def _mhs_analysis_values(form, lot):
 def mhs_analysis():
     company = _require_mhs()
     if request.method == "POST":
-        if not _mhs_can_edit():
+        if not _mhs_can_quality():
             abort(403)
         try:
             lot_id = int(request.form.get("lot_id") or 0)
@@ -5612,7 +5631,7 @@ def mhs_analysis():
 @login_required
 def mhs_analysis_edit(id):
     company = _require_mhs()
-    if not _mhs_can_edit():
+    if not _mhs_can_quality():
         abort(403)
     row = MHSAnalysis.query.filter_by(id=id, company_id=company.id, status="Active").first_or_404()
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first_or_404()
@@ -5807,7 +5826,7 @@ def _mhs_apply_completed_production_to_lot(row, lot):
 def mhs_production():
     company = _require_mhs()
     if request.method == "POST":
-        if not _mhs_can_edit():
+        if not _mhs_can_produce():
             abort(403)
         try:
             lot_id = int(request.form.get("lot_id") or 0)
@@ -5899,7 +5918,7 @@ def mhs_production():
 @login_required
 def mhs_production_edit(id):
     company = _require_mhs()
-    if not _mhs_can_edit():
+    if not _mhs_can_produce():
         abort(403)
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first_or_404()
@@ -5980,7 +5999,7 @@ def mhs_production_edit(id):
 @login_required
 def mhs_production_finish(id):
     company = _require_mhs()
-    if not _mhs_can_edit():
+    if not _mhs_can_produce():
         abort(403)
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first_or_404()
@@ -6046,6 +6065,277 @@ def mhs_production_report(id):
     company = _require_mhs()
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
     return render_template("mhs_production_report.html", row=row, company=company)
+
+
+
+# ---------------------------------------------------------------------------
+# Mothers Harvest Suppliers - Version 8.3.1 Company User Administration
+# ---------------------------------------------------------------------------
+
+MHS_USER_ROLES = [
+    "Admin",
+    "Manager",
+    "Receiving Clerk",
+    "Quality / Analysis",
+    "Production Supervisor",
+    "Storekeeper",
+    "Viewer",
+]
+
+
+def _mhs_user_has_history(user_id):
+    return bool(
+        AuditLog.query.filter_by(user_id=user_id).first()
+        or MHSPurchase.query.filter_by(created_by=user_id).first()
+        or MHSDrying.query.filter_by(created_by=user_id).first()
+        or MHSAnalysis.query.filter_by(created_by=user_id).first()
+        or MHSProduction.query.filter_by(created_by=user_id).first()
+    )
+
+
+@app.route("/mhs/users", methods=["GET", "POST"])
+@login_required
+def mhs_users():
+    company = _require_mhs()
+    _mhs_admin()
+
+    if request.method == "POST":
+        full_name = (request.form.get("full_name") or "").strip()
+        username = (request.form.get("username") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        role = (request.form.get("role") or "").strip()
+
+        if not full_name or not username or not password:
+            flash("Full name, username and password are required.")
+            return redirect(url_for("mhs_users"))
+        if role not in MHS_USER_ROLES:
+            flash("Select a valid Mothers Harvest role.")
+            return redirect(url_for("mhs_users"))
+        if User.query.filter(func.lower(User.username) == username.lower()).first():
+            flash("That username is already in use.")
+            return redirect(url_for("mhs_users"))
+
+        # Global role stays Viewer; company membership controls actual MHS access.
+        # This prevents a Mothers Harvest-only login from gaining legacy Stancoff rights.
+        user = User(
+            full_name=full_name,
+            username=username,
+            password_hash=generate_password_hash(password),
+            role="Viewer",
+            status="Active",
+        )
+        db.session.add(user)
+        db.session.flush()
+
+        db.session.add(CompanyUser(
+            company_id=company.id,
+            user_id=user.id,
+            role=role,
+            status="Active",
+        ))
+        db.session.commit()
+
+        log_action("CREATE", "MHS Users", user.id, f"{username} as {role}")
+        flash(f"{full_name} created with Mothers Harvest access only.")
+        return redirect(url_for("mhs_users"))
+
+    memberships = (
+        CompanyUser.query
+        .filter_by(company_id=company.id)
+        .order_by(CompanyUser.id.desc())
+        .all()
+    )
+    return render_template(
+        "mhs_users.html",
+        memberships=memberships,
+        roles=MHS_USER_ROLES,
+    )
+
+
+@app.route("/mhs/users/<int:user_id>/edit", methods=["GET", "POST"])
+@login_required
+def mhs_user_edit(user_id):
+    company = _require_mhs()
+    _mhs_admin()
+
+    membership = CompanyUser.query.filter_by(
+        company_id=company.id, user_id=user_id
+    ).first_or_404()
+    user = db.session.get(User, user_id)
+    if not user:
+        abort(404)
+
+    if request.method == "POST":
+        full_name = (request.form.get("full_name") or "").strip()
+        username = (request.form.get("username") or "").strip()
+        role = (request.form.get("role") or "").strip()
+        status = (request.form.get("status") or "Active").strip()
+
+        if not full_name or not username:
+            flash("Full name and username are required.")
+            return redirect(url_for("mhs_user_edit", user_id=user_id))
+        if role not in MHS_USER_ROLES:
+            flash("Select a valid Mothers Harvest role.")
+            return redirect(url_for("mhs_user_edit", user_id=user_id))
+        if status not in {"Active", "Inactive"}:
+            status = "Active"
+
+        duplicate = User.query.filter(
+            User.id != user.id,
+            func.lower(User.username) == username.lower()
+        ).first()
+        if duplicate:
+            flash("That username is already in use.")
+            return redirect(url_for("mhs_user_edit", user_id=user_id))
+
+        if user.id == session.get("user_id") and status != "Active":
+            flash("You cannot deactivate the account you are currently using.")
+            return redirect(url_for("mhs_user_edit", user_id=user_id))
+
+        user.full_name = full_name
+        user.username = username
+        membership.role = role
+        membership.status = status
+
+        # If MHS is this user's only active company, membership status controls
+        # whether the global login should also be active.
+        other_active = CompanyUser.query.filter(
+            CompanyUser.user_id == user.id,
+            CompanyUser.company_id != company.id,
+            CompanyUser.status == "Active",
+        ).first()
+        if not other_active and not user_is_super_admin(user.id):
+            user.status = status
+
+        new_password = (request.form.get("password") or "").strip()
+        if new_password:
+            user.password_hash = generate_password_hash(new_password)
+
+        db.session.commit()
+        log_action("EDIT", "MHS Users", user.id, f"{user.username} as {role}; {status}")
+        flash("Mothers Harvest user updated.")
+        return redirect(url_for("mhs_users"))
+
+    return render_template(
+        "mhs_user_edit.html",
+        user=user,
+        membership=membership,
+        roles=MHS_USER_ROLES,
+    )
+
+
+@app.route("/mhs/users/<int:user_id>/toggle", methods=["POST"])
+@login_required
+def mhs_user_toggle(user_id):
+    company = _require_mhs()
+    _mhs_admin()
+
+    membership = CompanyUser.query.filter_by(
+        company_id=company.id, user_id=user_id
+    ).first_or_404()
+    user = db.session.get(User, user_id)
+    if not user:
+        abort(404)
+    if user.id == session.get("user_id"):
+        flash("You cannot deactivate the account you are currently using.")
+        return redirect(url_for("mhs_users"))
+    if user_is_super_admin(user.id):
+        flash("System Administrator access cannot be disabled from the Mothers Harvest user screen.")
+        return redirect(url_for("mhs_users"))
+
+    membership.status = "Inactive" if membership.status == "Active" else "Active"
+
+    other_active = CompanyUser.query.filter(
+        CompanyUser.user_id == user.id,
+        CompanyUser.company_id != company.id,
+        CompanyUser.status == "Active",
+    ).first()
+    if not other_active:
+        user.status = membership.status
+
+    db.session.commit()
+    log_action("UPDATE", "MHS Users", user.id, f"MHS access -> {membership.status}")
+    flash(f"{user.full_name}: Mothers Harvest access is now {membership.status}.")
+    return redirect(url_for("mhs_users"))
+
+
+@app.route("/mhs/users/<int:user_id>/reset-password", methods=["POST"])
+@login_required
+def mhs_user_reset_password(user_id):
+    company = _require_mhs()
+    _mhs_admin()
+
+    membership = CompanyUser.query.filter_by(
+        company_id=company.id, user_id=user_id
+    ).first_or_404()
+    user = db.session.get(User, user_id)
+    if not user:
+        abort(404)
+
+    password = (request.form.get("password") or "").strip()
+    if not password:
+        flash("Enter a new password.")
+        return redirect(url_for("mhs_users"))
+
+    user.password_hash = generate_password_hash(password)
+    db.session.commit()
+    log_action("RESET_PASSWORD", "MHS Users", user.id, user.username)
+    flash(f"Password reset for {user.full_name}.")
+    return redirect(url_for("mhs_users"))
+
+
+@app.route("/mhs/users/<int:user_id>/delete", methods=["POST"])
+@login_required
+def mhs_user_delete(user_id):
+    company = _require_mhs()
+    _mhs_admin()
+
+    membership = CompanyUser.query.filter_by(
+        company_id=company.id, user_id=user_id
+    ).first_or_404()
+    user = db.session.get(User, user_id)
+    if not user:
+        abort(404)
+
+    if user.id == session.get("user_id"):
+        flash("You cannot delete the account you are currently using.")
+        return redirect(url_for("mhs_users"))
+    if user_is_super_admin(user.id):
+        flash("A System Administrator cannot be deleted from this company screen.")
+        return redirect(url_for("mhs_users"))
+
+    has_history = _mhs_user_has_history(user.id)
+    other_memberships = CompanyUser.query.filter(
+        CompanyUser.user_id == user.id,
+        CompanyUser.company_id != company.id,
+    ).all()
+
+    if has_history:
+        membership.status = "Inactive"
+        if not any(m.status == "Active" for m in other_memberships):
+            user.status = "Inactive"
+        db.session.commit()
+        log_action(
+            "DEACTIVATE", "MHS Users", user.id,
+            f"{user.username} retained because transaction/audit history exists."
+        )
+        flash("This user has transaction history, so the account was deactivated instead of permanently deleted.")
+        return redirect(url_for("mhs_users"))
+
+    if other_memberships:
+        db.session.delete(membership)
+        db.session.commit()
+        log_action("REVOKE", "MHS Users", user.id, f"Removed MHS access for {user.username}")
+        flash("Mothers Harvest access removed. The user still belongs to another company.")
+        return redirect(url_for("mhs_users"))
+
+    username = user.username
+    db.session.delete(membership)
+    db.session.delete(user)
+    db.session.commit()
+    log_action("DELETE", "MHS Users", user_id, username)
+    flash("Unused Mothers Harvest user deleted permanently.")
+    return redirect(url_for("mhs_users"))
 
 
 @app.errorhandler(403)

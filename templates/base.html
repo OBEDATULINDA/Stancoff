@@ -92,20 +92,37 @@
       {% else %}
       {% if active_company and active_company.code|lower == 'mhs' %}
       <a href="/mhs" class="{% if request.path=='/mhs' %}active{% endif %}">Dashboard</a>
-      <details class="nav-group" data-nav-group="mhs-coffee" {% if request.path.startswith('/mhs/') %}open{% endif %}>
+      {% if current_role=='Admin' or current_is_super_admin %}
+      <a href="/mhs/users" class="{% if request.path.startswith('/mhs/users') %}active{% endif %}">Users &amp; Access</a>
+      {% endif %}
+      <details class="nav-group" data-nav-group="mhs-coffee" {% if request.path.startswith('/mhs/') and not request.path.startswith('/mhs/users') %}open{% endif %}>
         <summary>Coffee operations</summary>
         <div class="nav-group-links">
+          {% if current_role in ['Admin','Manager','Receiving Clerk'] %}
           <a href="/mhs/suppliers" class="{% if request.path.startswith('/mhs/suppliers') %}active{% endif %}">Suppliers</a>
           <a href="/mhs/purchases" class="{% if request.path.startswith('/mhs/purchases') %}active{% endif %}">Purchases</a>
-          <a href="/mhs/lots" class="{% if request.path.startswith('/mhs/lots') %}active{% endif %}">Lots</a>
           <a href="/mhs/drying" class="{% if request.path.startswith('/mhs/drying') %}active{% endif %}">Drying</a>
+          {% endif %}
+          <a href="/mhs/lots" class="{% if request.path.startswith('/mhs/lots') %}active{% endif %}">Lots</a>
+          {% if current_role in ['Admin','Manager','Quality / Analysis'] %}
           <a href="/mhs/analysis" class="{% if request.path.startswith('/mhs/analysis') %}active{% endif %}">Analysis</a>
+          {% endif %}
+          {% if current_role in ['Admin','Manager','Production Supervisor'] %}
           <a href="/mhs/production" class="{% if request.path.startswith('/mhs/production') %}active{% endif %}">Production</a>
+          {% endif %}
           {% if current_role=='Admin' or current_is_super_admin %}
           <a href="/mhs/settings" class="{% if request.path.startswith('/mhs/settings') %}active{% endif %}">Moisture settings</a>
           {% endif %}
         </div>
       </details>
+      {% if current_role=='Admin' or current_is_super_admin %}
+      <details class="nav-group" data-nav-group="mhs-admin" {% if request.path.startswith('/mhs/users') %}open{% endif %}>
+        <summary>Mothers Harvest administration</summary>
+        <div class="nav-group-links">
+          <a href="/mhs/users" class="{% if request.path.startswith('/mhs/users') %}active{% endif %}">Users &amp; Access</a>
+        </div>
+      </details>
+      {% endif %}
       {% else %}
       <a href="/company-dashboard" class="{% if request.path=='/company-dashboard' %}active{% endif %}">Dashboard</a>
       {% for module in active_module_rows %}

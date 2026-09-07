@@ -1,0 +1,13 @@
+VERSION 8.3.2
+MOTHERS HARVEST USERS VISIBILITY FIX
+
+The 8.3.1 user-management backend existed, but the dashboard did not contain a
+Users module/card. It was only placed inside the sidebar Administration group.
+
+8.3.2 makes it unmistakably visible in two places for MHS Admin/System Admin:
+1. Direct 'Users & Access' link in the Mothers Harvest sidebar.
+2. Administration -> Users & Access card on the Mothers Harvest dashboard.
+
+No database changes.
+No Stancoff operational changes.
+All 8.3.1 user-management routes remain intact.

@@ -257,3 +257,7 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
 @media(max-width:1180px){.mhs-kpis{grid-template-columns:repeat(3,1fr)}.mhs-form-grid,.mhs-defect-grid{grid-template-columns:repeat(2,1fr)}.mhs-workflow{grid-template-columns:repeat(3,1fr)}.mhs-analysis-layout{grid-template-columns:1fr}}
 @media(max-width:700px){.mhs-hero{align-items:flex-start;flex-direction:column}.mhs-kpis{grid-template-columns:1fr 1fr}.mhs-form-grid,.mhs-defect-grid{grid-template-columns:1fr}.mhs-span-2{grid-column:auto}.mhs-workflow{grid-template-columns:1fr 1fr}.mhs-card{padding:15px}}
 @media(max-width:480px){.mhs-kpis,.mhs-workflow{grid-template-columns:1fr}}
+
+.mhs-inline-reset{display:inline-flex!important;gap:5px;align-items:center;margin:2px}
+.mhs-inline-reset input{width:125px;padding:7px 8px;font-size:12px}
+@media(max-width:700px){.mhs-inline-reset{display:flex!important;margin-top:6px}.mhs-inline-reset input{width:150px}}
