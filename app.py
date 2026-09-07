@@ -326,6 +326,93 @@ MHS_PROCESS_TYPES = [
 ]
 
 
+
+class MHSInventoryStock(db.Model):
+    __tablename__ = "mhs_inventory_stock"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    stock_no = db.Column(db.String(30), nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey("mhs_lot.id"), nullable=False)
+    production_id = db.Column(db.Integer, db.ForeignKey("mhs_production.id"))
+    product = db.Column(db.String(80), nullable=False)
+    current_weight = db.Column(db.Float, nullable=False, default=0)
+    moisture = db.Column(db.Float)
+    station = db.Column(db.String(160))
+    warehouse = db.Column(db.String(160))
+    status = db.Column(db.String(30), nullable=False, default="Active")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    lot = db.relationship("MHSLot")
+    production = db.relationship("MHSProduction")
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "stock_no", name="uq_mhs_inventory_stock_company_no"),
+    )
+
+
+class MHSInventoryMovement(db.Model):
+    __tablename__ = "mhs_inventory_movement"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    movement_no = db.Column(db.String(30), nullable=False)
+    movement_date = db.Column(db.Date, nullable=False)
+    movement_type = db.Column(db.String(30), nullable=False, default="Transfer")
+    lot_id = db.Column(db.Integer, db.ForeignKey("mhs_lot.id"), nullable=False)
+    product = db.Column(db.String(80), nullable=False)
+
+    source_stock_id = db.Column(db.Integer, db.ForeignKey("mhs_inventory_stock.id"))
+    destination_stock_id = db.Column(db.Integer, db.ForeignKey("mhs_inventory_stock.id"))
+
+    source_station = db.Column(db.String(160))
+    source_warehouse = db.Column(db.String(160))
+    destination_station = db.Column(db.String(160))
+    destination_warehouse = db.Column(db.String(160))
+
+    system_weight_before = db.Column(db.Float, nullable=False, default=0)
+    dispatched_weight = db.Column(db.Float, nullable=False, default=0)
+    received_weight = db.Column(db.Float, nullable=False, default=0)
+    dispatch_variance = db.Column(db.Float, nullable=False, default=0)
+    dispatch_variance_percent = db.Column(db.Float, nullable=False, default=0)
+    weight_variance = db.Column(db.Float, nullable=False, default=0)
+    variance_percent = db.Column(db.Float, nullable=False, default=0)
+    full_stock_move = db.Column(db.Boolean, nullable=False, default=False)
+
+    reason = db.Column(db.Text)
+    moved_by_name = db.Column(db.String(160))
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+    status = db.Column(db.String(30), nullable=False, default="Active")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    lot = db.relationship("MHSLot")
+    source_stock = db.relationship("MHSInventoryStock", foreign_keys=[source_stock_id])
+    destination_stock = db.relationship("MHSInventoryStock", foreign_keys=[destination_stock_id])
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "movement_no", name="uq_mhs_inventory_movement_company_no"),
+    )
+
+
+class MHSInventoryAdjustment(db.Model):
+    __tablename__ = "mhs_inventory_adjustment"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    adjustment_no = db.Column(db.String(30), nullable=False)
+    adjustment_date = db.Column(db.Date, nullable=False)
+    stock_id = db.Column(db.Integer, db.ForeignKey("mhs_inventory_stock.id"), nullable=False)
+    old_weight = db.Column(db.Float, nullable=False)
+    new_weight = db.Column(db.Float, nullable=False)
+    difference = db.Column(db.Float, nullable=False, default=0)
+    reason = db.Column(db.Text, nullable=False)
+    adjusted_by_name = db.Column(db.String(160))
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+    status = db.Column(db.String(30), nullable=False, default="Active")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    stock = db.relationship("MHSInventoryStock")
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "adjustment_no", name="uq_mhs_inventory_adjustment_company_no"),
+    )
+
+
 class MHSSetting(db.Model):
     __tablename__ = "mhs_setting"
     id = db.Column(db.Integer, primary_key=True)
@@ -4901,6 +4988,16 @@ def ensure_mhs_foundation():
                 status="Active",
             ))
     db.session.commit()
+
+    # Version 8.4: safely backfill already-completed MHS production into the
+    # new isolated inventory tables. Existing production data is not changed.
+    try:
+        _mhs_seed_existing_completed_production_inventory(company)
+    except NameError:
+        # Function definitions are resolved by the time normal requests run;
+        # this guard protects unusual import-time execution.
+        pass
+
     return company
 
 
@@ -5707,6 +5804,143 @@ def mhs_analysis_print(id):
 # Mothers Harvest Suppliers - Version 8.3 Production
 # ---------------------------------------------------------------------------
 
+
+def _mhs_refresh_lot_from_inventory(company_id, lot_id):
+    lot = MHSLot.query.filter_by(id=lot_id, company_id=company_id, status="Active").first()
+    if not lot:
+        return
+    total = db.session.query(func.coalesce(func.sum(MHSInventoryStock.current_weight), 0)).filter(
+        MHSInventoryStock.company_id == company_id,
+        MHSInventoryStock.lot_id == lot_id,
+        MHSInventoryStock.status == "Active",
+        MHSInventoryStock.current_weight > 0,
+    ).scalar() or 0
+    lot.current_weight = float(total)
+
+
+def _mhs_production_output_map(row):
+    """Return only the physically existing clean outputs from a completed production."""
+    outputs = []
+    if row.source_coffee_type == "DRUGAR FAQ":
+        if row.process_type == "Hulling Only" and float(row.hulled_output or 0) > 0:
+            outputs.append(("Hulled DRUGAR", float(row.hulled_output)))
+        elif row.process_type == "Gravity Table Only" and float(row.gravity_clean_weight or 0) > 0:
+            outputs.append(("Gravity Clean DRUGAR", float(row.gravity_clean_weight)))
+        elif row.process_type == "Color Sorting Only" and float(row.color_sorted_weight or 0) > 0:
+            outputs.append(("Color Sorted DRUGAR", float(row.color_sorted_weight)))
+        elif float(row.drugar_clean_weight or 0) > 0:
+            outputs.append(("DRUGAR FAQ", float(row.drugar_clean_weight)))
+    else:
+        if row.process_type == "Hulling Only" and float(row.hulled_output or 0) > 0:
+            outputs.append(("Hulled Green Coffee", float(row.hulled_output)))
+        elif row.process_type == "Gravity Table Only" and float(row.gravity_clean_weight or 0) > 0:
+            outputs.append(("Gravity Clean", float(row.gravity_clean_weight)))
+        elif row.process_type == "Color Sorting Only" and float(row.color_sorted_weight or 0) > 0:
+            outputs.append(("Color Sorted Coffee", float(row.color_sorted_weight)))
+        else:
+            for product, value in [
+                ("AA", row.aa_weight), ("AB", row.ab_weight),
+                ("CPB", row.cpb_weight), ("WUGAR", row.wugar_weight),
+            ]:
+                if float(value or 0) > 0:
+                    outputs.append((product, float(value)))
+    return outputs
+
+
+def _mhs_production_inventory_has_movement(company_id, production_id):
+    stock_ids = [
+        s.id for s in MHSInventoryStock.query.filter_by(
+            company_id=company_id, production_id=production_id
+        ).all()
+    ]
+    if not stock_ids:
+        return False
+    return MHSInventoryMovement.query.filter(
+        MHSInventoryMovement.company_id == company_id,
+        MHSInventoryMovement.status == "Active",
+        (
+            MHSInventoryMovement.source_stock_id.in_(stock_ids)
+            | MHSInventoryMovement.destination_stock_id.in_(stock_ids)
+        ),
+    ).first() is not None
+
+
+def _mhs_sync_production_inventory(company, row, lot):
+    """
+    Make inventory equal the latest actual production output.
+    Production output is the new authoritative weight going forward.
+    Existing production-origin stock can be resynchronised only before it has moved.
+    """
+    if row.status != "Completed":
+        return
+    if _mhs_production_inventory_has_movement(company.id, row.id):
+        raise ValueError(
+            "This production has already been moved in inventory. Reverse/correct the movement first before editing production output."
+        )
+
+    outputs = _mhs_production_output_map(row)
+    existing = MHSInventoryStock.query.filter_by(
+        company_id=company.id, production_id=row.id
+    ).order_by(MHSInventoryStock.id).all()
+
+    by_product = {}
+    for stock in existing:
+        by_product.setdefault(stock.product, []).append(stock)
+
+    used = set()
+    for product, weight in outputs:
+        candidates = by_product.get(product, [])
+        stock = next((s for s in candidates if s.id not in used), None)
+        if not stock:
+            stock = MHSInventoryStock(
+                company_id=company.id,
+                stock_no=_mhs_next_code(MHSInventoryStock, company.id, "stock_no", "MHS-STK", 5),
+                lot_id=lot.id,
+                production_id=row.id,
+                product=product,
+                current_weight=weight,
+                moisture=lot.current_moisture,
+                station=row.destination_station or "Unassigned",
+                warehouse=row.destination_warehouse or "Unassigned",
+                status="Active",
+            )
+            db.session.add(stock)
+            db.session.flush()
+        else:
+            stock.current_weight = weight
+            stock.station = row.destination_station or stock.station or "Unassigned"
+            stock.warehouse = row.destination_warehouse or stock.warehouse or "Unassigned"
+            stock.status = "Active"
+        used.add(stock.id)
+
+    for stock in existing:
+        if stock.id not in used:
+            stock.current_weight = 0
+            stock.status = "Superseded"
+
+    lot.readiness = "In Inventory"
+    _mhs_refresh_lot_from_inventory(company.id, lot.id)
+
+
+def _mhs_inventory_location_label(stock):
+    return f"{stock.station or 'Unassigned'} / {stock.warehouse or 'Unassigned'}"
+
+
+def _mhs_seed_existing_completed_production_inventory(company):
+    """One-time-safe backfill: completed productions without stock become inventory."""
+    completed = MHSProduction.query.filter_by(company_id=company.id, status="Completed").all()
+    for row in completed:
+        existing = MHSInventoryStock.query.filter_by(
+            company_id=company.id, production_id=row.id
+        ).first()
+        if existing:
+            continue
+        lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id, status="Active").first()
+        if lot:
+            _mhs_sync_production_inventory(company, row, lot)
+    db.session.commit()
+
+
 def _mhs_latest_analysis(company_id, lot_id):
     return MHSAnalysis.query.filter_by(
         company_id=company_id, lot_id=lot_id, status="Active"
@@ -5984,6 +6218,12 @@ def mhs_production_edit(id):
             row.actual_outturn = outturn
             row.mass_balance_percent = mass_balance
             _mhs_apply_completed_production_to_lot(row, lot)
+            try:
+                _mhs_sync_production_inventory(company, row, lot)
+            except ValueError as exc:
+                db.session.rollback()
+                flash(str(exc))
+                return redirect(url_for("mhs_production_edit", id=id))
         else:
             lot.readiness = "In Production"
 
@@ -6029,6 +6269,7 @@ def mhs_production_finish(id):
         row.status = "Completed"
 
         _mhs_apply_completed_production_to_lot(row, lot)
+        _mhs_sync_production_inventory(company, row, lot)
         db.session.commit()
         log_action("FINISH", "MHS Production", row.id, f"{row.production_no} / {lot.lot_no}")
         flash(f"{row.production_no} completed. Clean output: {clean:,.2f} kg; processing loss: {loss:,.2f} kg.")
@@ -6045,6 +6286,18 @@ def mhs_production_delete(id):
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first()
     production_no = row.production_no
+
+    if _mhs_production_inventory_has_movement(company.id, row.id):
+        flash("This production already has inventory movements and cannot be deleted. Correct or reverse the movement first.")
+        return redirect(url_for("mhs_production"))
+
+    for stock in MHSInventoryStock.query.filter_by(company_id=company.id, production_id=row.id).all():
+        if MHSInventoryAdjustment.query.filter_by(company_id=company.id, stock_id=stock.id, status="Active").first():
+            flash("This production stock has inventory adjustments and cannot be deleted until they are corrected.")
+            return redirect(url_for("mhs_production"))
+
+    for stock in MHSInventoryStock.query.filter_by(company_id=company.id, production_id=row.id).all():
+        db.session.delete(stock)
 
     if lot:
         lot.current_weight = row.source_lot_weight
@@ -6065,6 +6318,346 @@ def mhs_production_report(id):
     company = _require_mhs()
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
     return render_template("mhs_production_report.html", row=row, company=company)
+
+
+
+
+# ---------------------------------------------------------------------------
+# Mothers Harvest Suppliers - Version 8.4 Inventory & Movement
+# ---------------------------------------------------------------------------
+
+@app.route("/mhs/inventory")
+@login_required
+def mhs_inventory():
+    company = _require_mhs()
+    rows = MHSInventoryStock.query.filter_by(
+        company_id=company.id, status="Active"
+    ).order_by(MHSInventoryStock.product, MHSInventoryStock.stock_no).all()
+    movements = MHSInventoryMovement.query.filter_by(
+        company_id=company.id, status="Active"
+    ).order_by(MHSInventoryMovement.id.desc()).limit(100).all()
+    adjustments = MHSInventoryAdjustment.query.filter_by(
+        company_id=company.id, status="Active"
+    ).order_by(MHSInventoryAdjustment.id.desc()).limit(50).all()
+
+    total_weight = sum(float(r.current_weight or 0) for r in rows)
+    by_product = {}
+    by_location = {}
+    for row in rows:
+        if float(row.current_weight or 0) <= 0:
+            continue
+        by_product[row.product] = by_product.get(row.product, 0) + float(row.current_weight or 0)
+        loc = _mhs_inventory_location_label(row)
+        by_location[loc] = by_location.get(loc, 0) + float(row.current_weight or 0)
+
+    return render_template(
+        "mhs_inventory.html",
+        rows=rows,
+        movements=movements,
+        adjustments=adjustments,
+        total_weight=total_weight,
+        by_product=sorted(by_product.items(), key=lambda x: x[0]),
+        by_location=sorted(by_location.items(), key=lambda x: x[0]),
+        today=datetime.utcnow().date().isoformat(),
+    )
+
+
+@app.route("/mhs/inventory/<int:stock_id>/move", methods=["GET", "POST"])
+@login_required
+def mhs_inventory_move(stock_id):
+    company = _require_mhs()
+    if not _mhs_can_store():
+        abort(403)
+
+    stock = MHSInventoryStock.query.filter_by(
+        id=stock_id, company_id=company.id, status="Active"
+    ).first_or_404()
+
+    if float(stock.current_weight or 0) <= 0:
+        flash("This stock has no available weight to move.")
+        return redirect(url_for("mhs_inventory"))
+
+    if request.method == "POST":
+        try:
+            movement_date = datetime.strptime(request.form.get("movement_date"), "%Y-%m-%d").date()
+            dispatched = float(request.form.get("dispatched_weight") or 0)
+            received = float(request.form.get("received_weight") or 0)
+        except (TypeError, ValueError):
+            flash("Enter a valid movement date and weights.")
+            return redirect(url_for("mhs_inventory_move", stock_id=stock.id))
+
+        full_move = request.form.get("full_stock_move") == "1"
+        destination_station = (request.form.get("destination_station") or "").strip()
+        destination_warehouse = (request.form.get("destination_warehouse") or "").strip()
+        reason = (request.form.get("reason") or "").strip() or None
+
+        system_before = float(stock.current_weight or 0)
+        if dispatched <= 0 or received <= 0:
+            flash("Dispatched and received weights must both be above zero.")
+            return redirect(url_for("mhs_inventory_move", stock_id=stock.id))
+        if not destination_station or not destination_warehouse:
+            flash("Destination station and warehouse are required.")
+            return redirect(url_for("mhs_inventory_move", stock_id=stock.id))
+        if not full_move and dispatched > system_before + 0.0001:
+            flash("A partial movement cannot dispatch more than the current stock balance.")
+            return redirect(url_for("mhs_inventory_move", stock_id=stock.id))
+
+        dispatch_variance = dispatched - system_before if full_move else 0
+        dispatch_variance_pct = (dispatch_variance / system_before * 100) if full_move and system_before else 0
+        transit_variance = received - dispatched
+        transit_variance_pct = (transit_variance / dispatched * 100) if dispatched else 0
+
+        if (abs(dispatch_variance_pct) >= 1 or abs(transit_variance_pct) >= 1) and not reason:
+            flash("A weight difference of 1% or more requires a reason.")
+            return redirect(url_for("mhs_inventory_move", stock_id=stock.id))
+
+        destination = MHSInventoryStock(
+            company_id=company.id,
+            stock_no=_mhs_next_code(MHSInventoryStock, company.id, "stock_no", "MHS-STK", 5),
+            lot_id=stock.lot_id,
+            production_id=stock.production_id,
+            product=stock.product,
+            current_weight=received,
+            moisture=stock.moisture,
+            station=destination_station,
+            warehouse=destination_warehouse,
+            status="Active",
+        )
+        db.session.add(destination)
+        db.session.flush()
+
+        if full_move:
+            # A full movement is a physical reconciliation. Whatever the old
+            # system balance was, this source stock is now physically gone.
+            stock.current_weight = 0
+            stock.status = "Moved"
+        else:
+            stock.current_weight = max(0, system_before - dispatched)
+            if stock.current_weight <= 0.0001:
+                stock.current_weight = 0
+                stock.status = "Moved"
+
+        movement = MHSInventoryMovement(
+            company_id=company.id,
+            movement_no=_mhs_next_code(MHSInventoryMovement, company.id, "movement_no", "MHS-MOV", 5),
+            movement_date=movement_date,
+            movement_type="Transfer",
+            lot_id=stock.lot_id,
+            product=stock.product,
+            source_stock_id=stock.id,
+            destination_stock_id=destination.id,
+            source_station=stock.station,
+            source_warehouse=stock.warehouse,
+            destination_station=destination_station,
+            destination_warehouse=destination_warehouse,
+            system_weight_before=system_before,
+            dispatched_weight=dispatched,
+            received_weight=received,
+            dispatch_variance=dispatch_variance,
+            dispatch_variance_percent=dispatch_variance_pct,
+            weight_variance=transit_variance,
+            variance_percent=transit_variance_pct,
+            full_stock_move=full_move,
+            reason=reason,
+            moved_by_name=(request.form.get("moved_by_name") or "").strip() or None,
+            created_by=session.get("user_id"),
+            status="Active",
+        )
+        db.session.add(movement)
+
+        # Critical rule: from this point onward, the RECEIVED weight is the
+        # authoritative weight at the destination. Refresh the parent lot from
+        # the live inventory balances so all future operations use new weights.
+        _mhs_refresh_lot_from_inventory(company.id, stock.lot_id)
+        db.session.commit()
+
+        log_action(
+            "MOVE", "MHS Inventory", movement.id,
+            f"{movement.movement_no}: {stock.product} {dispatched:.2f} kg dispatched, {received:.2f} kg received"
+        )
+        flash(
+            f"{movement.movement_no} completed. {received:,.2f} kg is now the official destination stock weight."
+        )
+        return redirect(url_for("mhs_inventory"))
+
+    return render_template(
+        "mhs_inventory_move.html",
+        stock=stock,
+        today=datetime.utcnow().date().isoformat(),
+    )
+
+
+@app.route("/mhs/inventory/<int:stock_id>/adjust", methods=["GET", "POST"])
+@login_required
+def mhs_inventory_adjust(stock_id):
+    company = _require_mhs()
+    _mhs_admin()
+
+    stock = MHSInventoryStock.query.filter_by(
+        id=stock_id, company_id=company.id, status="Active"
+    ).first_or_404()
+
+    if request.method == "POST":
+        try:
+            adjustment_date = datetime.strptime(request.form.get("adjustment_date"), "%Y-%m-%d").date()
+            new_weight = float(request.form.get("new_weight") or 0)
+        except (TypeError, ValueError):
+            flash("Enter a valid adjustment date and new physical weight.")
+            return redirect(url_for("mhs_inventory_adjust", stock_id=stock.id))
+
+        reason = (request.form.get("reason") or "").strip()
+        if new_weight < 0:
+            flash("New weight cannot be negative.")
+            return redirect(url_for("mhs_inventory_adjust", stock_id=stock.id))
+        if not reason:
+            flash("A reason is required for every stock adjustment.")
+            return redirect(url_for("mhs_inventory_adjust", stock_id=stock.id))
+
+        old_weight = float(stock.current_weight or 0)
+        adjustment = MHSInventoryAdjustment(
+            company_id=company.id,
+            adjustment_no=_mhs_next_code(MHSInventoryAdjustment, company.id, "adjustment_no", "MHS-ADJ", 5),
+            adjustment_date=adjustment_date,
+            stock_id=stock.id,
+            old_weight=old_weight,
+            new_weight=new_weight,
+            difference=new_weight - old_weight,
+            reason=reason,
+            adjusted_by_name=(request.form.get("adjusted_by_name") or "").strip() or None,
+            created_by=session.get("user_id"),
+            status="Active",
+        )
+        db.session.add(adjustment)
+
+        # Physical reweigh becomes the new authoritative balance immediately.
+        stock.current_weight = new_weight
+        if new_weight <= 0:
+            stock.status = "Adjusted Out"
+        _mhs_refresh_lot_from_inventory(company.id, stock.lot_id)
+        db.session.commit()
+
+        log_action("ADJUST", "MHS Inventory", adjustment.id, f"{adjustment.adjustment_no}: {old_weight:.2f} -> {new_weight:.2f} kg")
+        flash(f"Stock adjusted. {new_weight:,.2f} kg is now the official weight going forward.")
+        return redirect(url_for("mhs_inventory"))
+
+    return render_template(
+        "mhs_inventory_adjust.html",
+        stock=stock,
+        today=datetime.utcnow().date().isoformat(),
+    )
+
+
+
+@app.route("/mhs/inventory/adjustment/<int:id>/reverse", methods=["POST"])
+@login_required
+def mhs_inventory_adjustment_reverse(id):
+    company = _require_mhs()
+    _mhs_admin()
+
+    row = MHSInventoryAdjustment.query.filter_by(
+        id=id, company_id=company.id, status="Active"
+    ).first_or_404()
+    stock = row.stock
+    if not stock:
+        abort(404)
+
+    later_move = MHSInventoryMovement.query.filter(
+        MHSInventoryMovement.company_id == company.id,
+        MHSInventoryMovement.status == "Active",
+        MHSInventoryMovement.created_at > row.created_at,
+        (
+            (MHSInventoryMovement.source_stock_id == stock.id)
+            | (MHSInventoryMovement.destination_stock_id == stock.id)
+        ),
+    ).first()
+    later_adjustment = MHSInventoryAdjustment.query.filter(
+        MHSInventoryAdjustment.company_id == company.id,
+        MHSInventoryAdjustment.stock_id == stock.id,
+        MHSInventoryAdjustment.status == "Active",
+        MHSInventoryAdjustment.id != row.id,
+        MHSInventoryAdjustment.created_at > row.created_at,
+    ).first()
+    if later_move or later_adjustment:
+        flash("This adjustment has downstream stock activity and cannot be reversed.")
+        return redirect(url_for("mhs_inventory"))
+
+    stock.current_weight = float(row.old_weight or 0)
+    stock.status = "Active" if stock.current_weight > 0 else "Adjusted Out"
+    row.status = "Reversed"
+    _mhs_refresh_lot_from_inventory(company.id, stock.lot_id)
+    db.session.commit()
+
+    log_action("REVERSE", "MHS Inventory Adjustment", row.id, row.adjustment_no)
+    flash(f"{row.adjustment_no} reversed. {stock.current_weight:,.2f} kg is restored as the official stock weight.")
+    return redirect(url_for("mhs_inventory"))
+
+
+@app.route("/mhs/inventory/movement/<int:id>/report")
+@login_required
+def mhs_inventory_movement_report(id):
+    company = _require_mhs()
+    row = MHSInventoryMovement.query.filter_by(
+        id=id, company_id=company.id, status="Active"
+    ).first_or_404()
+    return render_template("mhs_inventory_movement_report.html", row=row, company=company)
+
+
+@app.route("/mhs/inventory/movement/<int:id>/delete", methods=["POST"])
+@login_required
+def mhs_inventory_movement_delete(id):
+    company = _require_mhs()
+    _mhs_admin()
+
+    row = MHSInventoryMovement.query.filter_by(
+        id=id, company_id=company.id, status="Active"
+    ).first_or_404()
+    source = row.source_stock
+    destination = row.destination_stock
+
+    # A movement can be safely reversed only if neither the source remainder
+    # nor the destination stock has subsequent movement/adjustment activity.
+    involved_ids = [s.id for s in [source, destination] if s]
+    downstream = None
+    adjustment = None
+    if involved_ids:
+        downstream = MHSInventoryMovement.query.filter(
+            MHSInventoryMovement.company_id == company.id,
+            MHSInventoryMovement.status == "Active",
+            MHSInventoryMovement.id != row.id,
+            (
+                MHSInventoryMovement.source_stock_id.in_(involved_ids)
+                | MHSInventoryMovement.destination_stock_id.in_(involved_ids)
+            ),
+        ).first()
+        adjustment = MHSInventoryAdjustment.query.filter(
+            MHSInventoryAdjustment.company_id == company.id,
+            MHSInventoryAdjustment.stock_id.in_(involved_ids),
+            MHSInventoryAdjustment.status == "Active",
+        ).first()
+    if downstream or adjustment:
+        flash("This movement has downstream stock activity and cannot be reversed.")
+        return redirect(url_for("mhs_inventory"))
+
+    if source:
+        if row.full_stock_move:
+            source.current_weight = float(row.system_weight_before or 0)
+        else:
+            source.current_weight = float(source.current_weight or 0) + float(row.dispatched_weight or 0)
+        source.status = "Active"
+
+    if destination:
+        db.session.delete(destination)
+
+    lot_id = row.lot_id
+    movement_no = row.movement_no
+    db.session.delete(row)
+    db.session.flush()
+    _mhs_refresh_lot_from_inventory(company.id, lot_id)
+    db.session.commit()
+
+    log_action("DELETE", "MHS Inventory Movement", id, movement_no)
+    flash(f"{movement_no} reversed and stock balances restored.")
+    return redirect(url_for("mhs_inventory"))
 
 
 

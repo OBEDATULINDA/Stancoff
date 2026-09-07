@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>{{row.movement_no}}</title>
+<style>
+body{font-family:Arial,sans-serif;color:#222;margin:28px}.head{text-align:center}.head h1,.head h2{margin:3px}.meta,.report{width:100%;border-collapse:collapse;margin:18px 0}.meta td,.report th,.report td{border:1px solid #777;padding:8px}.report th{background:#eee;text-align:left}.big{font-size:22px;font-weight:bold}.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:35px;margin-top:60px}.line{border-top:1px solid #333;padding-top:5px}@media print{button{display:none}}
+</style></head><body>
+<div class="head"><h1>MOTHERS HARVEST SUPPLIERS</h1><h2>COFFEE MOVEMENT NOTE</h2><p>{{row.movement_no}}</p></div>
+<table class="meta">
+<tr><td><b>Date:</b> {{row.movement_date}}</td><td><b>Lot:</b> {{row.lot.lot_no}}</td><td><b>Product:</b> {{row.product}}</td></tr>
+<tr><td><b>From:</b> {{row.source_station or '—'}} / {{row.source_warehouse or '—'}}</td><td colspan="2"><b>To:</b> {{row.destination_station or '—'}} / {{row.destination_warehouse or '—'}}</td></tr>
+</table>
+<table class="report">
+<tr><th>Weight control</th><th>kg</th></tr>
+<tr><td>System balance before movement</td><td>{{'%.2f'|format(row.system_weight_before)}}</td></tr>
+<tr><td>Actual dispatched weight</td><td>{{'%.2f'|format(row.dispatched_weight)}}</td></tr>
+<tr><td>Dispatch difference vs system</td><td>{{'%+.2f'|format(row.dispatch_variance)}}</td></tr>
+<tr><td>Actual received weight</td><td class="big">{{'%.2f'|format(row.received_weight)}}</td></tr>
+<tr><td>Transit variance</td><td>{{'%+.2f'|format(row.weight_variance)}} ({{'%+.2f'|format(row.variance_percent)}}%)</td></tr>
+</table>
+<p><b>Official weight going forward at destination:</b> {{'%.2f'|format(row.received_weight)}} kg</p>
+<p><b>Reason / notes:</b> {{row.reason or '—'}}</p>
+<p><b>Moved / received by:</b> {{row.moved_by_name or '—'}}</p>
+<div class="sign"><div class="line">Dispatched by</div><div class="line">Received by</div><div class="line">Store / Operations</div></div>
+<p style="margin-top:35px"><button onclick="window.print()">Print movement note</button></p>
+</body></html>

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block page_title %}Move Mothers Harvest Stock{% endblock %}
+{% block page_subtitle %}{{stock.stock_no}} · {{stock.product}} · {{stock.lot.lot_no}}{% endblock %}
+{% block content %}
+<div class="mhs-page">
+  <div class="mhs-hero">
+    <div><span class="eyebrow">PHYSICAL STOCK MOVEMENT</span><h2>{{stock.product}} · {{'{:,.2f}'.format(stock.current_weight)}} kg</h2><p>Reweigh coffee when it leaves and when it arrives. The received weight becomes the official destination stock balance for all future transactions.</p></div>
+    <span class="mhs-badge">{{stock.station or 'Unassigned'}} / {{stock.warehouse or 'Unassigned'}}</span>
+  </div>
+
+  <div class="mhs-card">
+    <form method="post" class="mhs-form-grid" id="moveStockForm">
+      <div class="mhs-form-section"><h3>Source stock</h3><p>The system balance is preserved in the audit trail before any new physical weight is applied.</p></div>
+      <label>System weight before move<input id="systemBefore" value="{{stock.current_weight}}" readonly></label>
+      <label>Movement date<input type="date" name="movement_date" value="{{today}}" required></label>
+      <label class="mhs-span-2"><span>Movement scope</span>
+        <span style="display:flex;gap:8px;align-items:center;padding-top:9px"><input type="checkbox" name="full_stock_move" id="fullMove" value="1" style="width:auto"> Move the entire physical stock</span>
+      </label>
+
+      <div class="mhs-form-section"><h3>Reweighed movement weights</h3><p>For a full move, the dispatched weight may correct the old system balance. The received weight is the new destination balance.</p></div>
+      <label>Actual dispatched weight (kg)<input type="number" step="0.01" min="0.01" name="dispatched_weight" id="dispatchWeight" required></label>
+      <label>Actual received weight (kg)<input type="number" step="0.01" min="0.01" name="received_weight" id="receivedWeight" required></label>
+      <label>Dispatch vs system<input id="dispatchDiff" readonly></label>
+      <label>Received vs dispatched<input id="transitDiff" readonly></label>
+
+      <div class="mhs-form-section"><h3>Destination</h3><p>Received coffee will be created as a new stock balance at this location.</p></div>
+      <label>Destination station<input name="destination_station" required></label>
+      <label>Destination warehouse<input name="destination_warehouse" required></label>
+      <label>Moved / received by<input name="moved_by_name"></label>
+      <label class="mhs-span-2">Reason / notes<textarea name="reason" id="movementReason" rows="3" placeholder="Required automatically when a difference is 1% or more"></textarea></label>
+
+      <div class="mhs-span-all" style="padding:12px 14px;border:1px solid #b6d6bf;background:#eef8f1;border-radius:10px">
+        <strong>Weight rule:</strong> after this movement, <strong>the received weight above is the weight used going forward at the destination.</strong>
+      </div>
+      <div class="mhs-actions"><button class="button" type="submit">Complete movement</button><a class="button secondary" href="{{url_for('mhs_inventory')}}">Cancel</a></div>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+ const system=parseFloat(document.getElementById('systemBefore').value||0),
+       full=document.getElementById('fullMove'), d=document.getElementById('dispatchWeight'),
+       r=document.getElementById('receivedWeight'), dd=document.getElementById('dispatchDiff'),
+       td=document.getElementById('transitDiff');
+ function up(){
+   const dv=parseFloat(d.value||0), rv=parseFloat(r.value||0);
+   dd.value=dv?((dv-system)>=0?'+':'')+(dv-system).toFixed(2)+' kg':'';
+   td.value=(dv&&rv)?((rv-dv)>=0?'+':'')+(rv-dv).toFixed(2)+' kg':'';
+   if(full.checked && !d.value){d.value=system.toFixed(2)}
+   if(d.value && !r.value){r.value=d.value}
+ }
+ full.addEventListener('change',up); d.addEventListener('input',up); r.addEventListener('input',up);
+})();
+</script>
+{% endblock %}

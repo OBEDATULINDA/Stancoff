@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block page_title %}Adjust Mothers Harvest Stock{% endblock %}
+{% block page_subtitle %}Admin physical reweigh · {{stock.stock_no}}{% endblock %}
+{% block content %}
+<div class="mhs-page">
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>{{stock.product}} · {{stock.lot.lot_no}}</h2><p>Use only for a confirmed physical reweigh or documented stock correction. The new weight becomes the official balance immediately.</p></div><span class="mhs-badge">{{'{:,.2f}'.format(stock.current_weight)}} kg current</span></div>
+    <form method="post" class="mhs-form-grid">
+      <label>Adjustment date<input type="date" name="adjustment_date" value="{{today}}" required></label>
+      <label>Current system weight<input value="{{stock.current_weight}}" readonly></label>
+      <label>New physical weight (kg)<input type="number" step="0.01" min="0" name="new_weight" required></label>
+      <label>Adjusted by<input name="adjusted_by_name"></label>
+      <label class="mhs-span-all">Reason<textarea name="reason" rows="4" required placeholder="Explain why the physical balance changed"></textarea></label>
+      <div class="mhs-actions"><button class="button" type="submit">Apply new weight</button><a class="button secondary" href="{{url_for('mhs_inventory')}}">Cancel</a></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

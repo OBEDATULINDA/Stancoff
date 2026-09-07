@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block page_title %}Mothers Harvest Inventory{% endblock %}
+{% block page_subtitle %}Live physical stock balances & movement history · Version 8.4{% endblock %}
+{% block content %}
+<div class="mhs-page">
+  <div class="mhs-hero">
+    <div>
+      <span class="eyebrow">INVENTORY & MOVEMENT</span>
+      <h2>Current physical coffee stock</h2>
+      <p>Production output becomes inventory at its actual finished weight. After any transfer or stock reweigh, the latest physical weight becomes the official balance used going forward.</p>
+    </div>
+    <span class="mhs-badge">MHS Inventory · 8.4</span>
+  </div>
+
+  <div class="mhs-kpis">
+    <div class="mhs-kpi"><span>Total live stock</span><strong>{{'{:,.2f}'.format(total_weight)}} kg</strong></div>
+    <div class="mhs-kpi"><span>Active stock lines</span><strong>{{rows|selectattr('current_weight','gt',0)|list|length}}</strong></div>
+    <div class="mhs-kpi"><span>Products / grades</span><strong>{{by_product|length}}</strong></div>
+    <div class="mhs-kpi"><span>Locations</span><strong>{{by_location|length}}</strong></div>
+  </div>
+
+  <div class="mhs-analysis-layout">
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h2>Stock by product / grade</h2><p>These are the balances physically available now.</p></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Product</th><th>Weight</th></tr></thead><tbody>
+        {% for product,weight in by_product %}<tr><td><strong>{{product}}</strong></td><td>{{'{:,.2f}'.format(weight)}} kg</td></tr>
+        {% else %}<tr><td colspan="2" class="empty">No inventory yet.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div>
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h2>Stock by location</h2><p>Station and warehouse balances.</p></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Location</th><th>Weight</th></tr></thead><tbody>
+        {% for location,weight in by_location %}<tr><td><strong>{{location}}</strong></td><td>{{'{:,.2f}'.format(weight)}} kg</td></tr>
+        {% else %}<tr><td colspan="2" class="empty">No location balances yet.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header">
+      <div><h2>Live stock</h2><p>Each production output or received movement is tracked separately so grade, lot and location remain traceable.</p></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Stock</th><th>Actions</th><th>Lot</th><th>Production</th><th>Product / Grade</th><th>Weight</th><th>Station</th><th>Warehouse</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for r in rows if r.current_weight > 0 %}
+      <tr>
+        <td><strong>{{r.stock_no}}</strong></td>
+        <td class="record-actions">
+          {% if current_role in ['Admin','Manager','Storekeeper'] %}
+          <a class="small-button" href="{{url_for('mhs_inventory_move',stock_id=r.id)}}">Move</a>
+          {% endif %}
+          {% if current_role=='Admin' or current_is_super_admin %}
+          <a class="small-button" href="{{url_for('mhs_inventory_adjust',stock_id=r.id)}}">Adjust</a>
+          {% endif %}
+        </td>
+        <td>{{r.lot.lot_no}}</td>
+        <td>{{r.production.production_no if r.production else '—'}}</td>
+        <td><strong>{{r.product}}</strong></td>
+        <td>{{'{:,.2f}'.format(r.current_weight)}} kg</td>
+        <td>{{r.station or 'Unassigned'}}</td>
+        <td>{{r.warehouse or 'Unassigned'}}</td>
+        <td>{{r.status}}</td>
+      </tr>
+      {% else %}<tr><td colspan="9" class="empty">No live inventory. Complete production to create stock.</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Movement history</h2><p>The movement record keeps the old system balance, physical dispatch weight and physical received weight.</p></div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Movement</th><th>Actions</th><th>Date</th><th>Product</th><th>From</th><th>To</th><th>System before</th><th>Dispatched</th><th>Received / New</th><th>Transit variance</th></tr></thead>
+      <tbody>
+      {% for r in movements %}
+      <tr>
+        <td><strong>{{r.movement_no}}</strong></td>
+        <td class="record-actions">
+          <a class="small-button" href="{{url_for('mhs_inventory_movement_report',id=r.id)}}" target="_blank">Print</a>
+          {% if current_role=='Admin' or current_is_super_admin %}
+          <form method="post" action="{{url_for('mhs_inventory_movement_delete',id=r.id)}}" onsubmit="return confirm('Reverse this movement and restore the previous balances?')"><button class="small-button" type="submit">Reverse</button></form>
+          {% endif %}
+        </td>
+        <td>{{r.movement_date}}</td><td>{{r.product}}</td>
+        <td>{{r.source_station or '—'}} / {{r.source_warehouse or '—'}}</td>
+        <td>{{r.destination_station or '—'}} / {{r.destination_warehouse or '—'}}</td>
+        <td>{{'{:,.2f}'.format(r.system_weight_before)}} kg</td>
+        <td>{{'{:,.2f}'.format(r.dispatched_weight)}} kg</td>
+        <td><strong>{{'{:,.2f}'.format(r.received_weight)}} kg</strong></td>
+        <td>{{'{:+,.2f}'.format(r.weight_variance)}} kg</td>
+      </tr>
+      {% else %}<tr><td colspan="10" class="empty">No movements yet.</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+
+  {% if adjustments %}
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Stock adjustments</h2><p>Admin-only physical reweigh corrections. Every adjustment requires a reason.</p></div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Adjustment</th><th>Actions</th><th>Date</th><th>Stock</th><th>Old kg</th><th>New kg</th><th>Difference</th><th>Reason</th></tr></thead>
+      <tbody>{% for a in adjustments %}<tr><td><strong>{{a.adjustment_no}}</strong></td><td class="record-actions">{% if current_role=='Admin' or current_is_super_admin %}<form method="post" action="{{url_for('mhs_inventory_adjustment_reverse',id=a.id)}}" onsubmit="return confirm('Reverse this stock adjustment?')"><button class="small-button" type="submit">Reverse</button></form>{% endif %}</td><td>{{a.adjustment_date}}</td><td>{{a.stock.stock_no}}</td><td>{{'{:,.2f}'.format(a.old_weight)}}</td><td><strong>{{'{:,.2f}'.format(a.new_weight)}}</strong></td><td>{{'{:+,.2f}'.format(a.difference)}}</td><td>{{a.reason}}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -4,7 +4,7 @@
 {% block content %}
 <div class="mhs-page">
   <div class="mhs-hero">
-    <div><span class="eyebrow">MOTHERS HARVEST SUPPLIERS</span><h2>Commercial Coffee Operations</h2><p>One workspace for receiving coffee, lot traceability, moisture decisions, drying and quality analysis. Production now starts with a physical reweigh before coffee enters the machines.</p></div>
+    <div><span class="eyebrow">MOTHERS HARVEST SUPPLIERS</span><h2>Commercial Coffee Operations</h2><p>One workspace for receiving coffee, lot traceability, moisture decisions, drying and quality analysis. Production starts with a physical reweigh before coffee enters the machines. Finished production now creates live inventory at the actual output weight.</p></div>
     <a class="button" href="{{url_for('mhs_purchases')}}">+ Record purchase</a>
   </div>
 
@@ -17,7 +17,7 @@
   </div>
 
   <div class="mhs-card">
-    <div class="mhs-card-header"><div><h2>Operational workflow</h2><p>The lot number follows the coffee from purchase through every operational stage.</p></div><span class="mhs-badge">Phase 8.3 active</span></div>
+    <div class="mhs-card-header"><div><h2>Operational workflow</h2><p>The lot number follows the coffee from purchase through every operational stage.</p></div><span class="mhs-badge">Phase 8.4 active</span></div>
     <div class="mhs-workflow">
       <a class="mhs-step" href="{{url_for('mhs_suppliers')}}"><small>01</small><strong>Suppliers</strong><span>Register commercial coffee suppliers.</span></a>
       <a class="mhs-step" href="{{url_for('mhs_purchases')}}"><small>02</small><strong>Purchase</strong><span>Receive coffee and create the MHS lot.</span></a>
@@ -25,6 +25,7 @@
       <a class="mhs-step" href="{{url_for('mhs_drying')}}"><small>04</small><strong>Drying</strong><span>Record actual dry weight and final moisture.</span></a>
       <a class="mhs-step" href="{{url_for('mhs_analysis')}}"><small>05</small><strong>Analysis</strong><span>Calculate outturn and expected grades.</span></a>
       <a class="mhs-step" href="{{url_for('mhs_production')}}"><small>06</small><strong>Production</strong><span>Reweigh factory input, process and compare actual output to analysis.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_inventory')}}"><small>07</small><strong>Inventory &amp; Movement</strong><span>Live stock by grade/location. New physical weights become the official balances going forward.</span></a>
     </div>
   </div>
 

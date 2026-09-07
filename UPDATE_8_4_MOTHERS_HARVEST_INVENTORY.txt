@@ -1,0 +1,56 @@
+BUSINESS ERP VERSION 8.4
+MOTHERS HARVEST INVENTORY & MOVEMENT
+
+Built on Version 8.3.2.
+
+AUTHORITATIVE WEIGHT RULE
+1. When production is completed, actual finished output weight creates live inventory.
+2. Those actual output weights replace the earlier production/input weights for all future stock work.
+3. When stock is moved:
+   - old system weight is preserved in the audit trail;
+   - actual dispatched weight is recorded;
+   - actual received weight is recorded;
+   - RECEIVED WEIGHT becomes the official destination balance going forward.
+4. After every movement or adjustment, the parent MHS lot weight is refreshed from live inventory balances.
+
+INVENTORY
+- Separate MHS tables only:
+  mhs_inventory_stock
+  mhs_inventory_movement
+  mhs_inventory_adjustment
+- Inventory by product/grade and location.
+- Production outputs create separate inventory lines (AA, AB, CPB, WUGAR, DRUGAR or relevant intermediate clean product).
+- Existing completed 8.3 productions are safely backfilled into inventory if they do not already have stock.
+- No Stancoff inventory tables are reused.
+
+MOVEMENTS
+- Automatic numbers MHS-MOV00001...
+- Full-stock or partial-stock movement.
+- System balance before movement is preserved.
+- Physical dispatch and receipt weights are recorded.
+- Destination station and warehouse required.
+- >=1% dispatch/reception discrepancy requires a reason.
+- Printable movement note.
+- Admin can reverse only when there is no downstream movement/adjustment.
+
+ADJUSTMENTS
+- Admin-only physical stock correction.
+- New physical reweigh becomes official balance immediately.
+- Reason required.
+- Adjustment can be reversed only when no later stock activity exists.
+
+PRODUCTION PROTECTION
+- Completed production now creates/syncs inventory automatically.
+- Production edit can update inventory only before those stocks have moved.
+- Production delete is blocked after inventory movement/adjustment.
+- Safe delete before movement removes production-origin stock and restores the source lot.
+
+STANCOFF PROTECTION
+Verified unchanged from Version 8.3.2:
+- purchases
+- processing
+- drying
+- finish_drying
+- inventory
+- sales
+- dispatch
