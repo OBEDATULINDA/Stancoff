@@ -1,0 +1,63 @@
+BUSINESS ERP VERSION 8.3
+MOTHERS HARVEST PRODUCTION
+
+Built on Version 8.2.1 UI Polish.
+
+PRODUCTION INTAKE
+- Automatic production numbers: PRO000001...
+- Only analysed MHS lots can enter production.
+- The system shows the current lot weight.
+- Operator MUST enter the physically reweighed factory input.
+- Difference kg and difference % are calculated.
+- A reason is mandatory when the weight difference is 1% or more.
+- Process types:
+  Hulling Only
+  Grading Only
+  Gravity Table Only
+  Color Sorting Only
+  Full Production
+
+PRODUCTION OUTPUT
+- Parchment: AA, AB, CPB, WUGAR outputs where relevant.
+- DRUGAR: clean DRUGAR output without parchment grade requirements.
+- Hulling-only, Gravity Table-only and Color Sorting-only outputs supported.
+- Defects/by-products:
+  Blacks, Broken, Pods, Dust, Foreign Matter, Other By-products.
+- Automatic clean output, processing loss, actual outturn and mass balance.
+- Destination station and warehouse captured for the next Inventory phase.
+
+ANALYSIS VS ACTUAL
+- Expected clean output is recalculated from the CONFIRMED production input.
+- Parchment expected AA/AB/CPB/WUGAR weights are compared with actual output.
+- Printable production report includes:
+  system weight vs confirmed input
+  input variance and reason
+  expected vs actual
+  mass balance
+  output grades/by-products
+  station/warehouse
+  signatures
+
+EDIT / DELETE
+- Every production record has Edit.
+- Open production records have Finish.
+- Every production record has printable Report.
+- Admins have Delete.
+- Deleting production restores the source lot to its pre-production state.
+- Completed production can be edited; calculations and the lot are reapplied.
+- Analysis deletion is blocked once linked to production.
+- Editing a linked analysis refreshes production expectations.
+- Drying deletion is blocked if production exists.
+
+STANCOFF PROTECTION
+Verified unchanged against the Version 8.0 baseline:
+- finish_drying()
+- drying()
+- processing()
+- inventory()
+- purchases()
+
+Mothers Harvest production uses mhs_production and does not use Stancoff operational tables.
+
+NEXT
+Version 8.4: Mothers Harvest Inventory & Movement, creating separate stock records for final grades and commercial coffee.

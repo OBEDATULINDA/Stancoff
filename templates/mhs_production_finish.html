@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block page_title %}Finish Production{% endblock %}
+{% block page_subtitle %}{{row.production_no}} · {{lot.lot_no}} · {{row.process_type}}{% endblock %}
+{% block content %}
+<div class="mhs-page">
+  <div class="mhs-hero">
+    <div><span class="eyebrow">PRODUCTION OUTPUT</span><h2>{{row.production_no}}</h2><p>Record the actual factory outputs. The system checks mass balance against the confirmed production input.</p></div>
+    <span class="mhs-badge">{{row.process_type}}</span>
+  </div>
+
+  <div class="mhs-kpis">
+    <div class="mhs-kpi"><span>System lot weight</span><strong>{{'{:,.2f}'.format(row.expected_input_weight)}} kg</strong></div>
+    <div class="mhs-kpi"><span>Confirmed input</span><strong>{{'{:,.2f}'.format(row.actual_input_weight)}} kg</strong></div>
+    <div class="mhs-kpi"><span>Input difference</span><strong>{{'{:+,.2f}'.format(row.input_difference)}} kg</strong></div>
+    <div class="mhs-kpi"><span>Expected net OT</span><strong>{{'{:.2f}%'.format(row.expected_net_outturn) if row.expected_net_outturn is not none else '—'}}</strong></div>
+    <div class="mhs-kpi"><span>Expected clean</span><strong>{{'{:,.2f}'.format(row.expected_clean_weight) if row.expected_clean_weight is not none else '—'}} kg</strong></div>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Actual production output</h2><p>Only fill the outputs relevant to this process. Defects/by-products are optional but improve the mass-balance report.</p></div></div>
+    <form method="post" class="mhs-form-grid" id="finishProduction">
+      {% if row.source_coffee_type == 'DRUGAR FAQ' %}
+        {% if row.process_type == 'Hulling Only' %}
+          <label>Hulled output (kg)<input type="number" step="0.01" min="0" name="hulled_output"></label>
+        {% elif row.process_type == 'Gravity Table Only' %}
+          <label>Gravity-table clean output (kg)<input type="number" step="0.01" min="0" name="gravity_clean_weight"></label>
+        {% elif row.process_type == 'Color Sorting Only' %}
+          <label>Color-sorted output (kg)<input type="number" step="0.01" min="0" name="color_sorted_weight"></label>
+        {% else %}
+          <label>Final DRUGAR clean output (kg)<input type="number" step="0.01" min="0" name="drugar_clean_weight"></label>
+        {% endif %}
+      {% else %}
+        {% if row.process_type == 'Hulling Only' %}
+          <label>Hulled green coffee (kg)<input type="number" step="0.01" min="0" name="hulled_output"></label>
+        {% elif row.process_type == 'Gravity Table Only' %}
+          <label>Gravity-table clean output (kg)<input type="number" step="0.01" min="0" name="gravity_clean_weight"></label>
+        {% elif row.process_type == 'Color Sorting Only' %}
+          <label>Color-sorted output (kg)<input type="number" step="0.01" min="0" name="color_sorted_weight"></label>
+        {% else %}
+          <div class="mhs-form-section"><h3>Clean parchment grades</h3><p>Record actual final weights for the produced grades.</p></div>
+          <label>AA (kg)<input type="number" step="0.01" min="0" name="aa_weight"></label>
+          <label>AB (kg)<input type="number" step="0.01" min="0" name="ab_weight"></label>
+          <label>CPB (kg)<input type="number" step="0.01" min="0" name="cpb_weight"></label>
+          <label>WUGAR (kg)<input type="number" step="0.01" min="0" name="wugar_weight"></label>
+        {% endif %}
+      {% endif %}
+
+      <div class="mhs-form-section"><h3>Defects & by-products</h3><p>These plus the clean output are checked against the confirmed input weight.</p></div>
+      <label>Blacks (kg)<input type="number" step="0.01" min="0" name="blacks"></label>
+      <label>Broken (kg)<input type="number" step="0.01" min="0" name="broken"></label>
+      <label>Pods (kg)<input type="number" step="0.01" min="0" name="pods"></label>
+      <label>Dust (kg)<input type="number" step="0.01" min="0" name="dust"></label>
+      <label>Foreign matter (kg)<input type="number" step="0.01" min="0" name="foreign_matter"></label>
+      <label>Other by-products (kg)<input type="number" step="0.01" min="0" name="other_byproducts"></label>
+
+      <div class="mhs-form-section"><h3>Storage destination</h3><p>Phase 8.4 will convert these outputs into the dedicated inventory ledger.</p></div>
+      <label>Station<input name="destination_station" value="{{row.destination_station or ''}}" placeholder="e.g. Main Factory"></label>
+      <label>Warehouse<input name="destination_warehouse" value="{{row.destination_warehouse or ''}}" placeholder="e.g. Warehouse A"></label>
+      <label class="mhs-span-2">Notes<textarea name="notes" rows="3">{{row.notes or ''}}</textarea></label>
+      <div class="mhs-actions"><button class="button" type="submit">Complete production</button><a class="button secondary" href="{{url_for('mhs_production')}}">Cancel</a></div>
+    </form>
+  </div>
+
+  {% if row.analysis %}
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Analysis expectation</h2><p>Expected output calculated from the confirmed production input, not the old system weight.</p></div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Measure</th><th>Expected</th></tr></thead>
+      <tbody>
+        <tr><td>Net clean coffee</td><td>{{'{:,.2f}'.format(row.expected_clean_weight or 0)}} kg</td></tr>
+        {% if row.expected_aa_weight is not none %}<tr><td>AA</td><td>{{'{:,.2f}'.format(row.expected_aa_weight or 0)}} kg</td></tr><tr><td>AB</td><td>{{'{:,.2f}'.format(row.expected_ab_weight or 0)}} kg</td></tr><tr><td>CPB</td><td>{{'{:,.2f}'.format(row.expected_cpb_weight or 0)}} kg</td></tr><tr><td>WUGAR</td><td>{{'{:,.2f}'.format(row.expected_wugar_weight or 0)}} kg</td></tr>{% endif %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

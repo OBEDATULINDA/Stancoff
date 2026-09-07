@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block page_title %}Edit Production{% endblock %}
+{% block page_subtitle %}{{row.production_no}} · {{lot.lot_no}}{% endblock %}
+{% block content %}
+<div class="mhs-page">
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Production intake details</h2><p>Completed records can also be corrected here; the lot is recalculated from the edited values.</p></div><span class="mhs-badge">{{row.status}}</span></div>
+    <form method="post" class="mhs-form-grid">
+      <label>Production date<input type="date" name="production_date" value="{{row.production_date.isoformat()}}" required></label>
+      <label>Process<select name="process_type">{% for p in process_types %}<option {% if p==row.process_type %}selected{% endif %}>{{p}}</option>{% endfor %}</select></label>
+      <label>System lot weight<input value="{{row.expected_input_weight}}" readonly></label>
+      <label>Confirmed input kg<input type="number" step="0.01" min="0.01" name="actual_input_weight" value="{{row.actual_input_weight}}" required></label>
+      <label class="mhs-span-2">Reason for difference<textarea name="difference_reason">{{row.difference_reason or ''}}</textarea></label>
+      <label>Operator<input name="operator" value="{{row.operator or ''}}"></label>
+      <label>Destination station<input name="destination_station" value="{{row.destination_station or ''}}"></label>
+      <label>Destination warehouse<input name="destination_warehouse" value="{{row.destination_warehouse or ''}}"></label>
+      <label class="mhs-span-2">Notes<textarea name="notes">{{row.notes or ''}}</textarea></label>
+
+      {% if row.status=='Completed' %}
+      <div class="mhs-form-section"><h3>Actual outputs</h3><p>Correct any production output below. Mass balance is recalculated when you save.</p></div>
+      <label>Hulled output kg<input type="number" step="0.01" min="0" name="hulled_output" value="{{row.hulled_output or 0}}"></label>
+      <label>AA kg<input type="number" step="0.01" min="0" name="aa_weight" value="{{row.aa_weight or 0}}"></label>
+      <label>AB kg<input type="number" step="0.01" min="0" name="ab_weight" value="{{row.ab_weight or 0}}"></label>
+      <label>CPB kg<input type="number" step="0.01" min="0" name="cpb_weight" value="{{row.cpb_weight or 0}}"></label>
+      <label>WUGAR kg<input type="number" step="0.01" min="0" name="wugar_weight" value="{{row.wugar_weight or 0}}"></label>
+      <label>DRUGAR clean kg<input type="number" step="0.01" min="0" name="drugar_clean_weight" value="{{row.drugar_clean_weight or 0}}"></label>
+      <label>Gravity clean kg<input type="number" step="0.01" min="0" name="gravity_clean_weight" value="{{row.gravity_clean_weight or 0}}"></label>
+      <label>Color sorted kg<input type="number" step="0.01" min="0" name="color_sorted_weight" value="{{row.color_sorted_weight or 0}}"></label>
+      <label>Blacks kg<input type="number" step="0.01" min="0" name="blacks" value="{{row.blacks or 0}}"></label>
+      <label>Broken kg<input type="number" step="0.01" min="0" name="broken" value="{{row.broken or 0}}"></label>
+      <label>Pods kg<input type="number" step="0.01" min="0" name="pods" value="{{row.pods or 0}}"></label>
+      <label>Dust kg<input type="number" step="0.01" min="0" name="dust" value="{{row.dust or 0}}"></label>
+      <label>Foreign matter kg<input type="number" step="0.01" min="0" name="foreign_matter" value="{{row.foreign_matter or 0}}"></label>
+      <label>Other by-products kg<input type="number" step="0.01" min="0" name="other_byproducts" value="{{row.other_byproducts or 0}}"></label>
+      {% endif %}
+      <div class="mhs-actions"><button class="button" type="submit">Save changes</button><a class="button secondary" href="{{url_for('mhs_production')}}">Cancel</a></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

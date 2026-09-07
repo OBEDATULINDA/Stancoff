@@ -100,6 +100,7 @@
           <a href="/mhs/lots" class="{% if request.path.startswith('/mhs/lots') %}active{% endif %}">Lots</a>
           <a href="/mhs/drying" class="{% if request.path.startswith('/mhs/drying') %}active{% endif %}">Drying</a>
           <a href="/mhs/analysis" class="{% if request.path.startswith('/mhs/analysis') %}active{% endif %}">Analysis</a>
+          <a href="/mhs/production" class="{% if request.path.startswith('/mhs/production') %}active{% endif %}">Production</a>
           {% if current_role=='Admin' or current_is_super_admin %}
           <a href="/mhs/settings" class="{% if request.path.startswith('/mhs/settings') %}active{% endif %}">Moisture settings</a>
           {% endif %}

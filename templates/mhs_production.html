@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block page_title %}Mothers Harvest Production{% endblock %}
+{% block page_subtitle %}Factory intake, processing & output control · Version 8.3{% endblock %}
+{% block content %}
+<div class="mhs-page">
+  <div class="mhs-hero">
+    <div>
+      <span class="eyebrow">PRODUCTION CONTROL</span>
+      <h2>Confirm the factory input before processing</h2>
+      <p>The system shows the lot weight, but the operator must physically reweigh the batch entering production. The confirmed factory weight becomes the official production input.</p>
+    </div>
+    <span class="mhs-badge">MHS Production · 8.3</span>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header">
+      <div><h2>Open a production batch</h2><p>Select an analysed lot, reweigh it, then choose the process being carried out.</p></div>
+    </div>
+    <form method="post" class="mhs-form-grid" id="productionIntakeForm">
+      <label class="mhs-span-2">Analysed lot
+        <select name="lot_id" id="productionLot" required>
+          <option value="">Select lot</option>
+          {% for l in lots %}
+          <option value="{{l.id}}" data-weight="{{l.current_weight}}" data-coffee="{{l.coffee_type}}" data-moisture="{{l.current_moisture if l.current_moisture is not none else ''}}">
+            {{l.lot_no}} · {{l.coffee_state}} · {{'{:,.2f}'.format(l.current_weight)}} kg
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Production date<input type="date" name="production_date" value="{{today}}" required></label>
+      <label>Process
+        <select name="process_type" required>
+          {% for p in process_types %}<option>{{p}}</option>{% endfor %}
+        </select>
+      </label>
+
+      <div class="mhs-form-section"><h3>Physical factory reweigh</h3><p>Do not copy the stored weight. Enter the weight actually confirmed on the production scale.</p></div>
+      <label>System lot weight<input id="systemWeight" readonly placeholder="Select a lot"></label>
+      <label>Confirmed production input (kg)<input type="number" step="0.01" min="0.01" name="actual_input_weight" id="actualInput" required></label>
+      <label>Difference (kg)<input id="weightDifference" readonly></label>
+      <label>Difference %<input id="weightDifferencePct" readonly></label>
+      <div class="mhs-span-all" id="differenceWarning" style="display:none;padding:12px 14px;border-radius:10px;background:#fff4e5;border:1px solid #e8c38b;color:#7a4d13;font-size:13px">
+        Weight difference is 1% or more. A reason is required before this batch can be opened.
+      </div>
+      <label class="mhs-span-2">Reason for difference<textarea name="difference_reason" id="differenceReason" rows="2" placeholder="Scale correction, spillage, rebagging loss, etc."></textarea></label>
+      <label>Operator<input name="operator"></label>
+      <label>Destination station<input name="destination_station" placeholder="e.g. Main Factory"></label>
+      <label>Destination warehouse<input name="destination_warehouse" placeholder="e.g. Warehouse A"></label>
+      <label class="mhs-span-2">Notes<textarea name="notes" rows="2"></textarea></label>
+      <div class="mhs-actions"><button class="button" type="submit">Open production batch</button></div>
+    </form>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Production records</h2><p>Every record keeps the system weight, confirmed factory input, expected analysis result and actual production result.</p></div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Production</th><th>Actions</th><th>Date</th><th>Lot</th><th>Process</th><th>System kg</th><th>Input kg</th><th>Diff.</th><th>Clean output</th><th>Outturn</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><strong>{{r.production_no}}</strong></td>
+        <td class="record-actions">
+          <a class="small-button" href="{{url_for('mhs_production_edit',id=r.id)}}">Edit</a>
+          {% if r.status!='Completed' %}<a class="small-button" href="{{url_for('mhs_production_finish',id=r.id)}}">Finish</a>{% endif %}
+          <a class="small-button" href="{{url_for('mhs_production_report',id=r.id)}}" target="_blank">Report</a>
+          {% if current_role=='Admin' or current_is_super_admin %}
+          <form method="post" action="{{url_for('mhs_production_delete',id=r.id)}}" onsubmit="return confirm('Delete this production record and restore the source lot?')"><button class="small-button" type="submit">Delete</button></form>
+          {% endif %}
+        </td>
+        <td>{{r.production_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.process_type}}</td>
+        <td>{{'{:,.2f}'.format(r.expected_input_weight)}}</td><td>{{'{:,.2f}'.format(r.actual_input_weight)}}</td>
+        <td>{{'{:+,.2f}'.format(r.input_difference)}} kg</td>
+        <td>{{'{:,.2f}'.format(r.total_clean_output) if r.status=='Completed' else '—'}}</td>
+        <td>{{'{:.2f}%'.format(r.actual_outturn) if r.actual_outturn is not none else '—'}}</td><td>{{r.status}}</td>
+      </tr>
+      {% else %}<tr><td colspan="11" class="empty">No production records yet.</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const lot=document.getElementById('productionLot'), system=document.getElementById('systemWeight'),
+        actual=document.getElementById('actualInput'), diff=document.getElementById('weightDifference'),
+        pct=document.getElementById('weightDifferencePct'), warn=document.getElementById('differenceWarning'),
+        reason=document.getElementById('differenceReason');
+  function update(){
+    const opt=lot.options[lot.selectedIndex];
+    const expected=parseFloat(opt?.dataset?.weight||0), entered=parseFloat(actual.value||0);
+    system.value=expected?expected.toFixed(2)+' kg':'';
+    if(!expected||!entered){diff.value='';pct.value='';warn.style.display='none';reason.required=false;return;}
+    const d=entered-expected, p=d/expected*100;
+    diff.value=(d>=0?'+':'')+d.toFixed(2)+' kg';
+    pct.value=(p>=0?'+':'')+p.toFixed(2)+'%';
+    const needs=Math.abs(p)>=1;
+    warn.style.display=needs?'block':'none';
+    reason.required=needs;
+  }
+  lot.addEventListener('change',update); actual.addEventListener('input',update); update();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>{{row.production_no}}</title>
+<style>
+body{font-family:Arial,sans-serif;color:#222;margin:28px}.head{text-align:center}.head h1,.head h2{margin:3px}.meta,.report{width:100%;border-collapse:collapse;margin:18px 0}.meta td,.report th,.report td{border:1px solid #777;padding:7px}.report th{background:#eee;text-align:left}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.kpi{border:1px solid #aaa;padding:10px}.kpi span{font-size:11px;color:#555;display:block}.kpi strong{font-size:18px}.warn{padding:9px;border:1px solid #d7a953;background:#fff5df}.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:35px;margin-top:60px}.line{border-top:1px solid #333;padding-top:5px}@media print{button{display:none}}
+</style></head><body>
+<div class="head"><h1>MOTHERS HARVEST SUPPLIERS</h1><h2>PRODUCTION REPORT</h2><p>{{row.production_no}}</p></div>
+<table class="meta">
+<tr><td><b>Date:</b> {{row.production_date}}</td><td><b>Lot:</b> {{row.lot.lot_no}}</td><td><b>Coffee:</b> {{row.source_coffee_type}}</td></tr>
+<tr><td><b>Process:</b> {{row.process_type}}</td><td><b>Operator:</b> {{row.operator or '—'}}</td><td><b>Status:</b> {{row.status}}</td></tr>
+<tr><td><b>Station:</b> {{row.destination_station or '—'}}</td><td colspan="2"><b>Warehouse:</b> {{row.destination_warehouse or '—'}}</td></tr>
+</table>
+
+<div class="kpis">
+<div class="kpi"><span>System lot weight</span><strong>{{'%.2f'|format(row.expected_input_weight)}} kg</strong></div>
+<div class="kpi"><span>Confirmed factory input</span><strong>{{'%.2f'|format(row.actual_input_weight)}} kg</strong></div>
+<div class="kpi"><span>Input difference</span><strong>{{'%+.2f'|format(row.input_difference)}} kg</strong></div>
+<div class="kpi"><span>Actual clean outturn</span><strong>{{'%.2f'|format(row.actual_outturn or 0)}}%</strong></div>
+</div>
+{% if row.difference_reason %}<div class="warn"><b>Input difference reason:</b> {{row.difference_reason}}</div>{% endif %}
+
+<table class="report"><tr><th>Analysis expectation</th><th>Expected kg</th><th>Actual kg</th><th>Variance kg</th></tr>
+<tr><td>Net clean coffee</td><td>{{'%.2f'|format(row.expected_clean_weight or 0)}}</td><td>{{'%.2f'|format(row.total_clean_output or 0)}}</td><td>{{'%+.2f'|format((row.total_clean_output or 0)-(row.expected_clean_weight or 0))}}</td></tr>
+{% if row.expected_aa_weight is not none %}
+<tr><td>AA</td><td>{{'%.2f'|format(row.expected_aa_weight or 0)}}</td><td>{{'%.2f'|format(row.aa_weight or 0)}}</td><td>{{'%+.2f'|format((row.aa_weight or 0)-(row.expected_aa_weight or 0))}}</td></tr>
+<tr><td>AB</td><td>{{'%.2f'|format(row.expected_ab_weight or 0)}}</td><td>{{'%.2f'|format(row.ab_weight or 0)}}</td><td>{{'%+.2f'|format((row.ab_weight or 0)-(row.expected_ab_weight or 0))}}</td></tr>
+<tr><td>CPB</td><td>{{'%.2f'|format(row.expected_cpb_weight or 0)}}</td><td>{{'%.2f'|format(row.cpb_weight or 0)}}</td><td>{{'%+.2f'|format((row.cpb_weight or 0)-(row.expected_cpb_weight or 0))}}</td></tr>
+<tr><td>WUGAR</td><td>{{'%.2f'|format(row.expected_wugar_weight or 0)}}</td><td>{{'%.2f'|format(row.wugar_weight or 0)}}</td><td>{{'%+.2f'|format((row.wugar_weight or 0)-(row.expected_wugar_weight or 0))}}</td></tr>
+{% endif %}
+</table>
+
+<table class="report"><tr><th>Mass balance</th><th>kg</th></tr>
+<tr><td>Confirmed input</td><td>{{'%.2f'|format(row.actual_input_weight)}}</td></tr>
+<tr><td>Total clean output</td><td>{{'%.2f'|format(row.total_clean_output or 0)}}</td></tr>
+<tr><td>Defects / by-products</td><td>{{'%.2f'|format(row.total_byproducts or 0)}}</td></tr>
+<tr><td>Processing loss</td><td>{{'%.2f'|format(row.processing_loss or 0)}}</td></tr>
+<tr><td><b>Mass balance</b></td><td><b>{{'%.2f'|format(row.mass_balance_percent or 0)}}%</b></td></tr>
+</table>
+
+<table class="report"><tr><th>Actual outputs</th><th>kg</th></tr>
+{% for label,val in [('Hulled output',row.hulled_output),('AA',row.aa_weight),('AB',row.ab_weight),('CPB',row.cpb_weight),('WUGAR',row.wugar_weight),('DRUGAR clean',row.drugar_clean_weight),('Gravity-table clean',row.gravity_clean_weight),('Color-sorted clean',row.color_sorted_weight),('Blacks',row.blacks),('Broken',row.broken),('Pods',row.pods),('Dust',row.dust),('Foreign matter',row.foreign_matter),('Other by-products',row.other_byproducts)] %}
+{% if val %}<tr><td>{{label}}</td><td>{{'%.2f'|format(val)}}</td></tr>{% endif %}{% endfor %}
+</table>
+<p><b>Notes:</b> {{row.notes or '—'}}</p>
+<div class="sign"><div class="line">Operator</div><div class="line">Production Supervisor</div><div class="line">Operations</div></div>
+<p style="margin-top:35px"><button onclick="window.print()">Print report</button></p>
+</body></html>
