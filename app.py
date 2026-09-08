@@ -5794,7 +5794,7 @@ def mhs_analysis_edit(id):
         row.remarks = (request.form.get("remarks") or "").strip() or None
         row.analysed_by = (request.form.get("analysed_by") or "").strip() or None
         for production in MHSProduction.query.filter_by(company_id=company.id, analysis_id=row.id).all():
-            expectations = _mhs_production_expectations(lot, row, float(production.actual_input_weight or 0))
+            expectations = _mhs_production_expectations(lot, row, float(production.actual_input_weight or 0), production.process_type)
             for key, value in expectations.items():
                 setattr(production, key, value)
         db.session.commit()
@@ -5995,7 +5995,16 @@ def _mhs_latest_analysis(company_id, lot_id):
     ).order_by(MHSAnalysis.analysis_date.desc(), MHSAnalysis.id.desc()).first()
 
 
-def _mhs_production_expectations(lot, analysis, actual_input):
+def _mhs_production_expectations(lot, analysis, actual_input, process_type=None):
+    """
+    Version 8.4.3 expectation rule:
+    - Parchment + Hulling Only => use General Outturn.
+    - Parchment + Full Production => use Net Outturn.
+    - Other downstream processes use the latest physical input weight and the
+      most relevant available outturn; because the coffee has already been
+      reweighed before the stage, expected clean is based on that actual input.
+    - Non-parchment coffee keeps the previous Net Outturn expectation.
+    """
     result = {
         "expected_net_outturn": None,
         "expected_clean_weight": None,
@@ -6007,15 +6016,27 @@ def _mhs_production_expectations(lot, analysis, actual_input):
     if not analysis:
         return result
 
+    parchment = lot.coffee_type in {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}
     net = float(analysis.net_outturn or 0)
-    clean = actual_input * net / 100 if net else 0
-    result["expected_net_outturn"] = net
+    general = float(analysis.general_outturn or 0)
+
+    if parchment and process_type == "Hulling Only":
+        expected_ot = general
+    else:
+        expected_ot = net
+
+    clean = actual_input * expected_ot / 100 if expected_ot else 0
+    result["expected_net_outturn"] = expected_ot
     result["expected_clean_weight"] = clean
-    if analysis.aa_percent is not None:
+
+    # Grade expectations only make sense for full parchment production where
+    # net outturn represents final clean coffee.
+    if parchment and process_type == "Full Production" and analysis.aa_percent is not None:
         result["expected_aa_weight"] = clean * float(analysis.aa_percent or 0) / 100
         result["expected_ab_weight"] = clean * float(analysis.ab_percent or 0) / 100
         result["expected_cpb_weight"] = clean * float(analysis.cpb_percent or 0) / 100
         result["expected_wugar_weight"] = clean * float(analysis.wugar_percent or 0) / 100
+
     return result
 
 
@@ -6151,7 +6172,7 @@ def mhs_production():
             flash("Select a valid production process.")
             return redirect(url_for("mhs_production"))
 
-        expectations = _mhs_production_expectations(lot, analysis, actual_input)
+        expectations = _mhs_production_expectations(lot, analysis, actual_input, process_type)
         row = MHSProduction(
             company_id=company.id,
             production_no=_mhs_next_code(MHSProduction, company.id, "production_no", "PRO", 6),
@@ -6248,7 +6269,7 @@ def mhs_production_edit(id):
         row.notes = (request.form.get("notes") or "").strip() or None
 
         analysis = row.analysis or _mhs_latest_analysis(company.id, lot.id)
-        expectations = _mhs_production_expectations(lot, analysis, actual_input)
+        expectations = _mhs_production_expectations(lot, analysis, actual_input, process_type)
         for key, value in expectations.items():
             setattr(row, key, value)
 

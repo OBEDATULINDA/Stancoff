@@ -8,11 +8,13 @@
     <span class="mhs-badge">{{row.process_type}}</span>
   </div>
 
+  <div class="mhs-analysis-note" style="margin-bottom:18px"><strong>Expectation rule</strong>{% if row.source_coffee_type in ['Parchment Cherries','Wet Parchment','Dry Parchment'] and row.process_type == 'Hulling Only' %}Hulling Only uses the analysis General Outturn to calculate expected hulled output.{% elif row.source_coffee_type in ['Parchment Cherries','Wet Parchment','Dry Parchment'] and row.process_type == 'Full Production' %}Full Production uses the analysis Net Outturn to calculate expected final clean output.{% else %}Expected output is calculated from the latest confirmed production input and the applicable analysis outturn.{% endif %}</div>
+
   <div class="mhs-kpis">
     <div class="mhs-kpi"><span>System lot weight</span><strong>{{'{:,.2f}'.format(row.expected_input_weight)}} kg</strong></div>
     <div class="mhs-kpi"><span>Confirmed input</span><strong>{{'{:,.2f}'.format(row.actual_input_weight)}} kg</strong></div>
     <div class="mhs-kpi"><span>Input difference</span><strong>{{'{:+,.2f}'.format(row.input_difference)}} kg</strong></div>
-    <div class="mhs-kpi"><span>Expected net OT</span><strong>{{'{:.2f}%'.format(row.expected_net_outturn) if row.expected_net_outturn is not none else '—'}}</strong></div>
+    <div class="mhs-kpi"><span>Expected OT</span><strong>{{'{:.2f}%'.format(row.expected_net_outturn) if row.expected_net_outturn is not none else '—'}}</strong></div>
     <div class="mhs-kpi"><span>Expected clean</span><strong>{{'{:,.2f}'.format(row.expected_clean_weight) if row.expected_clean_weight is not none else '—'}} kg</strong></div>
   </div>
 
@@ -69,7 +71,7 @@
     <div class="table-wrap"><table>
       <thead><tr><th>Measure</th><th>Expected</th></tr></thead>
       <tbody>
-        <tr><td>Net clean coffee</td><td>{{'{:,.2f}'.format(row.expected_clean_weight or 0)}} kg</td></tr>
+        <tr><td>Expected clean output</td><td>{{'{:,.2f}'.format(row.expected_clean_weight or 0)}} kg</td></tr>
         {% if row.expected_aa_weight is not none %}<tr><td>AA</td><td>{{'{:,.2f}'.format(row.expected_aa_weight or 0)}} kg</td></tr><tr><td>AB</td><td>{{'{:,.2f}'.format(row.expected_ab_weight or 0)}} kg</td></tr><tr><td>CPB</td><td>{{'{:,.2f}'.format(row.expected_cpb_weight or 0)}} kg</td></tr><tr><td>WUGAR</td><td>{{'{:,.2f}'.format(row.expected_wugar_weight or 0)}} kg</td></tr>{% endif %}
       </tbody>
     </table></div>

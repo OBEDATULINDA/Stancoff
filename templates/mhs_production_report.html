@@ -19,7 +19,7 @@ body{font-family:Arial,sans-serif;color:#222;margin:28px}.head{text-align:center
 {% if row.difference_reason %}<div class="warn"><b>Input difference reason:</b> {{row.difference_reason}}</div>{% endif %}
 
 <table class="report"><tr><th>Analysis expectation</th><th>Expected kg</th><th>Actual kg</th><th>Variance kg</th></tr>
-<tr><td>Net clean coffee</td><td>{{'%.2f'|format(row.expected_clean_weight or 0)}}</td><td>{{'%.2f'|format(row.total_clean_output or 0)}}</td><td>{{'%+.2f'|format((row.total_clean_output or 0)-(row.expected_clean_weight or 0))}}</td></tr>
+<tr><td>Expected clean output</td><td>{{'%.2f'|format(row.expected_clean_weight or 0)}}</td><td>{{'%.2f'|format(row.total_clean_output or 0)}}</td><td>{{'%+.2f'|format((row.total_clean_output or 0)-(row.expected_clean_weight or 0))}}</td></tr>
 {% if row.expected_aa_weight is not none %}
 <tr><td>AA</td><td>{{'%.2f'|format(row.expected_aa_weight or 0)}}</td><td>{{'%.2f'|format(row.aa_weight or 0)}}</td><td>{{'%+.2f'|format((row.aa_weight or 0)-(row.expected_aa_weight or 0))}}</td></tr>
 <tr><td>AB</td><td>{{'%.2f'|format(row.expected_ab_weight or 0)}}</td><td>{{'%.2f'|format(row.ab_weight or 0)}}</td><td>{{'%+.2f'|format((row.ab_weight or 0)-(row.expected_ab_weight or 0))}}</td></tr>

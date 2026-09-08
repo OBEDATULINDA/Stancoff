@@ -1,0 +1,37 @@
+VERSION 8.4.3
+MOTHERS HARVEST PRODUCTION EXPECTATION FIX
+
+This version is based on 8.4.1, not 8.4.2, so the Analysis deletion behavior remains unchanged as requested.
+
+PRODUCTION OUTTURN RULE
+For parchment:
+- Hulling Only:
+  Expected output = Confirmed Production Input x General Outturn %
+- Full Production:
+  Expected final clean output = Confirmed Production Input x Net Outturn %
+
+Example:
+Confirmed input = 1,000 kg
+General Outturn = 82%
+Net Outturn = 76%
+Hulling Only expected output = 820 kg
+Full Production expected clean output = 760 kg
+
+The confirmed/reweighed production input remains the basis for calculations.
+The latest actual physical weight continues to become the weight used going forward.
+
+UI
+The Finish Production screen now explains which outturn rule is being used.
+The report wording uses "Expected OT" / "Expected outturn" instead of always calling it Net OT.
+
+NO DATABASE CHANGES.
+
+STANCOFF PROTECTION
+Verified unchanged from Version 8.4.1:
+- purchases
+- processing
+- drying
+- finish_drying
+- inventory
+- sales
+- dispatch
