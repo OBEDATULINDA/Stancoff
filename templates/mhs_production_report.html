@@ -37,8 +37,11 @@ body{font-family:Arial,sans-serif;color:#222;margin:28px}.head{text-align:center
 </table>
 
 <table class="report"><tr><th>Actual outputs</th><th>kg</th></tr>
-{% for label,val in [('Hulled output',row.hulled_output),('AA',row.aa_weight),('AB',row.ab_weight),('CPB',row.cpb_weight),('WUGAR',row.wugar_weight),('DRUGAR clean',row.drugar_clean_weight),('Gravity-table clean',row.gravity_clean_weight),('Color-sorted clean',row.color_sorted_weight),('Blacks',row.blacks),('Broken',row.broken),('Pods',row.pods),('Dust',row.dust),('Foreign matter',row.foreign_matter),('Other by-products',row.other_byproducts)] %}
+{% for label,val in [('Hulled output',row.hulled_output),('AA',row.aa_weight),('AB',row.ab_weight),('CPB',row.cpb_weight),('WUGAR',row.wugar_weight),('DRUGAR clean',row.drugar_clean_weight),('Gravity-table clean',row.gravity_clean_weight),('Color-sorted clean',row.color_sorted_weight),('Blacks',row.blacks),('Broken',row.broken),('Pods',row.pods),('Foreign matter',row.foreign_matter),('Other by-products',row.other_byproducts)] %}
 {% if val %}<tr><td>{{label}}</td><td>{{'%.2f'|format(val)}}</td></tr>{% endif %}{% endfor %}
+<tr><td>Dust</td><td>{{'%.2f'|format(row.dust or 0)}}</td></tr>
+<tr><td>Stones</td><td>{{'%.2f'|format(row.stones or 0)}}</td></tr>
+<tr><td>Rabble</td><td>{{'%.2f'|format(row.rabble or 0)}}</td></tr>
 </table>
 <p><b>Notes:</b> {{row.notes or '—'}}</p>
 <div class="sign"><div class="line">Operator</div><div class="line">Production Supervisor</div><div class="line">Operations</div></div>

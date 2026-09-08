@@ -293,6 +293,8 @@ class MHSProduction(db.Model):
     broken = db.Column(db.Float, default=0)
     pods = db.Column(db.Float, default=0)
     dust = db.Column(db.Float, default=0)
+    stones = db.Column(db.Float, default=0)
+    rabble = db.Column(db.Float, default=0)
     foreign_matter = db.Column(db.Float, default=0)
     other_byproducts = db.Column(db.Float, default=0)
 
@@ -1159,6 +1161,15 @@ def ensure_multistation_schema():
         if "company_id" not in audit_columns:
             db.session.execute(text("ALTER TABLE audit_log ADD COLUMN company_id INTEGER"))
             db.session.commit()
+
+    # Version 8.4.1: explicit Mothers Harvest production by-products.
+    # Additive only; existing production records and Stancoff tables are untouched.
+    if "mhs_production" in table_names:
+        mhs_production_columns = {c["name"] for c in inspector.get_columns("mhs_production")}
+        for column_name in ("stones", "rabble"):
+            if column_name not in mhs_production_columns:
+                db.session.execute(text(f"ALTER TABLE mhs_production ADD COLUMN {column_name} FLOAT DEFAULT 0"))
+                db.session.commit()
 
     db.create_all()
 
@@ -5612,46 +5623,76 @@ def mhs_drying_delete(id):
 
 
 def _mhs_analysis_values(form, lot):
-    sample = float(form.get("sample_size") or 0)
+    """
+    Parchment workflow (8.4.1):
+      Sample size -> moisture -> General Outturn -> Net Outturn.
+      Defects % = General Outturn - Net Outturn.
+    The equivalent hulled/sound/defect gram weights are derived automatically
+    so older reports/data relationships remain compatible.
+
+    Other coffee types retain the detailed physical-defect workflow.
+    """
+    try:
+        sample = float(form.get("sample_size") or 0)
+    except ValueError:
+        raise ValueError("Sample size must be a valid number.")
+
     moisture_raw = (form.get("moisture") or "").strip()
-    moisture = float(moisture_raw) if moisture_raw else None
+    try:
+        moisture = float(moisture_raw) if moisture_raw else None
+    except ValueError:
+        raise ValueError("Moisture must be a valid number.")
+
+    if sample <= 0:
+        raise ValueError("Sample size must be above zero.")
+
+    parchment = lot.coffee_type in {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}
     defect_fields = [
         "blacks", "partly_blacks", "insect_damaged", "ut200", "diseased",
         "chalky_whites", "faded", "withered", "broken_pulp_nipped", "pods",
         "foreign_matter",
     ]
-    defects = {key: float(form.get(key) or 0) for key in defect_fields}
-    defects_weight_raw = (form.get("defects_weight") or "").strip()
-    defects_weight = float(defects_weight_raw) if defects_weight_raw else sum(defects.values())
-
-    parchment = lot.coffee_type in {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}
-    hulled_raw = (form.get("hulled_sample_weight") or "").strip()
-    hulled = float(hulled_raw) if hulled_raw else None
-
-    if sample <= 0:
-        raise ValueError("Sample size must be above zero.")
-    if defects_weight < 0:
-        raise ValueError("Defects cannot be negative.")
 
     if parchment:
-        if hulled is None or hulled <= 0 or hulled > sample:
-            raise ValueError("Parchment analysis requires a valid hulled sample weight.")
-        if defects_weight > hulled:
-            raise ValueError("Defects cannot exceed hulled sample weight.")
-        sound = hulled - defects_weight
-        general = hulled / sample * 100
-        net = sound / sample * 100
-        aa = float(form.get("aa_percent") or 0)
-        ab = float(form.get("ab_percent") or 0)
-        cpb = float(form.get("cpb_percent") or 0)
-        wugar = float(form.get("wugar_percent") or 0)
-        if min(aa, ab, cpb, wugar) < 0:
-            raise ValueError("Grade percentages cannot be negative.")
-        if aa + ab + cpb + wugar > 100.0001:
-            raise ValueError("AA + AB + CPB + WUGAR percentages cannot exceed 100%.")
+        try:
+            general = float(form.get("general_outturn") or 0)
+            net = float(form.get("net_outturn") or 0)
+        except ValueError:
+            raise ValueError("General Outturn and Net Outturn must be valid numbers.")
+
+        if general <= 0 or general > 100:
+            raise ValueError("General Outturn must be above 0% and not exceed 100%.")
+        if net < 0 or net > general:
+            raise ValueError("Net Outturn cannot be negative or higher than General Outturn.")
+
+        # User's required rule: defects are the reduction from general to net.
+        defects_percent = general - net
+        hulled = sample * general / 100
+        sound = sample * net / 100
+        defects_weight = sample * defects_percent / 100
+
+        # Detailed physical defects/grade percentages are intentionally not
+        # required for parchment in this simplified analysis format.
+        defects = {key: 0.0 for key in defect_fields}
+        aa = ab = cpb = wugar = None
     else:
-        if defects_weight > sample:
-            raise ValueError("Defects cannot exceed sample size.")
+        defects = {}
+        for key in defect_fields:
+            try:
+                defects[key] = float(form.get(key) or 0)
+            except ValueError:
+                raise ValueError("All defect weights must be valid numbers.")
+            if defects[key] < 0:
+                raise ValueError("Defect weights cannot be negative.")
+
+        defects_weight_raw = (form.get("defects_weight") or "").strip()
+        try:
+            defects_weight = float(defects_weight_raw) if defects_weight_raw else sum(defects.values())
+        except ValueError:
+            raise ValueError("Total defects must be a valid number.")
+        if defects_weight < 0 or defects_weight > sample:
+            raise ValueError("Defects cannot be negative or exceed sample size.")
+
         sound = sample - defects_weight
         hulled = None
         general = None
@@ -5659,11 +5700,18 @@ def _mhs_analysis_values(form, lot):
         aa = ab = cpb = wugar = None
 
     return {
-        "sample_size": sample, "moisture": moisture, "defects_weight": defects_weight,
-        "sound_weight": sound, "hulled_sample_weight": hulled,
-        "general_outturn": general, "net_outturn": net,
-        "aa_percent": aa, "ab_percent": ab, "cpb_percent": cpb,
-        "wugar_percent": wugar, **defects,
+        "sample_size": sample,
+        "moisture": moisture,
+        "defects_weight": defects_weight,
+        "sound_weight": sound,
+        "hulled_sample_weight": hulled,
+        "general_outturn": general,
+        "net_outturn": net,
+        "aa_percent": aa,
+        "ab_percent": ab,
+        "cpb_percent": cpb,
+        "wugar_percent": wugar,
+        **defects,
     }
 
 
@@ -5975,7 +6023,7 @@ def _mhs_read_production_outputs(form):
     fields = [
         "hulled_output", "aa_weight", "ab_weight", "cpb_weight", "wugar_weight",
         "drugar_clean_weight", "gravity_clean_weight", "color_sorted_weight",
-        "blacks", "broken", "pods", "dust", "foreign_matter", "other_byproducts",
+        "blacks", "broken", "pods", "dust", "stones", "rabble", "foreign_matter", "other_byproducts",
     ]
     values = {}
     for key in fields:
@@ -6018,7 +6066,8 @@ def _mhs_calculate_production(row, values):
 
     byproducts = (
         values["blacks"] + values["broken"] + values["pods"] +
-        values["dust"] + values["foreign_matter"] + values["other_byproducts"]
+        values["dust"] + values["stones"] + values["rabble"] +
+        values["foreign_matter"] + values["other_byproducts"]
     )
     total_accounted = clean + byproducts
     loss = float(row.actual_input_weight or 0) - total_accounted

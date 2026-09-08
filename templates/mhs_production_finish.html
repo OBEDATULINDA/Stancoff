@@ -50,10 +50,12 @@
       <label>Broken (kg)<input type="number" step="0.01" min="0" name="broken"></label>
       <label>Pods (kg)<input type="number" step="0.01" min="0" name="pods"></label>
       <label>Dust (kg)<input type="number" step="0.01" min="0" name="dust"></label>
+      <label>Stones (kg)<input type="number" step="0.01" min="0" name="stones"></label>
+      <label>Rabble (kg)<input type="number" step="0.01" min="0" name="rabble"></label>
       <label>Foreign matter (kg)<input type="number" step="0.01" min="0" name="foreign_matter"></label>
       <label>Other by-products (kg)<input type="number" step="0.01" min="0" name="other_byproducts"></label>
 
-      <div class="mhs-form-section"><h3>Storage destination</h3><p>Phase 8.4 will convert these outputs into the dedicated inventory ledger.</p></div>
+      <div class="mhs-form-section"><h3>Storage destination</h3><p>Completed output will enter the live Mothers Harvest inventory ledger at the actual finished weight.</p></div>
       <label>Station<input name="destination_station" value="{{row.destination_station or ''}}" placeholder="e.g. Main Factory"></label>
       <label>Warehouse<input name="destination_warehouse" value="{{row.destination_warehouse or ''}}" placeholder="e.g. Warehouse A"></label>
       <label class="mhs-span-2">Notes<textarea name="notes" rows="3">{{row.notes or ''}}</textarea></label>

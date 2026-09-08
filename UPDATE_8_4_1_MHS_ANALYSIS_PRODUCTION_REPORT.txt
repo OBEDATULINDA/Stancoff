@@ -1,0 +1,47 @@
+VERSION 8.4.1
+MOTHERS HARVEST ANALYSIS + PRODUCTION REPORT UPDATE
+
+PARCHMENT ANALYSIS
+Parchment now uses only the operational fields requested:
+- Sample Size (g)
+- Moisture (%)
+- General Outturn (%)
+- Net Outturn (%)
+- Defects (%), calculated automatically
+
+Rule:
+Defects % = General Outturn % - Net Outturn %
+
+The user no longer needs to enter hulled sample weight or individual defect
+weights for parchment. The system derives equivalent hulled/sound/defect gram
+weights internally for compatibility with older records and reports.
+
+OTHER COFFEE TYPES
+The previous detailed physical-defect analysis remains available for DRUGAR and
+other non-parchment coffee.
+
+PRODUCTION
+Added explicit fields:
+- Dust (kg)
+- Stones (kg)
+- Rabble (kg)
+
+Stones and Rabble are stored separately, included in production by-product mass
+balance, editable on completed production, and shown on the printable production
+report. Dust, Stones and Rabble always appear on the printed report even when 0.
+
+DATABASE
+Safe additive migration only:
+- mhs_production.stones
+- mhs_production.rabble
+No database reset required.
+
+STANCOFF PROTECTION
+Verified unchanged from Version 8.4:
+- purchases
+- processing
+- drying
+- finish_drying
+- inventory
+- sales
+- dispatch
