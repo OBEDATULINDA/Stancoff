@@ -1,56 +1,165 @@
 {% extends "base.html" %}
-{% block page_title %}Mothers Harvest Suppliers{% endblock %}
-{% block page_subtitle %}Commercial Coffee Operations · Version 8.2.1{% endblock %}
+{% block page_title %}Mothers Harvest Dashboard{% endblock %}
+{% block page_subtitle %}Management Intelligence · Version 8.5{% endblock %}
 {% block content %}
 <div class="mhs-page">
   <div class="mhs-hero">
-    <div><span class="eyebrow">MOTHERS HARVEST SUPPLIERS</span><h2>Commercial Coffee Operations</h2><p>One workspace for receiving coffee, lot traceability, moisture decisions, drying and quality analysis. Production starts with a physical reweigh before coffee enters the machines. Finished production now creates live inventory at the actual output weight.</p></div>
+    <div><span class="eyebrow">MOTHERS HARVEST SUPPLIERS</span><h2>Management Dashboard</h2><p>Purchasing, suppliers, quality, production and live inventory in one view. Current inventory always uses the latest physical stock weight.</p></div>
     <a class="button" href="{{url_for('mhs_purchases')}}">+ Record purchase</a>
   </div>
 
-  <div class="mhs-kpis">
-    <div class="mhs-kpi"><span>Active suppliers</span><strong>{{suppliers}}</strong></div>
-    <div class="mhs-kpi"><span>Purchases</span><strong>{{purchases}}</strong></div>
-    <div class="mhs-kpi"><span>Active lots</span><strong>{{lots}}</strong></div>
-    <div class="mhs-kpi"><span>Lots needing drying</span><strong>{{needs_drying}}</strong></div>
-    <div class="mhs-kpi"><span>Current coffee</span><strong>{{"{:,.0f}".format(total_weight)}} <small>kg</small></strong></div>
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Dashboard filters</h2><p>Combine filters to analyse a supplier, coffee type, batch or location.</p></div><a class="button secondary" href="{{url_for('mhs_dashboard')}}">Reset filters</a></div>
+    <form method="get" class="mhs-form-grid" id="dashboardFilters">
+      <label>Period<select name="period" id="periodFilter">
+        <option value="today" {% if period=='today' %}selected{% endif %}>Today</option>
+        <option value="week" {% if period=='week' %}selected{% endif %}>This Week</option>
+        <option value="month" {% if period=='month' %}selected{% endif %}>This Month</option>
+        <option value="year" {% if period=='year' %}selected{% endif %}>This Year</option>
+        <option value="all" {% if period=='all' %}selected{% endif %}>All Time</option>
+        <option value="custom" {% if period=='custom' %}selected{% endif %}>Custom</option>
+      </select></label>
+      <label>Batch / Lot<select name="lot_id"><option value="">All batches</option>{% for l in lots_list %}<option value="{{l.id}}" {% if selected_lot_id==l.id %}selected{% endif %}>{{l.lot_no}} · {{l.coffee_type}}</option>{% endfor %}</select></label>
+      <label>Supplier<select name="supplier_id"><option value="">All suppliers</option>{% for s in suppliers_list %}<option value="{{s.id}}" {% if selected_supplier_id==s.id %}selected{% endif %}>{{s.code}} · {{s.name}}</option>{% endfor %}</select></label>
+      <label>Coffee type<select name="coffee_type"><option value="">All coffee types</option>{% for c in coffee_types %}<option value="{{c}}" {% if selected_coffee_type==c %}selected{% endif %}>{{c}}</option>{% endfor %}</select></label>
+      <label>Station<select name="station"><option value="">All stations</option>{% for s in stations %}<option value="{{s}}" {% if selected_station==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></label>
+      <label class="custom-date">From<input type="date" name="start_date" value="{{start_date.isoformat() if start_date else ''}}"></label>
+      <label class="custom-date">To<input type="date" name="end_date" value="{{end_date.isoformat() if end_date else ''}}"></label>
+      <div class="mhs-actions"><button class="button" type="submit">Apply filters</button></div>
+    </form>
   </div>
 
+  {% if selected_lot and batch_chain %}
   <div class="mhs-card">
-    <div class="mhs-card-header"><div><h2>Operational workflow</h2><p>The lot number follows the coffee from purchase through every operational stage.</p></div><span class="mhs-badge">Phase 8.4 active</span></div>
+    <div class="mhs-card-header"><div><h2>{{selected_lot.lot_no}} · Batch performance chain</h2><p>{{selected_lot.coffee_type}} · {{selected_lot.coffee_state}} · {{selected_lot.readiness}}</p></div><span class="mhs-badge">Batch view</span></div>
     <div class="mhs-workflow">
-      <a class="mhs-step" href="{{url_for('mhs_suppliers')}}"><small>01</small><strong>Suppliers</strong><span>Register commercial coffee suppliers.</span></a>
-      <a class="mhs-step" href="{{url_for('mhs_purchases')}}"><small>02</small><strong>Purchase</strong><span>Receive coffee and create the MHS lot.</span></a>
-      <a class="mhs-step" href="{{url_for('mhs_lots')}}"><small>03</small><strong>Lot control</strong><span>Track weight, state, moisture and readiness.</span></a>
-      <a class="mhs-step" href="{{url_for('mhs_drying')}}"><small>04</small><strong>Drying</strong><span>Record actual dry weight and final moisture.</span></a>
-      <a class="mhs-step" href="{{url_for('mhs_analysis')}}"><small>05</small><strong>Analysis</strong><span>Calculate outturn and expected grades.</span></a>
-      <a class="mhs-step" href="{{url_for('mhs_production')}}"><small>06</small><strong>Production</strong><span>Reweigh factory input, process and compare actual output to analysis.</span></a>
-      <a class="mhs-step" href="{{url_for('mhs_inventory')}}"><small>07</small><strong>Inventory &amp; Movement</strong><span>Live stock by grade/location. New physical weights become the official balances going forward.</span></a>
+      <div class="mhs-step"><small>PURCHASE</small><strong>{{'{:,.2f}'.format(batch_chain.purchase_weight)}} kg</strong><span>Original purchased weight</span></div>
+      <div class="mhs-step"><small>AFTER DRYING</small><strong>{{'{:,.2f}'.format(batch_chain.dry_weight) if batch_chain.dry_weight is not none else '—'}}{% if batch_chain.dry_weight is not none %} kg{% endif %}</strong><span>Latest completed drying weight</span></div>
+      <div class="mhs-step"><small>GENERAL OT</small><strong>{{'{:.2f}%'.format(batch_chain.general_ot) if batch_chain.general_ot is not none else '—'}}</strong><span>Expected after hulling</span></div>
+      <div class="mhs-step"><small>NET OT</small><strong>{{'{:.2f}%'.format(batch_chain.net_ot) if batch_chain.net_ot is not none else '—'}}</strong><span>Expected after full production</span></div>
+      <div class="mhs-step"><small>PRODUCTION INPUT</small><strong>{{'{:,.2f}'.format(batch_chain.production_input) if batch_chain.production_input is not none else '—'}}{% if batch_chain.production_input is not none %} kg{% endif %}</strong><span>Physical reweigh at production</span></div>
+      <div class="mhs-step"><small>EXPECTED OUTPUT</small><strong>{{'{:,.2f}'.format(batch_chain.expected_output) if batch_chain.expected_output is not none else '—'}}{% if batch_chain.expected_output is not none %} kg{% endif %}</strong><span>General or Net OT according to process</span></div>
+      <div class="mhs-step"><small>ACTUAL OUTPUT</small><strong>{{'{:,.2f}'.format(batch_chain.actual_output) if batch_chain.actual_output is not none else '—'}}{% if batch_chain.actual_output is not none %} kg{% endif %}</strong><span>Finished clean output</span></div>
+      <div class="mhs-step"><small>LIVE INVENTORY</small><strong>{{'{:,.2f}'.format(batch_chain.inventory)}} kg</strong><span>Current authoritative stock balance</span></div>
     </div>
-  </div>
-
-  {% if current_role=='Admin' or current_is_super_admin %}
-  <div class="mhs-card">
-    <div class="mhs-card-header">
-      <div><h2>Administration</h2><p>Manage Mothers Harvest staff accounts and company access.</p></div>
-      <span class="mhs-badge">Admin</span>
-    </div>
-    <div class="mhs-workflow" style="grid-template-columns:minmax(240px,360px)">
-      <a class="mhs-step" href="{{url_for('mhs_users')}}">
-        <small>USERS</small>
-        <strong>Users &amp; Access</strong>
-        <span>Create users, assign roles, reset passwords, activate/deactivate accounts and manage Mothers Harvest access.</span>
-      </a>
+    <div class="mhs-kpis" style="margin-top:16px">
+      <div class="mhs-kpi"><span>Dust</span><strong>{{'{:,.2f}'.format(batch_chain.dust)}} kg</strong></div>
+      <div class="mhs-kpi"><span>Stones</span><strong>{{'{:,.2f}'.format(batch_chain.stones)}} kg</strong></div>
+      <div class="mhs-kpi"><span>Rabble</span><strong>{{'{:,.2f}'.format(batch_chain.rabble)}} kg</strong></div>
+      <div class="mhs-kpi"><span>Processing loss</span><strong>{{'{:,.2f}'.format(batch_chain.processing_loss)}} kg</strong></div>
     </div>
   </div>
   {% endif %}
 
+  <div class="mhs-kpis">
+    <div class="mhs-kpi"><span>Purchased</span><strong>{{'{:,.0f}'.format(purchased_kg)}} <small>kg</small></strong></div>
+    <div class="mhs-kpi"><span>Purchase value</span><strong>UGX {{'{:,.0f}'.format(purchase_value)}}</strong></div>
+    <div class="mhs-kpi"><span>Average cost / kg</span><strong>UGX {{'{:,.0f}'.format(avg_cost)}}</strong></div>
+    <div class="mhs-kpi"><span>Current inventory</span><strong>{{'{:,.0f}'.format(inventory_kg)}} <small>kg</small></strong></div>
+    <div class="mhs-kpi"><span>Average Net OT</span><strong>{{'{:.2f}%'.format(avg_net_ot) if avg_net_ot is not none else '—'}}</strong></div>
+    <div class="mhs-kpi"><span>Production output</span><strong>{{'{:,.0f}'.format(production_output)}} <small>kg</small></strong></div>
+  </div>
+
+  <div class="mhs-analysis-layout">
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h2>Biggest suppliers</h2><p>Ranked by purchased kilograms under the active filters.</p></div><span class="mhs-badge">Top 10</span></div>
+      {% for s in top_suppliers %}
+      <div class="mhs-metric-row"><div class="mhs-metric-label"><strong>{{s.name}}</strong><span>{{s.deliveries}} deliveries · {{'{:.1f}'.format(s.share)}}%</span></div><div class="mhs-bar-track"><div class="mhs-bar-fill" style="width:{{(s.weight/max_supplier_weight*100) if max_supplier_weight else 0}}%"></div></div><div class="mhs-metric-value">{{'{:,.0f}'.format(s.weight)}} kg</div></div>
+      {% else %}<p class="empty">No supplier purchases match these filters.</p>{% endfor %}
+    </div>
+
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h2>Coffee purchased by type</h2><p>Weight and share of purchases.</p></div></div>
+      {% for name,weight in coffee_mix %}
+      <div class="mhs-metric-row"><div class="mhs-metric-label"><strong>{{name}}</strong><span>{{'{:.1f}'.format(weight/purchased_kg*100 if purchased_kg else 0)}}% of purchases</span></div><div class="mhs-bar-track"><div class="mhs-bar-fill" style="width:{{(weight/max_coffee_weight*100) if max_coffee_weight else 0}}%"></div></div><div class="mhs-metric-value">{{'{:,.0f}'.format(weight)}} kg</div></div>
+      {% else %}<p class="empty">No coffee purchases match these filters.</p>{% endfor %}
+    </div>
+  </div>
+
   <div class="mhs-card">
-    <div class="mhs-card-header"><div><h2>Recent purchases</h2><p>Latest commercial coffee received into Mothers Harvest.</p></div><a class="button secondary" href="{{url_for('mhs_purchases')}}">View all purchases</a></div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Purchase</th><th>Date</th><th>Lot</th><th>Supplier</th><th>Coffee</th><th>Weight</th><th>Moisture</th><th>Readiness</th></tr></thead>
-      <tbody>{% for r in recent %}<tr><td><strong>{{r.purchase_no}}</strong></td><td>{{r.purchase_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.supplier.name}}</td><td>{{r.coffee_type}}</td><td>{{"{:,.2f}".format(r.weight)}} kg</td><td>{{r.moisture if r.moisture is not none else '—'}}{% if r.moisture is not none %}%{% endif %}</td><td><span class="mhs-badge">{{r.lot.readiness}}</span></td></tr>{% else %}<tr><td colspan="8" class="empty">No purchases recorded yet.</td></tr>{% endfor %}</tbody>
-    </table></div>
+    <div class="mhs-card-header"><div><h2>Supplier performance</h2><p>Commercial performance for the selected period and filters.</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Supplier</th><th>Deliveries</th><th>Purchased kg</th><th>Amount paid</th><th>Avg cost/kg</th><th>Avg General OT</th><th>Avg Net OT</th><th>Share</th></tr></thead><tbody>
+      {% for s in top_suppliers %}<tr><td><strong>{{s.name}}</strong></td><td>{{s.deliveries}}</td><td>{{'{:,.2f}'.format(s.weight)}}</td><td>UGX {{'{:,.0f}'.format(s.value)}}</td><td>UGX {{'{:,.0f}'.format(s.avg_cost)}}</td><td>{{'{:.2f}%'.format(s.avg_general_ot) if s.avg_general_ot is not none else '—'}}</td><td>{{'{:.2f}%'.format(s.avg_net_ot) if s.avg_net_ot is not none else '—'}}</td><td>{{'{:.1f}'.format(s.share)}}%</td></tr>{% else %}<tr><td colspan="8" class="empty">No supplier data for this selection.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+
+  <div class="mhs-analysis-layout">
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h2>Quality metrics</h2><p>Average analysis results under the active filters.</p></div></div>
+      <div class="mhs-kpis mhs-kpis-compact">
+        <div class="mhs-kpi"><span>Moisture</span><strong>{{'{:.2f}%'.format(avg_moisture) if avg_moisture is not none else '—'}}</strong></div>
+        <div class="mhs-kpi"><span>General OT</span><strong>{{'{:.2f}%'.format(avg_general_ot) if avg_general_ot is not none else '—'}}</strong></div>
+        <div class="mhs-kpi"><span>Net OT</span><strong>{{'{:.2f}%'.format(avg_net_ot) if avg_net_ot is not none else '—'}}</strong></div>
+        <div class="mhs-kpi"><span>Defects</span><strong>{{'{:.2f}%'.format(avg_defects_pct) if avg_defects_pct is not none else '—'}}</strong></div>
+      </div>
+    </div>
+
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h2>Processing performance</h2><p>Expected versus actual factory results.</p></div></div>
+      <div class="table-wrap"><table><tbody>
+        <tr><td>Completed production input</td><td><strong>{{'{:,.2f}'.format(production_input)}} kg</strong></td></tr>
+        <tr><td>Expected output</td><td>{{'{:,.2f}'.format(expected_output)}} kg</td></tr>
+        <tr><td>Actual clean output</td><td><strong>{{'{:,.2f}'.format(production_output)}} kg</strong></td></tr>
+        <tr><td>Output variance</td><td>{{'{:+,.2f}'.format(output_variance)}} kg</td></tr>
+        <tr><td>Average actual outturn</td><td>{{'{:.2f}%'.format(avg_actual_ot) if avg_actual_ot is not none else '—'}}</td></tr>
+        <tr><td>Total by-products</td><td>{{'{:,.2f}'.format(byproducts)}} kg</td></tr>
+        <tr><td>Processing loss</td><td>{{'{:,.2f}'.format(processing_loss)}} kg</td></tr>
+        <tr><td>Dust / Stones / Rabble</td><td>{{'{:,.2f}'.format(dust)}} / {{'{:,.2f}'.format(stones)}} / {{'{:,.2f}'.format(rabble)}} kg</td></tr>
+      </tbody></table></div>
+    </div>
+  </div>
+
+  <div class="mhs-analysis-layout">
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h2>Live inventory by product</h2><p>Current physical stock. Date filters do not rewrite a live balance.</p></div><a class="button secondary" href="{{url_for('mhs_inventory')}}">Open inventory</a></div>
+      {% for name,weight in inventory_products %}
+      <div class="mhs-metric-row"><div class="mhs-metric-label"><strong>{{name}}</strong></div><div class="mhs-bar-track"><div class="mhs-bar-fill" style="width:{{(weight/max_inventory_weight*100) if max_inventory_weight else 0}}%"></div></div><div class="mhs-metric-value">{{'{:,.0f}'.format(weight)}} kg</div></div>
+      {% else %}<p class="empty">No live inventory matches these filters.</p>{% endfor %}
+    </div>
+    <div class="mhs-card">
+      <div class="mhs-card-header"><div><h2>Inventory by location</h2><p>Station and warehouse balances.</p></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Location</th><th>Current kg</th></tr></thead><tbody>{% for loc,weight in inventory_locations %}<tr><td>{{loc}}</td><td><strong>{{'{:,.2f}'.format(weight)}}</strong></td></tr>{% else %}<tr><td colspan="2" class="empty">No stock locations for this selection.</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Operational attention</h2><p>Items that may need action.</p></div></div>
+    <div class="mhs-kpis mhs-kpis-compact">
+      <div class="mhs-kpi"><span>Needs drying</span><strong>{{needs_drying}}</strong></div>
+      <div class="mhs-kpi"><span>Awaiting analysis</span><strong>{{awaiting_analysis}}</strong></div>
+      <div class="mhs-kpi"><span>Ready for production</span><strong>{{ready_for_production}}</strong></div>
+      <div class="mhs-kpi"><span>Open production</span><strong>{{open_production_count}}</strong></div>
+      <div class="mhs-kpi"><span>Unassigned stock</span><strong>{{'{:,.0f}'.format(unassigned_stock)}} kg</strong></div>
+    </div>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Recent purchases</h2><p>Latest purchases matching the active filters.</p></div><a class="button secondary" href="{{url_for('mhs_purchases')}}">View purchases</a></div>
+    <div class="table-wrap"><table><thead><tr><th>Purchase</th><th>Date</th><th>Batch</th><th>Supplier</th><th>Coffee</th><th>Weight</th><th>Value</th></tr></thead><tbody>
+      {% for r in recent %}<tr><td><strong>{{r.purchase_no}}</strong></td><td>{{r.purchase_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.supplier.name}}</td><td>{{r.coffee_type}}</td><td>{{'{:,.2f}'.format(r.weight)}} kg</td><td>UGX {{'{:,.0f}'.format(r.total_amount or 0)}}</td></tr>{% else %}<tr><td colspan="7" class="empty">No purchases match these filters.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+
+  <div class="mhs-card">
+    <div class="mhs-card-header"><div><h2>Operational workflow</h2><p>Quick access to Mothers Harvest modules.</p></div><span class="mhs-badge">Version 8.5</span></div>
+    <div class="mhs-workflow">
+      <a class="mhs-step" href="{{url_for('mhs_suppliers')}}"><small>01</small><strong>Suppliers</strong><span>Supplier records and performance.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_purchases')}}"><small>02</small><strong>Purchases</strong><span>Receive coffee and create batches.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_lots')}}"><small>03</small><strong>Batches</strong><span>Weight, moisture and readiness.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_drying')}}"><small>04</small><strong>Drying</strong><span>Drying weight and moisture.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_analysis')}}"><small>05</small><strong>Analysis</strong><span>General OT, Net OT and quality.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_production')}}"><small>06</small><strong>Production</strong><span>Expected vs actual processing.</span></a>
+      <a class="mhs-step" href="{{url_for('mhs_inventory')}}"><small>07</small><strong>Inventory</strong><span>Live authoritative stock balances.</span></a>
+      {% if current_role=='Admin' or current_is_super_admin %}<a class="mhs-step" href="{{url_for('mhs_users')}}"><small>ADMIN</small><strong>Users & Access</strong><span>Manage MHS staff access.</span></a>{% endif %}
+    </div>
   </div>
 </div>
+<script>
+(function(){
+  const period=document.getElementById('periodFilter');
+  const custom=document.querySelectorAll('.custom-date');
+  function update(){custom.forEach(el=>el.style.display=period.value==='custom'?'flex':'none');}
+  period.addEventListener('change',update); update();
+})();
+</script>
 {% endblock %}

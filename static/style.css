@@ -261,3 +261,19 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
 .mhs-inline-reset{display:inline-flex!important;gap:5px;align-items:center;margin:2px}
 .mhs-inline-reset input{width:125px;padding:7px 8px;font-size:12px}
 @media(max-width:700px){.mhs-inline-reset{display:flex!important;margin-top:6px}.mhs-inline-reset input{width:150px}}
+
+/* Mothers Harvest 8.5 management dashboard */
+.mhs-metric-row{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(120px,2fr) minmax(90px,.7fr);gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(120,120,120,.16)}
+.mhs-metric-row:last-child{border-bottom:0}
+.mhs-metric-label{display:flex;flex-direction:column;gap:2px}
+.mhs-metric-label span{font-size:12px;opacity:.68}
+.mhs-metric-value{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.mhs-bar-track{height:10px;border-radius:999px;background:rgba(120,120,120,.16);overflow:hidden}
+.mhs-bar-fill{height:100%;border-radius:999px;background:currentColor;opacity:.62;min-width:0}
+.mhs-kpis-compact{grid-template-columns:repeat(auto-fit,minmax(135px,1fr))}
+#dashboardFilters .custom-date{display:none}
+@media(max-width:720px){
+  .mhs-metric-row{grid-template-columns:1fr auto}
+  .mhs-bar-track{grid-column:1/-1;grid-row:2}
+  .mhs-metric-value{grid-column:2;grid-row:1}
+}

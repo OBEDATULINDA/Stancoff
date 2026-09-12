@@ -1,0 +1,65 @@
+VERSION 8.5 — MHS MANAGEMENT DASHBOARD
+
+Built directly on Version 8.4.3.
+
+FILTERS
+- Period: Today, This Week, This Month, This Year, All Time, Custom
+- Batch / Lot
+- Supplier
+- Coffee Type
+- Station
+Filters can be combined. Batch defaults to All Batches.
+
+PURCHASING
+- Purchased kg
+- Purchase value
+- Average cost/kg
+- Purchase count
+- Biggest suppliers by kg
+- Supplier deliveries, purchase value, average cost/kg and share
+- Supplier average General OT and Net OT where analyses exist
+- Coffee purchased by type and percentage share
+
+QUALITY
+- Average moisture
+- Average General Outturn
+- Average Net Outturn
+- Average parchment defects = General OT - Net OT
+
+PROCESSING
+- Completed production input
+- Expected output
+- Actual clean output
+- Expected vs actual variance
+- Average actual outturn
+- By-products
+- Processing loss
+- Dust, Stones and Rabble
+- Open production count
+
+INVENTORY
+- Current live inventory
+- Inventory by product/grade
+- Inventory by station/warehouse
+- Unassigned stock
+Important: date filters do not rewrite current inventory balances.
+Batch/supplier/coffee/station filters do filter the live stock view.
+
+BATCH PERFORMANCE CHAIN
+When a batch is selected:
+Purchase weight -> drying weight -> General OT -> Net OT -> production input ->
+expected output -> actual output -> Dust/Stones/Rabble/loss -> current inventory.
+
+OPERATIONAL ATTENTION
+- Lots needing drying
+- Awaiting analysis
+- Ready for production
+- Open production
+- Unassigned stock
+
+SAFETY / COMPATIBILITY
+- No database reset.
+- No database schema changes.
+- MHS analysis deletion behavior remains exactly as Version 8.4.3.
+- Stancoff purchases, processing, drying, finish_drying, inventory, sales and
+  dispatch routes verified unchanged.

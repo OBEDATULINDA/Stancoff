@@ -5093,27 +5093,330 @@ def _mhs_purchase_readiness(company_id, coffee_type, moisture):
 @login_required
 def mhs_dashboard():
     company = _require_mhs()
-    suppliers = MHSSupplier.query.filter_by(company_id=company.id, status="Active").count()
-    purchases = MHSPurchase.query.filter_by(company_id=company.id, status="Active").count()
-    lots = MHSLot.query.filter_by(company_id=company.id, status="Active").count()
-    needs_drying = MHSLot.query.filter_by(
-        company_id=company.id, status="Active", readiness="Needs Drying"
-    ).count()
-    total_weight = db.session.query(func.coalesce(func.sum(MHSLot.current_weight), 0)).filter(
-        MHSLot.company_id == company.id,
-        MHSLot.status == "Active",
-    ).scalar() or 0
-    recent = MHSPurchase.query.filter_by(
+
+    # ------------------------------------------------------------------
+    # Version 8.5 management dashboard filters
+    # ------------------------------------------------------------------
+    today = datetime.utcnow().date()
+    period = (request.args.get("period") or "month").strip()
+    lot_id = request.args.get("lot_id", type=int)
+    supplier_id = request.args.get("supplier_id", type=int)
+    coffee_type = (request.args.get("coffee_type") or "").strip()
+    station = (request.args.get("station") or "").strip()
+
+    start_date = None
+    end_date = today
+    if period == "today":
+        start_date = today
+    elif period == "week":
+        start_date = today - timedelta(days=today.weekday())
+    elif period == "month":
+        start_date = today.replace(day=1)
+    elif period == "year":
+        start_date = today.replace(month=1, day=1)
+    elif period == "all":
+        start_date = None
+        end_date = None
+    elif period == "custom":
+        try:
+            start_date = datetime.strptime(request.args.get("start_date") or "", "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            start_date = None
+        try:
+            end_date = datetime.strptime(request.args.get("end_date") or "", "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            end_date = today
+
+    suppliers_list = MHSSupplier.query.filter_by(
         company_id=company.id, status="Active"
-    ).order_by(MHSPurchase.purchase_date.desc(), MHSPurchase.id.desc()).limit(8).all()
+    ).order_by(MHSSupplier.name).all()
+    lots_list = MHSLot.query.filter_by(
+        company_id=company.id, status="Active"
+    ).order_by(MHSLot.lot_no.desc()).all()
+
+    coffee_types = [
+        r[0] for r in db.session.query(MHSPurchase.coffee_type).filter(
+            MHSPurchase.company_id == company.id,
+            MHSPurchase.status == "Active",
+        ).distinct().order_by(MHSPurchase.coffee_type).all()
+        if r[0]
+    ]
+    stations = [
+        r[0] for r in db.session.query(MHSInventoryStock.station).filter(
+            MHSInventoryStock.company_id == company.id,
+            MHSInventoryStock.status == "Active",
+            MHSInventoryStock.station.isnot(None),
+        ).distinct().order_by(MHSInventoryStock.station).all()
+        if r[0]
+    ]
+
+    # Supplier filtering can span the whole operational chain through lots.
+    supplier_lot_ids = None
+    if supplier_id:
+        supplier_lot_ids = {
+            r[0] for r in db.session.query(MHSPurchase.lot_id).filter(
+                MHSPurchase.company_id == company.id,
+                MHSPurchase.status == "Active",
+                MHSPurchase.supplier_id == supplier_id,
+            ).all()
+        }
+
+    def lot_allowed(target_lot_id):
+        if lot_id and target_lot_id != lot_id:
+            return False
+        if supplier_lot_ids is not None and target_lot_id not in supplier_lot_ids:
+            return False
+        return True
+
+    def date_allowed(value):
+        if value is None:
+            return True
+        if start_date and value < start_date:
+            return False
+        if end_date and value > end_date:
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    # Purchasing metrics
+    # ------------------------------------------------------------------
+    purchase_rows = MHSPurchase.query.filter_by(
+        company_id=company.id, status="Active"
+    ).all()
+    filtered_purchases = [
+        p for p in purchase_rows
+        if lot_allowed(p.lot_id)
+        and date_allowed(p.purchase_date)
+        and (not supplier_id or p.supplier_id == supplier_id)
+        and (not coffee_type or p.coffee_type == coffee_type)
+    ]
+
+    purchased_kg = sum(float(p.weight or 0) for p in filtered_purchases)
+    purchase_value = sum(float(p.total_amount or 0) for p in filtered_purchases)
+    avg_cost = purchase_value / purchased_kg if purchased_kg else 0
+    purchase_count = len(filtered_purchases)
+
+    supplier_stats = {}
+    coffee_stats = {}
+    for p in filtered_purchases:
+        sid = p.supplier_id
+        stat = supplier_stats.setdefault(sid, {
+            "name": p.supplier.name if p.supplier else "Unknown",
+            "deliveries": 0, "weight": 0.0, "value": 0.0
+        })
+        stat["deliveries"] += 1
+        stat["weight"] += float(p.weight or 0)
+        stat["value"] += float(p.total_amount or 0)
+        coffee_stats[p.coffee_type] = coffee_stats.get(p.coffee_type, 0) + float(p.weight or 0)
+
+    # Attach quality averages to supplier performance using analyses from the
+    # supplier's purchased lots that fall inside the active dashboard period.
+    all_dashboard_analyses = MHSAnalysis.query.filter_by(
+        company_id=company.id, status="Active"
+    ).all()
+    for sid, stat in supplier_stats.items():
+        supplier_lots_for_stats = {
+            p.lot_id for p in filtered_purchases if p.supplier_id == sid
+        }
+        quality_rows = [
+            a for a in all_dashboard_analyses
+            if a.lot_id in supplier_lots_for_stats and date_allowed(a.analysis_date)
+        ]
+        general_q = [float(a.general_outturn) for a in quality_rows if a.general_outturn is not None]
+        net_q = [float(a.net_outturn) for a in quality_rows if a.net_outturn is not None]
+        stat["avg_general_ot"] = sum(general_q) / len(general_q) if general_q else None
+        stat["avg_net_ot"] = sum(net_q) / len(net_q) if net_q else None
+
+    top_suppliers = sorted(supplier_stats.values(), key=lambda x: x["weight"], reverse=True)[:10]
+    for s in top_suppliers:
+        s["avg_cost"] = s["value"] / s["weight"] if s["weight"] else 0
+        s["share"] = s["weight"] / purchased_kg * 100 if purchased_kg else 0
+
+    coffee_mix = sorted(coffee_stats.items(), key=lambda x: x[1], reverse=True)
+    max_supplier_weight = max([s["weight"] for s in top_suppliers], default=0)
+    max_coffee_weight = max([x[1] for x in coffee_mix], default=0)
+
+    # ------------------------------------------------------------------
+    # Quality metrics
+    # ------------------------------------------------------------------
+    analyses = MHSAnalysis.query.filter_by(
+        company_id=company.id, status="Active"
+    ).all()
+    filtered_analyses = []
+    for a in analyses:
+        if not lot_allowed(a.lot_id) or not date_allowed(a.analysis_date):
+            continue
+        if coffee_type and (not a.lot or a.lot.coffee_type != coffee_type):
+            continue
+        filtered_analyses.append(a)
+
+    moisture_values = [float(a.moisture) for a in filtered_analyses if a.moisture is not None]
+    general_values = [float(a.general_outturn) for a in filtered_analyses if a.general_outturn is not None]
+    net_values = [float(a.net_outturn) for a in filtered_analyses if a.net_outturn is not None]
+    defect_pct_values = [
+        float(a.general_outturn or 0) - float(a.net_outturn or 0)
+        for a in filtered_analyses if a.general_outturn is not None and a.net_outturn is not None
+    ]
+    avg_moisture = sum(moisture_values) / len(moisture_values) if moisture_values else None
+    avg_general_ot = sum(general_values) / len(general_values) if general_values else None
+    avg_net_ot = sum(net_values) / len(net_values) if net_values else None
+    avg_defects_pct = sum(defect_pct_values) / len(defect_pct_values) if defect_pct_values else None
+
+    # ------------------------------------------------------------------
+    # Processing metrics
+    # ------------------------------------------------------------------
+    productions = MHSProduction.query.filter_by(company_id=company.id).all()
+    filtered_productions = []
+    for p in productions:
+        if not lot_allowed(p.lot_id) or not date_allowed(p.production_date):
+            continue
+        if coffee_type and p.source_coffee_type != coffee_type:
+            continue
+        filtered_productions.append(p)
+
+    completed_productions = [p for p in filtered_productions if p.status == "Completed"]
+    open_productions = [p for p in filtered_productions if p.status == "Open"]
+    production_input = sum(float(p.actual_input_weight or 0) for p in completed_productions)
+    production_output = sum(float(p.total_clean_output or 0) for p in completed_productions)
+    expected_output = sum(float(p.expected_clean_weight or 0) for p in completed_productions)
+    processing_loss = sum(float(p.processing_loss or 0) for p in completed_productions)
+    byproducts = sum(float(p.total_byproducts or 0) for p in completed_productions)
+    dust = sum(float(p.dust or 0) for p in completed_productions)
+    stones = sum(float(p.stones or 0) for p in completed_productions)
+    rabble = sum(float(p.rabble or 0) for p in completed_productions)
+    avg_actual_ot = (
+        sum(float(p.actual_outturn or 0) for p in completed_productions) / len(completed_productions)
+        if completed_productions else None
+    )
+    output_variance = production_output - expected_output
+
+    # ------------------------------------------------------------------
+    # Current live inventory. Date does not alter a current balance.
+    # Batch, supplier, coffee and station filters still apply.
+    # ------------------------------------------------------------------
+    stocks = MHSInventoryStock.query.filter_by(
+        company_id=company.id, status="Active"
+    ).all()
+    filtered_stocks = []
+    for s in stocks:
+        if float(s.current_weight or 0) <= 0 or not lot_allowed(s.lot_id):
+            continue
+        if station and (s.station or "") != station:
+            continue
+        if coffee_type:
+            lot = MHSLot.query.filter_by(id=s.lot_id, company_id=company.id).first()
+            if lot and lot.coffee_type != coffee_type and coffee_type.lower() not in (s.product or "").lower():
+                continue
+        filtered_stocks.append(s)
+
+    inventory_kg = sum(float(s.current_weight or 0) for s in filtered_stocks)
+    inventory_by_product = {}
+    inventory_by_location = {}
+    for s in filtered_stocks:
+        inventory_by_product[s.product] = inventory_by_product.get(s.product, 0) + float(s.current_weight or 0)
+        loc = f"{s.station or 'Unassigned'} / {s.warehouse or 'Unassigned'}"
+        inventory_by_location[loc] = inventory_by_location.get(loc, 0) + float(s.current_weight or 0)
+    inventory_products = sorted(inventory_by_product.items(), key=lambda x: x[1], reverse=True)
+    inventory_locations = sorted(inventory_by_location.items(), key=lambda x: x[1], reverse=True)
+    max_inventory_weight = max([x[1] for x in inventory_products], default=0)
+
+    # ------------------------------------------------------------------
+    # Operational alerts / selected batch chain
+    # ------------------------------------------------------------------
+    relevant_lots = [l for l in lots_list if lot_allowed(l.id) and (not coffee_type or l.coffee_type == coffee_type)]
+    needs_drying = sum(1 for l in relevant_lots if l.readiness == "Needs Drying")
+    awaiting_analysis = sum(
+        1 for l in relevant_lots
+        if l.readiness not in {"Needs Drying", "Drying", "In Production", "In Inventory"}
+        and not _mhs_latest_analysis(company.id, l.id)
+    )
+    ready_for_production = sum(
+        1 for l in relevant_lots
+        if _mhs_latest_analysis(company.id, l.id)
+        and l.readiness not in {"Needs Drying", "Drying", "In Production", "Produced / Awaiting Inventory", "In Inventory"}
+    )
+    unassigned_stock = sum(
+        float(s.current_weight or 0) for s in filtered_stocks
+        if not s.station or not s.warehouse
+    )
+
+    selected_lot = None
+    batch_chain = None
+    if lot_id:
+        selected_lot = MHSLot.query.filter_by(id=lot_id, company_id=company.id).first()
+        if selected_lot:
+            lot_purchases = [p for p in purchase_rows if p.lot_id == lot_id]
+            lot_drying = MHSDrying.query.filter_by(company_id=company.id, lot_id=lot_id).order_by(MHSDrying.id.desc()).first()
+            lot_analysis = MHSAnalysis.query.filter_by(company_id=company.id, lot_id=lot_id, status="Active").order_by(MHSAnalysis.id.desc()).first()
+            lot_production = MHSProduction.query.filter_by(company_id=company.id, lot_id=lot_id).order_by(MHSProduction.id.desc()).first()
+            lot_stock = sum(
+                float(s.current_weight or 0) for s in stocks
+                if s.lot_id == lot_id and float(s.current_weight or 0) > 0
+            )
+            batch_chain = {
+                "purchase_weight": sum(float(p.weight or 0) for p in lot_purchases),
+                "dry_weight": float(lot_drying.dry_weight or 0) if lot_drying else None,
+                "general_ot": float(lot_analysis.general_outturn) if lot_analysis and lot_analysis.general_outturn is not None else None,
+                "net_ot": float(lot_analysis.net_outturn) if lot_analysis and lot_analysis.net_outturn is not None else None,
+                "production_input": float(lot_production.actual_input_weight or 0) if lot_production else None,
+                "expected_output": float(lot_production.expected_clean_weight or 0) if lot_production else None,
+                "actual_output": float(lot_production.total_clean_output or 0) if lot_production and lot_production.status == "Completed" else None,
+                "dust": float(lot_production.dust or 0) if lot_production else 0,
+                "stones": float(lot_production.stones or 0) if lot_production else 0,
+                "rabble": float(lot_production.rabble or 0) if lot_production else 0,
+                "processing_loss": float(lot_production.processing_loss or 0) if lot_production else 0,
+                "inventory": lot_stock,
+            }
+
+    recent = sorted(filtered_purchases, key=lambda p: (p.purchase_date, p.id), reverse=True)[:8]
+
     return render_template(
         "mhs_dashboard.html",
         company=company,
-        suppliers=suppliers,
-        purchases=purchases,
-        lots=lots,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
+        selected_lot_id=lot_id,
+        selected_supplier_id=supplier_id,
+        selected_coffee_type=coffee_type,
+        selected_station=station,
+        suppliers_list=suppliers_list,
+        lots_list=lots_list,
+        coffee_types=coffee_types,
+        stations=stations,
+        purchased_kg=purchased_kg,
+        purchase_value=purchase_value,
+        avg_cost=avg_cost,
+        purchase_count=purchase_count,
+        top_suppliers=top_suppliers,
+        coffee_mix=coffee_mix,
+        max_supplier_weight=max_supplier_weight,
+        max_coffee_weight=max_coffee_weight,
+        avg_moisture=avg_moisture,
+        avg_general_ot=avg_general_ot,
+        avg_net_ot=avg_net_ot,
+        avg_defects_pct=avg_defects_pct,
+        production_input=production_input,
+        production_output=production_output,
+        expected_output=expected_output,
+        output_variance=output_variance,
+        processing_loss=processing_loss,
+        byproducts=byproducts,
+        dust=dust,
+        stones=stones,
+        rabble=rabble,
+        avg_actual_ot=avg_actual_ot,
+        open_production_count=len(open_productions),
+        inventory_kg=inventory_kg,
+        inventory_products=inventory_products,
+        inventory_locations=inventory_locations,
+        max_inventory_weight=max_inventory_weight,
         needs_drying=needs_drying,
-        total_weight=total_weight,
+        awaiting_analysis=awaiting_analysis,
+        ready_for_production=ready_for_production,
+        unassigned_stock=unassigned_stock,
+        selected_lot=selected_lot,
+        batch_chain=batch_chain,
         recent=recent,
     )
 
