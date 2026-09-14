@@ -9,6 +9,7 @@
     <form method="post" class="mhs-form-grid">
       <label>Analysis date<input type="date" name="analysis_date" value="{{row.analysis_date.isoformat()}}" required></label>
       <label>Analysed by<input name="analysed_by" value="{{row.analysed_by or ''}}"></label>
+      <label class="mhs-span-2">Purchase volume represented (kg)<input value="{{'{:,.2f}'.format(purchase_volume or 0)}} kg" readonly><small>Automatically calculated from purchases linked to {{lot.lot_no}}.</small></label>
 
       {% if is_parchment %}
       <div class="mhs-form-section"><h3>Parchment outturn</h3></div>

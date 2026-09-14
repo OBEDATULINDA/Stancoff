@@ -6018,6 +6018,17 @@ def _mhs_analysis_values(form, lot):
     }
 
 
+def _mhs_purchase_volume_for_lot(company_id, lot_id):
+    """Total active purchased weight represented by an MHS lot."""
+    return float(
+        db.session.query(func.coalesce(func.sum(MHSPurchase.weight), 0)).filter(
+            MHSPurchase.company_id == company_id,
+            MHSPurchase.lot_id == lot_id,
+            MHSPurchase.status == "Active",
+        ).scalar() or 0
+    )
+
+
 @app.route("/mhs/analysis", methods=["GET", "POST"])
 @login_required
 def mhs_analysis():
@@ -6064,11 +6075,17 @@ def mhs_analysis():
         return redirect(url_for("mhs_analysis"))
 
     rows = MHSAnalysis.query.filter_by(company_id=company.id, status="Active").order_by(MHSAnalysis.id.desc()).all()
+    for analysis_row in rows:
+        analysis_row.purchase_volume = _mhs_purchase_volume_for_lot(company.id, analysis_row.lot_id)
+
     lots = MHSLot.query.filter(
         MHSLot.company_id == company.id,
         MHSLot.status == "Active",
         ~MHSLot.readiness.in_(["Needs Drying", "Drying"]),
     ).order_by(MHSLot.lot_no).all()
+    for analysis_lot in lots:
+        analysis_lot.purchase_volume = _mhs_purchase_volume_for_lot(company.id, analysis_lot.id)
+
     return render_template(
         "mhs_analysis.html", rows=rows, lots=lots,
         today=datetime.utcnow().date().isoformat()
@@ -6104,7 +6121,8 @@ def mhs_analysis_edit(id):
         log_action("EDIT", "MHS Analysis", row.id, row.analysis_no)
         flash("Analysis updated.")
         return redirect(url_for("mhs_analysis"))
-    return render_template("mhs_analysis_edit.html", row=row, lot=lot)
+    purchase_volume = _mhs_purchase_volume_for_lot(company.id, lot.id)
+    return render_template("mhs_analysis_edit.html", row=row, lot=lot, purchase_volume=purchase_volume)
 
 
 @app.route("/mhs/analysis/<int:id>/delete", methods=["POST"])
@@ -6148,7 +6166,14 @@ def mhs_analysis_print(id):
         expected["ab_kg"] = net_kg * float(row.ab_percent or 0) / 100
         expected["cpb_kg"] = net_kg * float(row.cpb_percent or 0) / 100
         expected["wugar_kg"] = net_kg * float(row.wugar_percent or 0) / 100
-    return render_template("mhs_analysis_print.html", row=row, expected=expected, company=company)
+    purchase_volume = _mhs_purchase_volume_for_lot(company.id, row.lot_id)
+    return render_template(
+        "mhs_analysis_print.html",
+        row=row,
+        expected=expected,
+        company=company,
+        purchase_volume=purchase_volume,
+    )
 
 
 # ---------------------------------------------------------------------------

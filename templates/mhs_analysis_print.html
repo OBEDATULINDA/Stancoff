@@ -3,7 +3,8 @@
 <h1>MOTHERS HARVEST SUPPLIERS</h1><h2>COFFEE ANALYSIS FORM</h2>
 <table class="meta">
 <tr><td><b>No.</b> {{row.analysis_no}}</td><td><b>Date</b> {{row.analysis_date}}</td><td><b>Lot</b> {{row.lot.lot_no}}</td></tr>
-<tr><td><b>Coffee</b> {{row.lot.coffee_type}}</td><td><b>Sample</b> {{'%.2f'|format(row.sample_size)}} g</td><td><b>Moisture</b> {{('%.2f'|format(row.moisture)) ~ '%' if row.moisture is not none else '—'}}</td></tr>
+<tr><td><b>Coffee</b> {{row.lot.coffee_type}}</td><td><b>Purchase volume</b> {{'{:,.2f}'.format(purchase_volume or 0)}} kg</td><td><b>Sample</b> {{'%.2f'|format(row.sample_size)}} g</td></tr>
+<tr><td><b>Moisture</b> {{('%.2f'|format(row.moisture)) ~ '%' if row.moisture is not none else '—'}}</td><td colspan="2"><b>Volume represented</b> Total active purchased weight linked to this batch.</td></tr>
 </table>
 
 {% if is_parchment %}

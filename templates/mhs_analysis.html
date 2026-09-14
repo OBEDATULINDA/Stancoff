@@ -17,12 +17,16 @@
           <select name="lot_id" id="lotSelect" required>
             <option value="">Select ready lot</option>
             {% for l in lots %}
-            <option value="{{l.id}}" data-coffee="{{l.coffee_type}}">{{l.lot_no}} · {{l.coffee_type}} · {{l.readiness}}</option>
+            <option value="{{l.id}}" data-coffee="{{l.coffee_type}}" data-volume="{{'%.2f'|format(l.purchase_volume or 0)}}">{{l.lot_no}} · {{l.coffee_type}} · {{l.readiness}}</option>
             {% endfor %}
           </select>
         </label>
         <label>Analysis date<input type="date" name="analysis_date" value="{{today}}" required></label>
         <label>Analysed by<input name="analysed_by" placeholder="Name"></label>
+        <label class="mhs-span-2">Purchase volume represented (kg)
+          <input type="text" id="purchaseVolume" readonly placeholder="Select a lot">
+          <small>Automatically pulled from active purchases linked to the selected batch.</small>
+        </label>
 
         <div id="parchmentFields" class="mhs-span-all" style="display:none">
           <div class="mhs-form-section"><h3>2. Parchment outturn</h3><p>Weigh the sample, hull it, take moisture, then enter General Outturn and Net Outturn. Defects are calculated automatically as General OT − Net OT.</p></div>
@@ -74,7 +78,7 @@
   <div class="mhs-card">
     <div class="mhs-card-header"><div><h2>Analysis records</h2><p>Edit, print or delete entries from the Actions column.</p></div></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Analysis</th><th>Actions</th><th>Date</th><th>Lot</th><th>Coffee</th><th>Sample</th><th>Moisture</th><th>General OT</th><th>Net OT</th><th>Defects</th></tr></thead>
+      <thead><tr><th>Analysis</th><th>Actions</th><th>Date</th><th>Lot</th><th>Coffee</th><th>Purchase volume</th><th>Sample</th><th>Moisture</th><th>General OT</th><th>Net OT</th><th>Defects</th></tr></thead>
       <tbody>
       {% for r in rows %}
       {% set is_parchment = r.lot.coffee_type in ['Parchment Cherries','Wet Parchment','Dry Parchment'] %}
@@ -82,13 +86,14 @@
         <td><strong>{{r.analysis_no}}</strong></td>
         <td class="record-actions"><a class="small-button" href="{{url_for('mhs_analysis_edit',id=r.id)}}">Edit</a><a class="small-button" href="{{url_for('mhs_analysis_print',id=r.id)}}" target="_blank">Print</a>{% if current_role=='Admin' or current_is_super_admin %}<form method="post" action="{{url_for('mhs_analysis_delete',id=r.id)}}" onsubmit="return confirm('Delete this analysis?')"><button class="small-button" type="submit">Delete</button></form>{% endif %}</td>
         <td>{{r.analysis_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.lot.coffee_type}}</td>
+        <td>{{'{:,.2f}'.format(r.purchase_volume or 0)}} kg</td>
         <td>{{'{:,.2f}'.format(r.sample_size)}} g</td>
         <td>{{'{:.2f}%'.format(r.moisture) if r.moisture is not none else '—'}}</td>
         <td>{{'{:.2f}%'.format(r.general_outturn) if r.general_outturn is not none else '—'}}</td>
         <td>{{'{:.2f}%'.format(r.net_outturn)}}</td>
         <td>{% if is_parchment and r.general_outturn is not none %}{{'{:.2f}%'.format((r.general_outturn or 0)-(r.net_outturn or 0))}}{% else %}{{'{:,.2f}'.format(r.defects_weight)}} g{% endif %}</td>
       </tr>
-      {% else %}<tr><td colspan="10" class="empty">No analyses yet.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="11" class="empty">No analyses yet.</td></tr>{% endfor %}
       </tbody>
     </table></div>
   </div>
@@ -103,6 +108,7 @@
   const ps=document.getElementById('parchmentSample'), pm=document.getElementById('parchmentMoisture');
   const os=document.getElementById('otherSample'), om=document.getElementById('otherMoisture');
   const g=document.getElementById('generalOT'), n=document.getElementById('netOT'), d=document.getElementById('defectsPercent');
+  const purchaseVolume=document.getElementById('purchaseVolume');
 
   function setRequired(group, required){
     group.querySelectorAll('input[name="sample_size"],input[name="general_outturn"],input[name="net_outturn"]').forEach(el=>el.required=required);
@@ -110,6 +116,8 @@
   function updateType(){
     const opt=select.options[select.selectedIndex];
     const type=opt ? opt.dataset.coffee : '';
+    const vol=opt ? parseFloat(opt.dataset.volume || '') : NaN;
+    purchaseVolume.value=Number.isFinite(vol) ? vol.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg' : '';
     const isP=parchmentTypes.includes(type);
     p.style.display=isP?'block':'none';
     o.style.display=type && !isP?'block':'none';

@@ -1,0 +1,23 @@
+VERSION 8.5.1 — MHS ANALYSIS PURCHASE VOLUME
+
+Built directly on Version 8.5.
+
+NEW ANALYSIS INFORMATION
+- The MHS Analysis form now shows the total purchased weight represented by the selected batch.
+- The value is pulled automatically from active MHS purchases linked to that lot/batch.
+- It is read-only; the quality user does not type it manually.
+- The Analysis records table now shows Purchase Volume.
+- The Edit Analysis screen shows Purchase Volume.
+- The printable Analysis Form shows Purchase Volume / Volume Represented.
+
+IMPORTANT
+- Sample Size remains the laboratory sample in grams.
+- Purchase Volume is the commercial batch weight in kilograms represented by that analysis.
+- This does not change General Outturn, Net Outturn, defects, or production calculations.
+- No database schema change and no database reset.
+- Because it is calculated from linked purchases, a corrected purchase weight will also be reflected on the analysis display/report.
+
+SAFETY
+- MHS analysis deletion behavior is unchanged from Version 8.5 / 8.4.3.
+- Protected Stancoff routes verified unchanged:
+  purchases, processing, drying, finish_drying, inventory, sales, dispatch.
