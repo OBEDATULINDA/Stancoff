@@ -1,0 +1,54 @@
+VERSION 8.6 — MHS MULTI-LOT PRODUCTION
+
+Built directly on Version 8.5.1.
+
+NEW: PROCESS MORE THAN ONE LOT TOGETHER
+- Production intake now allows selecting one lot or multiple analysed lots.
+- Multiple selected lots must have the same coffee type and the same processing state.
+- The system adds their current system weights and the operator enters one physically confirmed combined factory input.
+- A 1% or greater combined input difference still requires a reason.
+
+TRACEABILITY
+- New additive table: mhs_production_lot.
+- Each source lot keeps:
+  source lot ID, analysis ID, original system weight, allocated production input,
+  moisture, coffee type/state and readiness snapshot.
+- A new output/blend lot is generated for combined production.
+- Source lots are set to zero available weight while in production so the same coffee cannot be used twice.
+- On completion, source lots remain traceable as Consumed in Production.
+- Finished output and inventory continue under the generated output lot.
+
+EXPECTED OUTPUT
+- Each source lot keeps its own analysis.
+- Confirmed combined input is allocated proportionally across source lots for expectation calculations.
+- Hulling Only uses each parchment lot's General Outturn.
+- Full Production uses each parchment lot's Net Outturn.
+- The combined expected output is the weighted sum of all source-lot expectations.
+
+EDIT / FINISH / REPORT
+- Combined production shows every source lot and its original and allocated weights.
+- Source composition is locked after opening for audit traceability.
+- Combined input and production outputs can still be corrected through Edit.
+- Printable production report includes all source lots and analyses.
+
+SAFE DELETE
+- If there are inventory movements, production remains protected from deletion.
+- If safe to delete, all original source lots are restored from their snapshots.
+- The generated combined output lot is cancelled.
+- Analysis records linked through combined production are protected using the same existing rule.
+
+DATABASE
+- Additive schema only: one new mhs_production_lot table.
+- db.create_all() creates it automatically.
+- NO database reset and NO existing data deletion.
+
+STANCOFF PROTECTION
+Verified unchanged against Version 8.5.1:
+- purchases
+- processing
+- drying
+- finish_drying
+- inventory
+- sales
+- dispatch
+- company foundation / MHS membership protection
