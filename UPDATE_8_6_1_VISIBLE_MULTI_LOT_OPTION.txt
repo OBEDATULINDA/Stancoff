@@ -1,0 +1,11 @@
+VERSION 8.6.1 — VISIBLE MULTI-LOT PRODUCTION OPTION
+
+- Adds an explicit Production Mode selector at the top of Mothers Harvest Production:
+  1. Single Lot
+  2. Multi-Lot Production
+- Single Lot mode permits exactly one selected lot.
+- Multi-Lot Production requires at least two selected lots.
+- The existing compatibility checks remain: same coffee type and same processing state.
+- Existing multi-lot backend, weighted analysis expectations, traceability, inventory behavior and safe deletion are unchanged.
+- No database reset.
+- No Stancoff operational changes.
