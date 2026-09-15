@@ -1,0 +1,29 @@
+VERSION 8.6.2 — MHS PRODUCTION LOAD BUILDER
+
+Built directly on the already-deployed Version 8.6.1.
+
+CORRECTED WORKFLOW
+- Removed the confusing Single Lot / Multi-Lot Production mode choice.
+- Production now starts with an "Add Analysed Lot" load builder.
+- Select an analysed lot and click Add Analysed Lot.
+- Repeat to add another analysed lot, and another as needed.
+- The selected lots appear in one table with their available weights.
+- Combined Weight is calculated automatically.
+- Actual Weight Sent for Process is prefilled from the combined weight but remains editable after a physical reweigh.
+- Then choose the process: Hulling Only, Grading Only, Gravity Table Only, Color Sorting Only, or Full Production.
+- Click Send for Processing.
+
+TRACEABILITY / CALCULATIONS
+- Each source analysed lot remains linked to the production record.
+- Compatible lots must have the same coffee type and processing state.
+- For parchment Hulling Only, combined expected output uses each source lot's General Outturn.
+- Full Production uses each source lot's Net Outturn.
+- The system preserves the source-lot weights and analyses for the production report.
+- Existing 8.6 combined-production traceability table is reused; no additional schema change in 8.6.2.
+
+DEPLOYMENT SAFETY
+- No database reset.
+- No existing MHS data deletion.
+- No multi-lot records were created before this correction, so no migration/cleanup is required.
+- Protected Stancoff routes unchanged: purchases, processing, drying, finish_drying, inventory, sales, dispatch.
+- Company foundation / membership logic unchanged.
