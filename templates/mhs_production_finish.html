@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block page_title %}Finish Production{% endblock %}
-{% block page_subtitle %}{{row.production_no}} · {{lot.lot_no}} · {{row.process_type}}{% endblock %}
+{% block page_subtitle %}{{row.production_no}} · {% if is_combined %}Combined {{source_items|length}} lots → {% endif %}{{lot.lot_no}} · {{row.process_type}}{% endblock %}
 {% block content %}
 <div class="mhs-page">
   <div class="mhs-hero">
@@ -8,10 +8,19 @@
     <span class="mhs-badge">{{row.process_type}}</span>
   </div>
 
+  {% if is_combined %}
+  <div class="mhs-card" style="margin-bottom:18px">
+    <div class="mhs-card-header"><div><h2>Combined source lots</h2><p>These source lots are being processed together. Expected output is calculated as a weighted combination of their individual analyses.</p></div><span class="mhs-badge">{{source_items|length}} lots</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Lot</th><th>System kg</th><th>Allocated input kg</th><th>Analysis</th></tr></thead><tbody>
+      {% for item in source_items %}<tr><td><strong>{{item.lot.lot_no}}</strong></td><td>{{'{:,.2f}'.format(item.source_weight)}}</td><td>{{'{:,.2f}'.format(item.allocated_input_weight)}}</td><td>{{item.analysis.analysis_no if item.analysis else '—'}}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  {% endif %}
+
   <div class="mhs-analysis-note" style="margin-bottom:18px"><strong>Expectation rule</strong>{% if row.source_coffee_type in ['Parchment Cherries','Wet Parchment','Dry Parchment'] and row.process_type == 'Hulling Only' %}Hulling Only uses the analysis General Outturn to calculate expected hulled output.{% elif row.source_coffee_type in ['Parchment Cherries','Wet Parchment','Dry Parchment'] and row.process_type == 'Full Production' %}Full Production uses the analysis Net Outturn to calculate expected final clean output.{% else %}Expected output is calculated from the latest confirmed production input and the applicable analysis outturn.{% endif %}</div>
 
   <div class="mhs-kpis">
-    <div class="mhs-kpi"><span>System lot weight</span><strong>{{'{:,.2f}'.format(row.expected_input_weight)}} kg</strong></div>
+    <div class="mhs-kpi"><span>{% if is_combined %}Combined system weight{% else %}System lot weight{% endif %}</span><strong>{{'{:,.2f}'.format(row.expected_input_weight)}} kg</strong></div>
     <div class="mhs-kpi"><span>Confirmed input</span><strong>{{'{:,.2f}'.format(row.actual_input_weight)}} kg</strong></div>
     <div class="mhs-kpi"><span>Input difference</span><strong>{{'{:+,.2f}'.format(row.input_difference)}} kg</strong></div>
     <div class="mhs-kpi"><span>Expected OT</span><strong>{{'{:.2f}%'.format(row.expected_net_outturn) if row.expected_net_outturn is not none else '—'}}</strong></div>

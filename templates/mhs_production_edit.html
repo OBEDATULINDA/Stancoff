@@ -4,11 +4,18 @@
 {% block content %}
 <div class="mhs-page">
   <div class="mhs-card">
-    <div class="mhs-card-header"><div><h2>Production intake details</h2><p>Completed records can also be corrected here; the lot is recalculated from the edited values.</p></div><span class="mhs-badge">{{row.status}}</span></div>
+    <div class="mhs-card-header"><div><h2>Production intake details</h2><p>{% if is_combined %}This is a combined production batch. Source-lot composition is locked for traceability, but the combined reweighed input and production values can still be corrected safely.{% else %}Completed records can also be corrected here; the lot is recalculated from the edited values.{% endif %}</p></div><span class="mhs-badge">{{row.status}}</span></div>
+    {% if is_combined %}
+    <div class="mhs-analysis-note" style="margin-bottom:16px"><strong>Combined production</strong>{{source_items|length}} source lots were processed together into output lot {{lot.lot_no}}.</div>
+    <div class="table-wrap" style="margin-bottom:18px"><table>
+      <thead><tr><th>Source lot</th><th>Original system kg</th><th>Allocated input kg</th><th>Coffee</th></tr></thead>
+      <tbody>{% for item in source_items %}<tr><td><strong>{{item.lot.lot_no}}</strong></td><td>{{'{:,.2f}'.format(item.source_weight)}}</td><td>{{'{:,.2f}'.format(item.allocated_input_weight)}}</td><td>{{item.source_coffee_type}}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
     <form method="post" class="mhs-form-grid">
       <label>Production date<input type="date" name="production_date" value="{{row.production_date.isoformat()}}" required></label>
       <label>Process<select name="process_type">{% for p in process_types %}<option {% if p==row.process_type %}selected{% endif %}>{{p}}</option>{% endfor %}</select></label>
-      <label>System lot weight<input value="{{row.expected_input_weight}}" readonly></label>
+      <label>{% if is_combined %}Combined system weight{% else %}System lot weight{% endif %}<input value="{{row.expected_input_weight}}" readonly></label>
       <label>Confirmed input kg<input type="number" step="0.01" min="0.01" name="actual_input_weight" value="{{row.actual_input_weight}}" required></label>
       <label class="mhs-span-2">Reason for difference<textarea name="difference_reason">{{row.difference_reason or ''}}</textarea></label>
       <label>Operator<input name="operator" value="{{row.operator or ''}}"></label>

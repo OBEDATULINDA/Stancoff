@@ -5,13 +5,21 @@ body{font-family:Arial,sans-serif;color:#222;margin:28px}.head{text-align:center
 </style></head><body>
 <div class="head"><h1>MOTHERS HARVEST SUPPLIERS</h1><h2>PRODUCTION REPORT</h2><p>{{row.production_no}}</p></div>
 <table class="meta">
-<tr><td><b>Date:</b> {{row.production_date}}</td><td><b>Lot:</b> {{row.lot.lot_no}}</td><td><b>Coffee:</b> {{row.source_coffee_type}}</td></tr>
+<tr><td><b>Date:</b> {{row.production_date}}</td><td><b>{% if is_combined %}Output Lot{% else %}Lot{% endif %}:</b> {{row.lot.lot_no}}</td><td><b>Coffee:</b> {{row.source_coffee_type}}</td></tr>
 <tr><td><b>Process:</b> {{row.process_type}}</td><td><b>Operator:</b> {{row.operator or '—'}}</td><td><b>Status:</b> {{row.status}}</td></tr>
 <tr><td><b>Station:</b> {{row.destination_station or '—'}}</td><td colspan="2"><b>Warehouse:</b> {{row.destination_warehouse or '—'}}</td></tr>
 </table>
 
+{% if is_combined %}
+<table class="report"><tr><th>Combined source lot</th><th>Original system kg</th><th>Allocated factory input kg</th><th>Analysis</th></tr>
+{% for item in source_items %}
+<tr><td>{{item.lot.lot_no}}</td><td>{{'%.2f'|format(item.source_weight)}}</td><td>{{'%.2f'|format(item.allocated_input_weight)}}</td><td>{{item.analysis.analysis_no if item.analysis else '—'}}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+
 <div class="kpis">
-<div class="kpi"><span>System lot weight</span><strong>{{'%.2f'|format(row.expected_input_weight)}} kg</strong></div>
+<div class="kpi"><span>{% if is_combined %}Combined system weight{% else %}System lot weight{% endif %}</span><strong>{{'%.2f'|format(row.expected_input_weight)}} kg</strong></div>
 <div class="kpi"><span>Confirmed factory input</span><strong>{{'%.2f'|format(row.actual_input_weight)}} kg</strong></div>
 <div class="kpi"><span>Input difference</span><strong>{{'%+.2f'|format(row.input_difference)}} kg</strong></div>
 <div class="kpi"><span>Actual clean outturn</span><strong>{{'%.2f'|format(row.actual_outturn or 0)}}%</strong></div>

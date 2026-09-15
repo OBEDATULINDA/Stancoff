@@ -319,6 +319,30 @@ class MHSProduction(db.Model):
     )
 
 
+class MHSProductionLot(db.Model):
+    """Source-lot traceability for a combined Mothers Harvest production batch."""
+    __tablename__ = "mhs_production_lot"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    production_id = db.Column(db.Integer, db.ForeignKey("mhs_production.id"), nullable=False)
+    lot_id = db.Column(db.Integer, db.ForeignKey("mhs_lot.id"), nullable=False)
+    analysis_id = db.Column(db.Integer, db.ForeignKey("mhs_analysis.id"))
+    source_weight = db.Column(db.Float, nullable=False, default=0)
+    allocated_input_weight = db.Column(db.Float, nullable=False, default=0)
+    source_moisture = db.Column(db.Float)
+    source_coffee_type = db.Column(db.String(50), nullable=False)
+    source_coffee_state = db.Column(db.String(50), nullable=False)
+    source_readiness = db.Column(db.String(40), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    production = db.relationship("MHSProduction")
+    lot = db.relationship("MHSLot")
+    analysis = db.relationship("MHSAnalysis")
+    __table_args__ = (
+        db.UniqueConstraint("production_id", "lot_id", name="uq_mhs_production_source_lot"),
+    )
+
+
 MHS_PROCESS_TYPES = [
     "Hulling Only",
     "Grading Only",
@@ -5721,6 +5745,7 @@ def _mhs_downstream_exists_for_lot(company_id, lot_id):
         MHSDrying.query.filter_by(company_id=company_id, lot_id=lot_id).first()
         or MHSAnalysis.query.filter_by(company_id=company_id, lot_id=lot_id, status="Active").first()
         or MHSProduction.query.filter_by(company_id=company_id, lot_id=lot_id).first()
+        or MHSProductionLot.query.filter_by(company_id=company_id, lot_id=lot_id).first()
     )
 
 
@@ -6131,7 +6156,11 @@ def mhs_analysis_delete(id):
     company = _require_mhs()
     _mhs_admin()
     row = MHSAnalysis.query.filter_by(id=id, company_id=company.id, status="Active").first_or_404()
-    if MHSProduction.query.filter_by(company_id=company.id, analysis_id=row.id).first():
+    direct_production = MHSProduction.query.filter_by(company_id=company.id, analysis_id=row.id).first()
+    combined_production_link = MHSProductionLot.query.filter_by(
+        company_id=company.id, analysis_id=row.id
+    ).first()
+    if direct_production or combined_production_link:
         flash("This analysis is already linked to production and cannot be deleted. Edit it instead.")
         return redirect(url_for("mhs_analysis"))
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first()
@@ -6323,6 +6352,113 @@ def _mhs_latest_analysis(company_id, lot_id):
     ).order_by(MHSAnalysis.analysis_date.desc(), MHSAnalysis.id.desc()).first()
 
 
+def _mhs_lot_in_open_production(company_id, lot_id):
+    if MHSProduction.query.filter_by(company_id=company_id, lot_id=lot_id, status="Open").first():
+        return True
+    return bool(
+        MHSProductionLot.query
+        .join(MHSProduction, MHSProductionLot.production_id == MHSProduction.id)
+        .filter(
+            MHSProductionLot.company_id == company_id,
+            MHSProductionLot.lot_id == lot_id,
+            MHSProduction.status == "Open",
+        ).first()
+    )
+
+
+def _mhs_production_source_items(company_id, production_id):
+    return (
+        MHSProductionLot.query
+        .filter_by(company_id=company_id, production_id=production_id)
+        .order_by(MHSProductionLot.id)
+        .all()
+    )
+
+
+def _mhs_combined_expectations(source_pairs, actual_input, process_type):
+    """Weighted expected production result for multiple analysed source lots."""
+    total_source = sum(float(weight or 0) for _, _, weight in source_pairs)
+    result = {
+        "expected_net_outturn": None,
+        "expected_clean_weight": 0.0,
+        "expected_aa_weight": None,
+        "expected_ab_weight": None,
+        "expected_cpb_weight": None,
+        "expected_wugar_weight": None,
+    }
+    allocations = []
+    grade_totals = {k: 0.0 for k in (
+        "expected_aa_weight", "expected_ab_weight",
+        "expected_cpb_weight", "expected_wugar_weight"
+    )}
+    grade_seen = {k: False for k in grade_totals}
+
+    if total_source <= 0 or actual_input <= 0:
+        return result, allocations
+
+    for lot, analysis, source_weight in source_pairs:
+        source_weight = float(source_weight or 0)
+        allocated = actual_input * source_weight / total_source
+        allocations.append((lot.id, allocated))
+        exp = _mhs_production_expectations(lot, analysis, allocated, process_type)
+        result["expected_clean_weight"] += float(exp.get("expected_clean_weight") or 0)
+        for key in grade_totals:
+            if exp.get(key) is not None:
+                grade_seen[key] = True
+                grade_totals[key] += float(exp[key] or 0)
+
+    result["expected_net_outturn"] = (
+        result["expected_clean_weight"] / actual_input * 100 if actual_input else None
+    )
+    for key in grade_totals:
+        result[key] = grade_totals[key] if grade_seen[key] else None
+    return result, allocations
+
+
+def _mhs_recalculate_combined_expectations(company_id, row, actual_input, process_type):
+    items = _mhs_production_source_items(company_id, row.id)
+    source_pairs = []
+    for item in items:
+        lot = MHSLot.query.filter_by(id=item.lot_id, company_id=company_id).first()
+        analysis = MHSAnalysis.query.filter_by(id=item.analysis_id, company_id=company_id).first() if item.analysis_id else None
+        if lot and analysis:
+            source_pairs.append((lot, analysis, float(item.source_weight or 0)))
+    expectations, allocations = _mhs_combined_expectations(source_pairs, actual_input, process_type)
+    allocation_map = dict(allocations)
+    for item in items:
+        item.allocated_input_weight = float(allocation_map.get(item.lot_id, 0))
+    return expectations
+
+
+def _mhs_restore_combined_source_lots(company_id, row):
+    for item in _mhs_production_source_items(company_id, row.id):
+        lot = MHSLot.query.filter_by(id=item.lot_id, company_id=company_id).first()
+        if not lot:
+            continue
+        lot.current_weight = float(item.source_weight or 0)
+        lot.current_moisture = item.source_moisture
+        lot.coffee_type = item.source_coffee_type
+        lot.coffee_state = item.source_coffee_state
+        lot.readiness = item.source_readiness
+        lot.status = "Active"
+
+
+def _mhs_mark_combined_sources_consumed(company_id, row):
+    for item in _mhs_production_source_items(company_id, row.id):
+        lot = MHSLot.query.filter_by(id=item.lot_id, company_id=company_id).first()
+        if lot:
+            lot.current_weight = 0
+            lot.readiness = "Consumed in Production"
+
+
+def _mhs_production_source_label(company_id, row):
+    items = _mhs_production_source_items(company_id, row.id)
+    if not items:
+        return row.lot.lot_no if row.lot else "—"
+    labels = [item.lot.lot_no for item in items if item.lot]
+    return " + ".join(labels) if labels else (row.lot.lot_no if row.lot else "—")
+
+
 def _mhs_production_expectations(lot, analysis, actual_input, process_type=None):
     """
     Version 8.4.3 expectation rule:
@@ -6460,39 +6596,27 @@ def mhs_production():
     if request.method == "POST":
         if not _mhs_can_produce():
             abort(403)
+
+        raw_lot_ids = request.form.getlist("lot_ids")
+        if not raw_lot_ids and request.form.get("lot_id"):
+            raw_lot_ids = [request.form.get("lot_id")]
         try:
-            lot_id = int(request.form.get("lot_id") or 0)
+            lot_ids = []
+            for raw in raw_lot_ids:
+                value = int(raw)
+                if value not in lot_ids:
+                    lot_ids.append(value)
             production_date = datetime.strptime(request.form.get("production_date"), "%Y-%m-%d").date()
             actual_input = float(request.form.get("actual_input_weight") or 0)
         except (TypeError, ValueError):
-            flash("Select a lot and enter a valid production date and reweighed input.")
+            flash("Select one or more lots and enter a valid production date and reweighed input.")
             return redirect(url_for("mhs_production"))
 
-        lot = MHSLot.query.filter_by(id=lot_id, company_id=company.id, status="Active").first()
-        if not lot:
-            flash("Select a valid Mothers Harvest lot.")
-            return redirect(url_for("mhs_production"))
-        analysis = _mhs_latest_analysis(company.id, lot.id)
-        if not analysis:
-            flash("This lot must have an analysis before it enters production.")
-            return redirect(url_for("mhs_production"))
-        if MHSProduction.query.filter_by(company_id=company.id, lot_id=lot.id, status="Open").first():
-            flash("This lot already has an open production record.")
+        if not lot_ids:
+            flash("Select at least one analysed lot for production.")
             return redirect(url_for("mhs_production"))
         if actual_input <= 0:
             flash("The confirmed production input must be above zero.")
-            return redirect(url_for("mhs_production"))
-
-        expected = float(lot.current_weight or 0)
-        if expected <= 0:
-            flash("This lot has no available weight.")
-            return redirect(url_for("mhs_production"))
-
-        difference = actual_input - expected
-        diff_pct = (difference / expected * 100) if expected else 0
-        reason = (request.form.get("difference_reason") or "").strip() or None
-        if abs(diff_pct) >= 1 and not reason:
-            flash("The reweighed input differs from the system weight by 1% or more. Enter the reason for the difference.")
             return redirect(url_for("mhs_production"))
 
         process_type = (request.form.get("process_type") or "").strip()
@@ -6500,23 +6624,132 @@ def mhs_production():
             flash("Select a valid production process.")
             return redirect(url_for("mhs_production"))
 
-        expectations = _mhs_production_expectations(lot, analysis, actual_input, process_type)
+        source_lots = []
+        source_pairs = []
+        for lot_id in lot_ids:
+            lot = MHSLot.query.filter_by(id=lot_id, company_id=company.id, status="Active").first()
+            if not lot:
+                flash("One of the selected lots is no longer available.")
+                return redirect(url_for("mhs_production"))
+            if lot.readiness in {"Needs Drying", "Drying", "In Production", "Consumed in Production"}:
+                flash(f"{lot.lot_no} is not ready for production.")
+                return redirect(url_for("mhs_production"))
+            analysis = _mhs_latest_analysis(company.id, lot.id)
+            if not analysis:
+                flash(f"{lot.lot_no} must have an analysis before it enters production.")
+                return redirect(url_for("mhs_production"))
+            if _mhs_lot_in_open_production(company.id, lot.id):
+                flash(f"{lot.lot_no} already belongs to an open production record.")
+                return redirect(url_for("mhs_production"))
+            source_lots.append(lot)
+            source_pairs.append((lot, analysis, float(lot.current_weight or 0)))
+
+        if any(float(lot.current_weight or 0) <= 0 for lot in source_lots):
+            flash("Every selected lot must have an available weight above zero.")
+            return redirect(url_for("mhs_production"))
+
+        # Combined processing is only safe when the lots are at the same coffee stage.
+        if len(source_lots) > 1:
+            coffee_types = {lot.coffee_type for lot in source_lots}
+            coffee_states = {lot.coffee_state for lot in source_lots}
+            if len(coffee_types) != 1:
+                flash("Combined production requires all selected lots to have the same coffee type.")
+                return redirect(url_for("mhs_production"))
+            if len(coffee_states) != 1:
+                flash("Combined production requires all selected lots to be at the same processing stage/state.")
+                return redirect(url_for("mhs_production"))
+
+        expected = sum(float(lot.current_weight or 0) for lot in source_lots)
+        difference = actual_input - expected
+        diff_pct = (difference / expected * 100) if expected else 0
+        reason = (request.form.get("difference_reason") or "").strip() or None
+        if abs(diff_pct) >= 1 and not reason:
+            flash("The reweighed input differs from the combined system weight by 1% or more. Enter the reason for the difference.")
+            return redirect(url_for("mhs_production"))
+
+        is_combined = len(source_lots) > 1
+        if not is_combined:
+            lot = source_lots[0]
+            analysis = source_pairs[0][1]
+            expectations = _mhs_production_expectations(lot, analysis, actual_input, process_type)
+            row = MHSProduction(
+                company_id=company.id,
+                production_no=_mhs_next_code(MHSProduction, company.id, "production_no", "PRO", 6),
+                lot_id=lot.id,
+                production_date=production_date,
+                process_type=process_type,
+                expected_input_weight=expected,
+                actual_input_weight=actual_input,
+                source_lot_weight=expected,
+                source_coffee_type=lot.coffee_type,
+                source_coffee_state=lot.coffee_state,
+                source_readiness=lot.readiness,
+                input_difference=difference,
+                input_difference_percent=diff_pct,
+                difference_reason=reason,
+                analysis_id=analysis.id,
+                destination_station=(request.form.get("destination_station") or "").strip() or None,
+                destination_warehouse=(request.form.get("destination_warehouse") or "").strip() or None,
+                operator=(request.form.get("operator") or "").strip() or None,
+                notes=(request.form.get("notes") or "").strip() or None,
+                status="Open",
+                created_by=session.get("user_id"),
+                **expectations,
+            )
+            db.session.add(row)
+            lot.readiness = "In Production"
+            db.session.commit()
+            log_action("CREATE", "MHS Production", row.id, f"{row.production_no} / {lot.lot_no}")
+            flash(f"{row.production_no} opened with confirmed factory input of {actual_input:,.2f} kg.")
+            return redirect(url_for("mhs_production_finish", id=row.id))
+
+        # Multiple source lots become one traceable combined production lot.
+        common_type = source_lots[0].coffee_type
+        common_state = source_lots[0].coffee_state
+        total_source_weight = expected
+        weighted_moisture_weight = sum(
+            float(lot.current_weight or 0)
+            for lot in source_lots if lot.current_moisture is not None
+        )
+        combined_moisture = None
+        if weighted_moisture_weight:
+            combined_moisture = sum(
+                float(lot.current_weight or 0) * float(lot.current_moisture or 0)
+                for lot in source_lots if lot.current_moisture is not None
+            ) / weighted_moisture_weight
+
+        source_names = " + ".join(lot.lot_no for lot in source_lots)
+        combined_lot = MHSLot(
+            company_id=company.id,
+            lot_no=_mhs_next_code(MHSLot, company.id, "lot_no", "MHS", 4),
+            coffee_type=common_type,
+            coffee_state=common_state,
+            current_weight=actual_input,
+            current_moisture=combined_moisture,
+            source_location=f"Combined production: {source_names}",
+            readiness="In Production",
+            status="Active",
+        )
+        db.session.add(combined_lot)
+        db.session.flush()
+
+        expectations, allocations = _mhs_combined_expectations(source_pairs, actual_input, process_type)
         row = MHSProduction(
             company_id=company.id,
             production_no=_mhs_next_code(MHSProduction, company.id, "production_no", "PRO", 6),
-            lot_id=lot.id,
+            lot_id=combined_lot.id,
             production_date=production_date,
             process_type=process_type,
             expected_input_weight=expected,
             actual_input_weight=actual_input,
             source_lot_weight=expected,
-            source_coffee_type=lot.coffee_type,
-            source_coffee_state=lot.coffee_state,
-            source_readiness=lot.readiness,
+            source_coffee_type=common_type,
+            source_coffee_state=common_state,
+            source_readiness="Combined Production",
             input_difference=difference,
             input_difference_percent=diff_pct,
             difference_reason=reason,
-            analysis_id=analysis.id,
+            analysis_id=None,
             destination_station=(request.form.get("destination_station") or "").strip() or None,
             destination_warehouse=(request.form.get("destination_warehouse") or "").strip() or None,
             operator=(request.form.get("operator") or "").strip() or None,
@@ -6526,16 +6759,45 @@ def mhs_production():
             **expectations,
         )
         db.session.add(row)
-        lot.readiness = "In Production"
+        db.session.flush()
+
+        allocation_map = dict(allocations)
+        for lot, analysis, source_weight in source_pairs:
+            db.session.add(MHSProductionLot(
+                company_id=company.id,
+                production_id=row.id,
+                lot_id=lot.id,
+                analysis_id=analysis.id,
+                source_weight=float(source_weight or 0),
+                allocated_input_weight=float(allocation_map.get(lot.id, 0)),
+                source_moisture=lot.current_moisture,
+                source_coffee_type=lot.coffee_type,
+                source_coffee_state=lot.coffee_state,
+                source_readiness=lot.readiness,
+            ))
+            lot.current_weight = 0
+            lot.readiness = "In Production"
+
         db.session.commit()
-        log_action("CREATE", "MHS Production", row.id, f"{row.production_no} / {lot.lot_no}")
-        flash(f"{row.production_no} opened with confirmed factory input of {actual_input:,.2f} kg.")
+        log_action("CREATE", "MHS Combined Production", row.id, f"{row.production_no} / {source_names} -> {combined_lot.lot_no}")
+        flash(
+            f"{row.production_no} opened from {len(source_lots)} lots. "
+            f"Combined input: {actual_input:,.2f} kg; output lot: {combined_lot.lot_no}."
+        )
         return redirect(url_for("mhs_production_finish", id=row.id))
 
     rows = MHSProduction.query.filter_by(company_id=company.id).order_by(MHSProduction.id.desc()).all()
+    for production_row in rows:
+        production_row.source_lots_display = _mhs_production_source_label(company.id, production_row)
+        production_row.source_count = len(_mhs_production_source_items(company.id, production_row.id)) or 1
+
     lots = []
     for lot in MHSLot.query.filter_by(company_id=company.id, status="Active").order_by(MHSLot.lot_no).all():
-        if _mhs_latest_analysis(company.id, lot.id) and lot.readiness not in {"Needs Drying", "Drying", "In Production", "Produced / Awaiting Inventory"}:
+        if (
+            _mhs_latest_analysis(company.id, lot.id)
+            and lot.readiness not in {"Needs Drying", "Drying", "In Production", "Consumed in Production", "Produced / Awaiting Inventory"}
+            and not _mhs_lot_in_open_production(company.id, lot.id)
+        ):
             lots.append(lot)
     return render_template(
         "mhs_production.html",
@@ -6554,14 +6816,22 @@ def mhs_production_edit(id):
         abort(403)
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first_or_404()
+    source_items = _mhs_production_source_items(company.id, row.id)
+    is_combined = bool(source_items)
 
     if request.method == "POST":
         if row.status == "Completed":
-            # Restore the lot before recalculating and re-applying edited outputs.
-            lot.current_weight = row.source_lot_weight
-            lot.coffee_type = row.source_coffee_type
-            lot.coffee_state = row.source_coffee_state
-            lot.readiness = row.source_readiness
+            # Put the output lot back into its pre-completion production state before recalculating.
+            if is_combined:
+                lot.current_weight = float(row.actual_input_weight or 0)
+                lot.coffee_type = row.source_coffee_type
+                lot.coffee_state = row.source_coffee_state
+                lot.readiness = "In Production"
+            else:
+                lot.current_weight = row.source_lot_weight
+                lot.coffee_type = row.source_coffee_type
+                lot.coffee_state = row.source_coffee_state
+                lot.readiness = row.source_readiness
 
         try:
             actual_input = float(request.form.get("actual_input_weight") or 0)
@@ -6596,8 +6866,13 @@ def mhs_production_edit(id):
         row.operator = (request.form.get("operator") or "").strip() or None
         row.notes = (request.form.get("notes") or "").strip() or None
 
-        analysis = row.analysis or _mhs_latest_analysis(company.id, lot.id)
-        expectations = _mhs_production_expectations(lot, analysis, actual_input, process_type)
+        if is_combined:
+            expectations = _mhs_recalculate_combined_expectations(
+                company.id, row, actual_input, process_type
+            )
+        else:
+            analysis = row.analysis or _mhs_latest_analysis(company.id, lot.id)
+            expectations = _mhs_production_expectations(lot, analysis, actual_input, process_type)
         for key, value in expectations.items():
             setattr(row, key, value)
 
@@ -6616,6 +6891,8 @@ def mhs_production_edit(id):
             row.actual_outturn = outturn
             row.mass_balance_percent = mass_balance
             _mhs_apply_completed_production_to_lot(row, lot)
+            if is_combined:
+                _mhs_mark_combined_sources_consumed(company.id, row)
             try:
                 _mhs_sync_production_inventory(company, row, lot)
             except ValueError as exc:
@@ -6623,6 +6900,7 @@ def mhs_production_edit(id):
                 flash(str(exc))
                 return redirect(url_for("mhs_production_edit", id=id))
         else:
+            lot.current_weight = actual_input if is_combined else lot.current_weight
             lot.readiness = "In Production"
 
         db.session.commit()
@@ -6630,7 +6908,14 @@ def mhs_production_edit(id):
         flash("Production record updated.")
         return redirect(url_for("mhs_production"))
 
-    return render_template("mhs_production_edit.html", row=row, lot=lot, process_types=MHS_PROCESS_TYPES)
+    return render_template(
+        "mhs_production_edit.html",
+        row=row,
+        lot=lot,
+        source_items=source_items,
+        is_combined=is_combined,
+        process_types=MHS_PROCESS_TYPES,
+    )
 
 
 @app.route("/mhs/production/<int:id>/finish", methods=["GET", "POST"])
@@ -6641,6 +6926,8 @@ def mhs_production_finish(id):
         abort(403)
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first_or_404()
+    source_items = _mhs_production_source_items(company.id, row.id)
+    is_combined = bool(source_items)
 
     if row.status == "Completed":
         flash("This production record is already completed. Use Edit to correct it.")
@@ -6667,13 +6954,23 @@ def mhs_production_finish(id):
         row.status = "Completed"
 
         _mhs_apply_completed_production_to_lot(row, lot)
+        if is_combined:
+            _mhs_mark_combined_sources_consumed(company.id, row)
         _mhs_sync_production_inventory(company, row, lot)
         db.session.commit()
-        log_action("FINISH", "MHS Production", row.id, f"{row.production_no} / {lot.lot_no}")
+
+        source_label = _mhs_production_source_label(company.id, row)
+        log_action("FINISH", "MHS Production", row.id, f"{row.production_no} / {source_label}")
         flash(f"{row.production_no} completed. Clean output: {clean:,.2f} kg; processing loss: {loss:,.2f} kg.")
         return redirect(url_for("mhs_production"))
 
-    return render_template("mhs_production_finish.html", row=row, lot=lot)
+    return render_template(
+        "mhs_production_finish.html",
+        row=row,
+        lot=lot,
+        source_items=source_items,
+        is_combined=is_combined,
+    )
 
 
 @app.route("/mhs/production/<int:id>/delete", methods=["POST"])
@@ -6683,6 +6980,8 @@ def mhs_production_delete(id):
     _mhs_admin()
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
     lot = MHSLot.query.filter_by(id=row.lot_id, company_id=company.id).first()
+    source_items = _mhs_production_source_items(company.id, row.id)
+    is_combined = bool(source_items)
     production_no = row.production_no
 
     if _mhs_production_inventory_has_movement(company.id, row.id):
@@ -6697,16 +6996,29 @@ def mhs_production_delete(id):
     for stock in MHSInventoryStock.query.filter_by(company_id=company.id, production_id=row.id).all():
         db.session.delete(stock)
 
-    if lot:
-        lot.current_weight = row.source_lot_weight
-        lot.coffee_type = row.source_coffee_type
-        lot.coffee_state = row.source_coffee_state
-        lot.readiness = row.source_readiness
+    if is_combined:
+        source_names = [item.lot.lot_no for item in source_items if item.lot]
+        _mhs_restore_combined_source_lots(company.id, row)
+        for item in source_items:
+            db.session.delete(item)
+        # Keep the generated output lot only as a cancelled traceability shell.
+        if lot:
+            lot.current_weight = 0
+            lot.readiness = "Cancelled Combined Production"
+            lot.status = "Cancelled"
+        restore_message = f"{len(source_names)} source lots restored"
+    else:
+        if lot:
+            lot.current_weight = row.source_lot_weight
+            lot.coffee_type = row.source_coffee_type
+            lot.coffee_state = row.source_coffee_state
+            lot.readiness = row.source_readiness
+        restore_message = "the source lot restored"
 
     db.session.delete(row)
     db.session.commit()
     log_action("DELETE", "MHS Production", id, production_no)
-    flash(f"{production_no} deleted and the source lot restored.")
+    flash(f"{production_no} deleted and {restore_message}.")
     return redirect(url_for("mhs_production"))
 
 
@@ -6715,7 +7027,14 @@ def mhs_production_delete(id):
 def mhs_production_report(id):
     company = _require_mhs()
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
-    return render_template("mhs_production_report.html", row=row, company=company)
+    source_items = _mhs_production_source_items(company.id, row.id)
+    return render_template(
+        "mhs_production_report.html",
+        row=row,
+        company=company,
+        source_items=source_items,
+        is_combined=bool(source_items),
+    )
 
 
 

@@ -1,79 +1,96 @@
 {% extends "base.html" %}
 {% block page_title %}Mothers Harvest Production{% endblock %}
-{% block page_subtitle %}Factory intake, processing & output control · Version 8.3{% endblock %}
+{% block page_subtitle %}Build a production load from one or more analysed lots · Version 8.6.3{% endblock %}
 {% block content %}
 <div class="mhs-page">
   <div class="mhs-hero">
     <div>
       <span class="eyebrow">PRODUCTION CONTROL</span>
-      <h2>Confirm the factory input before processing</h2>
-      <p>The system shows the lot weight, but the operator must physically reweigh the batch entering production. The confirmed factory weight becomes the official production input.</p>
+      <h2>Build the coffee volume to process</h2>
+      <p>Add one analysed lot, then add another if required. The system combines their available weights before you send the total volume for hulling, grading, gravity table, color sorting or full production.</p>
     </div>
-    <span class="mhs-badge">MHS Production · 8.3</span>
+    <span class="mhs-badge">MHS Production · 8.6.3</span>
   </div>
 
   <div class="mhs-card">
     <div class="mhs-card-header">
-      <div><h2>Open a production batch</h2><p>Select an analysed lot, reweigh it, then choose the process being carried out.</p></div>
+      <div><h2>New production entry</h2><p>First build the load from analysed lots. Then choose the process for the combined volume.</p></div>
     </div>
     <form method="post" class="mhs-form-grid" id="productionIntakeForm">
-      <label class="mhs-span-2">Analysed lot
-        <select name="lot_id" id="productionLot" required>
-          <option value="">Select lot</option>
-          {% for l in lots %}
-          <option value="{{l.id}}" data-weight="{{l.current_weight}}" data-coffee="{{l.coffee_type}}" data-moisture="{{l.current_moisture if l.current_moisture is not none else ''}}">
-            {{l.lot_no}} · {{l.coffee_state}} · {{'{:,.2f}'.format(l.current_weight)}} kg
-          </option>
-          {% endfor %}
-        </select>
-      </label>
+      <div class="mhs-span-all">
+        <div class="mhs-form-section"><h3>1. Build production load — add one or more analysed lots</h3><p>Select a lot below, click <b>+ ADD ANALYSED LOT</b>, then repeat for every additional lot you want to process together.</p></div>
+        <div style="display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:10px;align-items:end;margin-bottom:14px">
+          <label style="margin:0">Analysed lot
+            <select id="lotPicker">
+              <option value="">Select analysed lot...</option>
+              {% for l in lots %}
+              <option value="{{l.id}}" data-lot="{{l.lot_no}}" data-weight="{{l.current_weight}}" data-coffee="{{l.coffee_type}}" data-state="{{l.coffee_state}}" data-moisture="{{l.current_moisture if l.current_moisture is not none else ''}}">
+                {{l.lot_no}} · {{l.coffee_type}} · {{'{:,.2f}'.format(l.current_weight)}} kg
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+          <button class="button" type="button" id="addLotButton">+ ADD ANALYSED LOT</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Analysed Lot</th><th>Coffee Type</th><th>State</th><th>Available Weight</th><th>Moisture</th><th></th></tr></thead>
+            <tbody id="selectedLotsBody">
+              <tr id="emptySelection"><td colspan="6" class="empty">No analysed lots added yet.</td></tr>
+            </tbody>
+            <tfoot><tr><th colspan="3">Combined Weight</th><th id="combinedWeightCell">0.00 kg</th><th colspan="2"></th></tr></tfoot>
+          </table>
+        </div>
+        <div id="hiddenLotInputs"></div>
+      </div>
+
+      <div class="mhs-span-all" id="compatibilityWarning" style="display:none;padding:12px 14px;border-radius:10px;background:#fff4e5;border:1px solid #e8c38b;color:#7a4d13;font-size:13px">
+        The lots in one production load must have the same coffee type and processing state. Remove the incompatible lot or start a separate production entry.
+      </div>
+
+      <div class="mhs-form-section"><h3>2. Send the combined volume for processing</h3><p>Choose what will be done to the coffee you added above.</p></div>
       <label>Production date<input type="date" name="production_date" value="{{today}}" required></label>
       <label>Process
         <select name="process_type" required>
-          {% for p in process_types %}<option>{{p}}</option>{% endfor %}
+          {% for p in process_types %}<option value="{{p}}">{{p}}</option>{% endfor %}
         </select>
       </label>
-
-      <div class="mhs-form-section"><h3>Physical factory reweigh</h3><p>Do not copy the stored weight. Enter the weight actually confirmed on the production scale.</p></div>
-      <label>System lot weight<input id="systemWeight" readonly placeholder="Select a lot"></label>
-      <label>Confirmed production input (kg)<input type="number" step="0.01" min="0.01" name="actual_input_weight" id="actualInput" required></label>
-      <label>Difference (kg)<input id="weightDifference" readonly></label>
+      <label>Combined available weight<input id="systemWeight" readonly placeholder="Add analysed lot(s)"></label>
+      <label>Actual weight sent for process (kg)<input type="number" step="0.01" min="0.01" name="actual_input_weight" id="actualInput" required></label>
+      <label>Weight difference<input id="weightDifference" readonly></label>
       <label>Difference %<input id="weightDifferencePct" readonly></label>
       <div class="mhs-span-all" id="differenceWarning" style="display:none;padding:12px 14px;border-radius:10px;background:#fff4e5;border:1px solid #e8c38b;color:#7a4d13;font-size:13px">
-        Weight difference is 1% or more. A reason is required before this batch can be opened.
+        Actual weight sent differs from the combined available weight by 1% or more. Enter a reason.
       </div>
       <label class="mhs-span-2">Reason for difference<textarea name="difference_reason" id="differenceReason" rows="2" placeholder="Scale correction, spillage, rebagging loss, etc."></textarea></label>
       <label>Operator<input name="operator"></label>
       <label>Destination station<input name="destination_station" placeholder="e.g. Main Factory"></label>
       <label>Destination warehouse<input name="destination_warehouse" placeholder="e.g. Warehouse A"></label>
       <label class="mhs-span-2">Notes<textarea name="notes" rows="2"></textarea></label>
-      <div class="mhs-actions"><button class="button" type="submit">Open production batch</button></div>
+      <div class="mhs-actions"><button class="button" type="submit">Send for Processing</button></div>
     </form>
   </div>
 
   <div class="mhs-card">
-    <div class="mhs-card-header"><div><h2>Production records</h2><p>Every record keeps the system weight, confirmed factory input, expected analysis result and actual production result.</p></div></div>
+    <div class="mhs-card-header"><div><h2>Production records</h2><p>Each production record keeps the source analysed lot(s), combined input and selected process.</p></div></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Production</th><th>Actions</th><th>Date</th><th>Lot</th><th>Process</th><th>System kg</th><th>Input kg</th><th>Diff.</th><th>Clean output</th><th>Outturn</th><th>Status</th></tr></thead>
+      <thead><tr><th>Production</th><th>Actions</th><th>Date</th><th>Analysed source lot(s)</th><th>Production lot</th><th>Process</th><th>Combined kg</th><th>Actual input kg</th><th>Diff.</th><th>Clean output</th><th>Outturn</th><th>Status</th></tr></thead>
       <tbody>
       {% for r in rows %}
       <tr>
-        <td><strong>{{r.production_no}}</strong></td>
+        <td><strong>{{r.production_no}}</strong>{% if r.source_count > 1 %}<br><span class="mhs-badge">{{r.source_count}} lots together</span>{% endif %}</td>
         <td class="record-actions">
           <a class="small-button" href="{{url_for('mhs_production_edit',id=r.id)}}">Edit</a>
           {% if r.status!='Completed' %}<a class="small-button" href="{{url_for('mhs_production_finish',id=r.id)}}">Finish</a>{% endif %}
           <a class="small-button" href="{{url_for('mhs_production_report',id=r.id)}}" target="_blank">Report</a>
-          {% if current_role=='Admin' or current_is_super_admin %}
-          <form method="post" action="{{url_for('mhs_production_delete',id=r.id)}}" onsubmit="return confirm('Delete this production record and restore the source lot?')"><button class="small-button" type="submit">Delete</button></form>
-          {% endif %}
+          {% if current_role=='Admin' or current_is_super_admin %}<form method="post" action="{{url_for('mhs_production_delete',id=r.id)}}" onsubmit="return confirm('Delete this production record? Source lots will only be restored if there are no downstream inventory movements.')"><button class="small-button" type="submit">Delete</button></form>{% endif %}
         </td>
-        <td>{{r.production_date}}</td><td>{{r.lot.lot_no}}</td><td>{{r.process_type}}</td>
-        <td>{{'{:,.2f}'.format(r.expected_input_weight)}}</td><td>{{'{:,.2f}'.format(r.actual_input_weight)}}</td>
-        <td>{{'{:+,.2f}'.format(r.input_difference)}} kg</td>
-        <td>{{'{:,.2f}'.format(r.total_clean_output) if r.status=='Completed' else '—'}}</td>
-        <td>{{'{:.2f}%'.format(r.actual_outturn) if r.actual_outturn is not none else '—'}}</td><td>{{r.status}}</td>
+        <td>{{r.production_date}}</td><td>{{r.source_lots_display}}</td><td>{{r.lot.lot_no}}</td><td>{{r.process_type}}</td>
+        <td>{{'{:,.2f}'.format(r.expected_input_weight)}}</td><td>{{'{:,.2f}'.format(r.actual_input_weight)}}</td><td>{{'{:+,.2f}'.format(r.input_difference)}} kg</td>
+        <td>{{'{:,.2f}'.format(r.total_clean_output) if r.status=='Completed' else '—'}}</td><td>{{'{:.2f}%'.format(r.actual_outturn) if r.actual_outturn is not none else '—'}}</td><td>{{r.status}}</td>
       </tr>
-      {% else %}<tr><td colspan="11" class="empty">No production records yet.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="12" class="empty">No production records yet.</td></tr>{% endfor %}
       </tbody>
     </table></div>
   </div>
@@ -81,23 +98,58 @@
 
 <script>
 (function(){
-  const lot=document.getElementById('productionLot'), system=document.getElementById('systemWeight'),
+  const picker=document.getElementById('lotPicker'), addBtn=document.getElementById('addLotButton'),
+        body=document.getElementById('selectedLotsBody'), hidden=document.getElementById('hiddenLotInputs'),
+        combinedCell=document.getElementById('combinedWeightCell'), system=document.getElementById('systemWeight'),
         actual=document.getElementById('actualInput'), diff=document.getElementById('weightDifference'),
         pct=document.getElementById('weightDifferencePct'), warn=document.getElementById('differenceWarning'),
-        reason=document.getElementById('differenceReason');
-  function update(){
-    const opt=lot.options[lot.selectedIndex];
-    const expected=parseFloat(opt?.dataset?.weight||0), entered=parseFloat(actual.value||0);
-    system.value=expected?expected.toFixed(2)+' kg':'';
-    if(!expected||!entered){diff.value='';pct.value='';warn.style.display='none';reason.required=false;return;}
-    const d=entered-expected, p=d/expected*100;
-    diff.value=(d>=0?'+':'')+d.toFixed(2)+' kg';
-    pct.value=(p>=0?'+':'')+p.toFixed(2)+'%';
-    const needs=Math.abs(p)>=1;
-    warn.style.display=needs?'block':'none';
-    reason.required=needs;
+        reason=document.getElementById('differenceReason'), compat=document.getElementById('compatibilityWarning'),
+        form=document.getElementById('productionIntakeForm');
+  const selected=new Map();
+
+  function compatible(){
+    const vals=[...selected.values()];
+    return new Set(vals.map(x=>x.coffee)).size<=1 && new Set(vals.map(x=>x.state)).size<=1;
   }
-  lot.addEventListener('change',update); actual.addEventListener('input',update); update();
+  function total(){ return [...selected.values()].reduce((s,x)=>s+x.weight,0); }
+  function render(){
+    body.innerHTML=''; hidden.innerHTML='';
+    if(!selected.size){ body.innerHTML='<tr><td colspan="6" class="empty">No analysed lots added yet.</td></tr>'; }
+    selected.forEach((x,id)=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td><strong>'+x.lot+'</strong></td><td>'+x.coffee+'</td><td>'+x.state+'</td><td>'+x.weight.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg</td><td>'+(x.moisture?x.moisture+'%':'—')+'</td><td><button type="button" class="small-button remove-lot" data-id="'+id+'">Remove</button></td>';
+      body.appendChild(tr);
+      const input=document.createElement('input'); input.type='hidden'; input.name='lot_ids'; input.value=id; hidden.appendChild(input);
+    });
+    body.querySelectorAll('.remove-lot').forEach(b=>b.addEventListener('click',()=>{ selected.delete(b.dataset.id); render(); }));
+    const t=total(); combinedCell.textContent=t.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg';
+    system.value=selected.size?t.toFixed(2)+' kg':'';
+    compat.style.display=compatible()?'none':'block';
+    if(selected.size && (!actual.value || actual.dataset.auto==='1')){ actual.value=t.toFixed(2); actual.dataset.auto='1'; }
+    if(!selected.size){ actual.value=''; actual.dataset.auto='1'; }
+    updateDifference();
+  }
+  function addLot(){
+    const opt=picker.options[picker.selectedIndex]; if(!opt || !opt.value) return;
+    if(selected.has(opt.value)){ picker.value=''; return; }
+    selected.set(opt.value,{lot:opt.dataset.lot,weight:parseFloat(opt.dataset.weight)||0,coffee:opt.dataset.coffee||'',state:opt.dataset.state||'',moisture:opt.dataset.moisture||''});
+    picker.value=''; render();
+  }
+  function updateDifference(){
+    const expected=total(), entered=parseFloat(actual.value||0);
+    if(!expected||!entered){ diff.value=''; pct.value=''; warn.style.display='none'; reason.required=false; return; }
+    const d=entered-expected, p=d/expected*100;
+    diff.value=(d>=0?'+':'')+d.toFixed(2)+' kg'; pct.value=(p>=0?'+':'')+p.toFixed(2)+'%';
+    const needs=Math.abs(p)>=1; warn.style.display=needs?'block':'none'; reason.required=needs;
+  }
+  addBtn.addEventListener('click',addLot);
+  picker.addEventListener('change',()=>{});
+  actual.addEventListener('input',()=>{ actual.dataset.auto='0'; updateDifference(); });
+  form.addEventListener('submit',function(e){
+    if(!selected.size){ e.preventDefault(); alert('Add at least one analysed lot before sending coffee for processing.'); return; }
+    if(!compatible()){ e.preventDefault(); alert('The selected lots must have the same coffee type and processing state.'); }
+  });
+  render();
 })();
 </script>
 {% endblock %}
