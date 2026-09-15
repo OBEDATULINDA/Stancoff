@@ -1,0 +1,12 @@
+STANCOFF VERSION 8.6.3 — MHS VISIBLE PRODUCTION LOAD BUILDER
+
+Purpose:
+- Ensures the live Mothers Harvest Production page contains the actual multi-lot load builder.
+- Select an analysed lot and click + ADD ANALYSED LOT repeatedly.
+- Shows selected lots and Combined Weight before choosing Hulling, Grading, Gravity Table, Color Sorting or Full Production.
+- Keeps the 8.6 combined-production backend and traceability.
+- No database reset. Existing MHS and Stancoff data remain intact.
+
+Deployment check:
+After deployment, the Production page badge must read: MHS Production · 8.6.3
+If it still reads 8.3, Render/GitHub is serving an older repository version rather than this package.
