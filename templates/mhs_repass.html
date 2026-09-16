@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block page_title %}Mothers Harvest Repass{% endblock %}
+{% block page_subtitle %}Recover coffee from stored Blacks and Triage{% endblock %}
+{% block content %}
+<div class="mhs-page">
+  <div class="mhs-hero"><div><span class="eyebrow">REPASS CONTROL</span><h2>Repass Blacks &amp; Triage</h2><p>Select one or more reject stocks. Stored rejects and rejects sent directly to the Repass Queue can both be processed here.</p></div><span class="mhs-badge">MHS Repass · 8.7</span></div>
+  <div class="mhs-card"><form method="post" class="mhs-form-grid" id="repassForm">
+    <div class="mhs-span-all"><div class="mhs-form-section"><h3>1. Select reject stock</h3><p>You can combine compatible Blacks/Triage stocks for one repass run.</p></div>
+      <div class="table-wrap"><table><thead><tr><th>Select</th><th>Stock</th><th>Reject</th><th>Available kg</th><th>Location</th><th>Status</th></tr></thead><tbody>
+      {% for s in stocks %}<tr><td><input class="repass-stock" type="checkbox" name="stock_ids" value="{{s.id}}" data-weight="{{s.current_weight}}"></td><td><strong>{{s.stock_no}}</strong></td><td>{{s.product}}</td><td>{{'{:,.2f}'.format(s.current_weight)}} kg</td><td>{{s.station}} / {{s.warehouse}}</td><td>{{s.status}}</td></tr>{% else %}<tr><td colspan="6" class="empty">No Blacks or Triage are currently available for repass.</td></tr>{% endfor %}
+      </tbody><tfoot><tr><th colspan="3">Selected available weight</th><th id="selectedTotal">0.00 kg</th><th colspan="2"></th></tr></tfoot></table></div>
+    </div>
+    <div class="mhs-form-section"><h3>2. Record repass</h3></div>
+    <label>Actual weight sent to repass (kg)<input type="number" step="0.01" min="0.01" name="actual_input_weight" id="actualInput" required></label>
+    <label>Recovered Repassed Coffee (kg)<input type="number" step="0.01" min="0.01" name="repassed_weight" required></label>
+    <label>Blacks remaining (kg)<input type="number" step="0.01" min="0" name="blacks" value="0"></label>
+    <label>Triage remaining (kg)<input type="number" step="0.01" min="0" name="triage" value="0"></label>
+    <label>Station<input name="station"></label><label>Warehouse<input name="warehouse"></label>
+    <div class="mhs-actions"><button class="button" type="submit">Complete Repass</button></div>
+  </form></div>
+</div>
+<script>(function(){const boxes=[...document.querySelectorAll('.repass-stock')],total=document.getElementById('selectedTotal'),input=document.getElementById('actualInput');function calc(){const v=boxes.filter(x=>x.checked).reduce((a,x)=>a+(parseFloat(x.dataset.weight)||0),0);total.textContent=v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg';if(v>0&&!input.value)input.value=v.toFixed(2);}boxes.forEach(x=>x.addEventListener('change',calc));})();</script>
+{% endblock %}

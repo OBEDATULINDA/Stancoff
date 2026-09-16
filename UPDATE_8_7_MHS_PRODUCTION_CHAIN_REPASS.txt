@@ -1,0 +1,15 @@
+STANCOFF ERP — VERSION 8.7
+MOTHERS HARVEST PRODUCTION CHAIN + OPTIONAL REPASS
+
+- Full Production clean coffee is terminal and is not offered for normal production again.
+- Blacks and Triage are captured separately after Full Production.
+- Each can be stored in Inventory or sent to the Repass Queue.
+- Stored Blacks/Triage remain eligible for Repass later.
+- New Repass screen allows one or more reject stocks to be combined.
+- Repass output enters inventory as Repassed Coffee.
+- Remaining Blacks/Triage from Repass return to reject inventory.
+- Intermediate Hulled / Graded / Gravity Tabled production lots can continue to the next process using the latest actual inventory weight.
+- Prior intermediate stock is consumed when the next stage completes, preventing double-counting.
+- Multi-lot source traceability remains.
+- Additive database change only: mhs_production.triage FLOAT DEFAULT 0.
+- No database reset required.

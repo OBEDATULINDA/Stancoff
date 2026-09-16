@@ -290,6 +290,7 @@ class MHSProduction(db.Model):
     color_sorted_weight = db.Column(db.Float, default=0)
 
     blacks = db.Column(db.Float, default=0)
+    triage = db.Column(db.Float, default=0)
     broken = db.Column(db.Float, default=0)
     pods = db.Column(db.Float, default=0)
     dust = db.Column(db.Float, default=0)
@@ -1190,7 +1191,7 @@ def ensure_multistation_schema():
     # Additive only; existing production records and Stancoff tables are untouched.
     if "mhs_production" in table_names:
         mhs_production_columns = {c["name"] for c in inspector.get_columns("mhs_production")}
-        for column_name in ("stones", "rabble"):
+        for column_name in ("stones", "rabble", "triage"):
             if column_name not in mhs_production_columns:
                 db.session.execute(text(f"ALTER TABLE mhs_production ADD COLUMN {column_name} FLOAT DEFAULT 0"))
                 db.session.commit()
@@ -6249,7 +6250,32 @@ def _mhs_production_output_map(row):
             ]:
                 if float(value or 0) > 0:
                     outputs.append((product, float(value)))
+    # Full Production clean coffee is terminal. Blacks and Triage are separate
+    # reject inventory and may later be selected for Repass.
+    if row.process_type == "Full Production":
+        if float(row.blacks or 0) > 0:
+            outputs.append(("Blacks", float(row.blacks)))
+        if float(row.triage or 0) > 0:
+            outputs.append(("Triage", float(row.triage)))
     return outputs
+
+
+def _mhs_consume_prior_inventory_for_production(company_id, row, lot, source_items):
+    """Consume intermediate inventory entering a new production stage so only the new physical output remains live."""
+    lot_ids = [item.lot_id for item in source_items] if source_items else [lot.id]
+    for source_lot_id in lot_ids:
+        stocks = MHSInventoryStock.query.filter(
+            MHSInventoryStock.company_id == company_id,
+            MHSInventoryStock.lot_id == source_lot_id,
+            MHSInventoryStock.current_weight > 0,
+            MHSInventoryStock.status.in_(["Active", "Repass Queue"]),
+        ).all()
+        for stock in stocks:
+            # Reject inventory is never a normal production input; it belongs to Repass.
+            if stock.product in {"Blacks", "Triage"}:
+                continue
+            stock.current_weight = 0
+            stock.status = "Consumed in Production"
 
 
 def _mhs_production_inventory_has_movement(company_id, production_id):
@@ -6323,7 +6349,7 @@ def _mhs_sync_production_inventory(company, row, lot):
             stock.current_weight = 0
             stock.status = "Superseded"
 
-    lot.readiness = "In Inventory"
+    lot.readiness = "Final / In Inventory" if row.process_type in {"Full Production", "Color Sorting Only"} else "Ready for Further Processing"
     _mhs_refresh_lot_from_inventory(company.id, lot.id)
 
 
@@ -6508,7 +6534,7 @@ def _mhs_read_production_outputs(form):
     fields = [
         "hulled_output", "aa_weight", "ab_weight", "cpb_weight", "wugar_weight",
         "drugar_clean_weight", "gravity_clean_weight", "color_sorted_weight",
-        "blacks", "broken", "pods", "dust", "stones", "rabble", "foreign_matter", "other_byproducts",
+        "blacks", "triage", "broken", "pods", "dust", "stones", "rabble", "foreign_matter", "other_byproducts",
     ]
     values = {}
     for key in fields:
@@ -6550,7 +6576,7 @@ def _mhs_calculate_production(row, values):
         raise ValueError("Enter the actual clean/grade output before completing production.")
 
     byproducts = (
-        values["blacks"] + values["broken"] + values["pods"] +
+        values["blacks"] + values["triage"] + values["broken"] + values["pods"] +
         values["dust"] + values["stones"] + values["rabble"] +
         values["foreign_matter"] + values["other_byproducts"]
     )
@@ -6635,8 +6661,12 @@ def mhs_production():
                 flash(f"{lot.lot_no} is not ready for production.")
                 return redirect(url_for("mhs_production"))
             analysis = _mhs_latest_analysis(company.id, lot.id)
-            if not analysis:
-                flash(f"{lot.lot_no} must have an analysis before it enters production.")
+            intermediate_states = {"Hulled / Awaiting Grading", "Graded / Awaiting Further Processing", "Gravity Tabled / Awaiting Color Sorting"}
+            if not analysis and lot.coffee_state not in intermediate_states:
+                flash(f"{lot.lot_no} must have an analysis before first production. Intermediate hulled/graded coffee can continue using its latest physical weight.")
+                return redirect(url_for("mhs_production"))
+            if lot.coffee_state in {"Fully Processed", "Color Sorted / Final"}:
+                flash(f"{lot.lot_no} is final clean coffee and cannot be sent for normal processing again.")
                 return redirect(url_for("mhs_production"))
             if _mhs_lot_in_open_production(company.id, lot.id):
                 flash(f"{lot.lot_no} already belongs to an open production record.")
@@ -6687,7 +6717,7 @@ def mhs_production():
                 input_difference=difference,
                 input_difference_percent=diff_pct,
                 difference_reason=reason,
-                analysis_id=analysis.id,
+                analysis_id=analysis.id if analysis else None,
                 destination_station=(request.form.get("destination_station") or "").strip() or None,
                 destination_warehouse=(request.form.get("destination_warehouse") or "").strip() or None,
                 operator=(request.form.get("operator") or "").strip() or None,
@@ -6767,7 +6797,7 @@ def mhs_production():
                 company_id=company.id,
                 production_id=row.id,
                 lot_id=lot.id,
-                analysis_id=analysis.id,
+                analysis_id=analysis.id if analysis else None,
                 source_weight=float(source_weight or 0),
                 allocated_input_weight=float(allocation_map.get(lot.id, 0)),
                 source_moisture=lot.current_moisture,
@@ -6794,8 +6824,9 @@ def mhs_production():
     lots = []
     for lot in MHSLot.query.filter_by(company_id=company.id, status="Active").order_by(MHSLot.lot_no).all():
         if (
-            _mhs_latest_analysis(company.id, lot.id)
-            and lot.readiness not in {"Needs Drying", "Drying", "In Production", "Consumed in Production", "Produced / Awaiting Inventory"}
+            (_mhs_latest_analysis(company.id, lot.id) or lot.coffee_state in {"Hulled / Awaiting Grading", "Graded / Awaiting Further Processing", "Gravity Tabled / Awaiting Color Sorting"})
+            and lot.coffee_state not in {"Fully Processed", "Color Sorted / Final"}
+            and lot.readiness not in {"Needs Drying", "Drying", "In Production", "Consumed in Production"}
             and not _mhs_lot_in_open_production(company.id, lot.id)
         ):
             lots.append(lot)
@@ -6956,7 +6987,17 @@ def mhs_production_finish(id):
         _mhs_apply_completed_production_to_lot(row, lot)
         if is_combined:
             _mhs_mark_combined_sources_consumed(company.id, row)
+        _mhs_consume_prior_inventory_for_production(company.id, row, lot, source_items)
         _mhs_sync_production_inventory(company, row, lot)
+        if row.process_type == "Full Production":
+            dispositions = {
+                "Blacks": (request.form.get("blacks_disposition") or "Inventory").strip(),
+                "Triage": (request.form.get("triage_disposition") or "Inventory").strip(),
+            }
+            for product, disposition in dispositions.items():
+                stock = MHSInventoryStock.query.filter_by(company_id=company.id, production_id=row.id, product=product).first()
+                if stock and stock.current_weight > 0:
+                    stock.status = "Repass Queue" if disposition == "Repass" else "Active"
         db.session.commit()
 
         source_label = _mhs_production_source_label(company.id, row)
@@ -7037,6 +7078,73 @@ def mhs_production_report(id):
     )
 
 
+
+
+@app.route("/mhs/repass", methods=["GET", "POST"])
+@login_required
+def mhs_repass():
+    company = _require_mhs()
+    if not _mhs_can_produce():
+        abort(403)
+    eligible = MHSInventoryStock.query.filter(
+        MHSInventoryStock.company_id == company.id,
+        MHSInventoryStock.product.in_(["Blacks", "Triage"]),
+        MHSInventoryStock.current_weight > 0,
+        MHSInventoryStock.status.in_(["Active", "Repass Queue"]),
+    ).order_by(MHSInventoryStock.product, MHSInventoryStock.stock_no).all()
+    if request.method == "POST":
+        try:
+            ids = list(dict.fromkeys(int(x) for x in request.form.getlist("stock_ids")))
+            actual_input = float(request.form.get("actual_input_weight") or 0)
+            recovered = float(request.form.get("repassed_weight") or 0)
+            blacks = float(request.form.get("blacks") or 0)
+            triage = float(request.form.get("triage") or 0)
+        except (TypeError, ValueError):
+            flash("Select reject stock and enter valid repass weights.")
+            return redirect(url_for("mhs_repass"))
+        stocks = [x for x in eligible if x.id in ids]
+        if not stocks or len(stocks) != len(ids):
+            flash("Select one or more available Blacks/Triage stocks.")
+            return redirect(url_for("mhs_repass"))
+        available = sum(float(x.current_weight or 0) for x in stocks)
+        if actual_input <= 0 or actual_input > available + 0.01:
+            flash(f"Actual repass input must be above zero and cannot exceed the selected {available:,.2f} kg.")
+            return redirect(url_for("mhs_repass"))
+        if min(recovered, blacks, triage) < 0 or recovered <= 0:
+            flash("Enter the recovered Repassed Coffee weight; reject weights cannot be negative.")
+            return redirect(url_for("mhs_repass"))
+        if recovered + blacks + triage > actual_input + 0.01:
+            flash("Repassed coffee plus remaining rejects cannot exceed the actual repass input.")
+            return redirect(url_for("mhs_repass"))
+        station = (request.form.get("station") or stocks[0].station or "Unassigned").strip()
+        warehouse = (request.form.get("warehouse") or stocks[0].warehouse or "Unassigned").strip()
+        repass_lot = MHSLot(
+            company_id=company.id, lot_no=_mhs_next_code(MHSLot, company.id, "lot_no", "MHS", 4),
+            coffee_type="Processed Coffee", coffee_state="Repassed / Final", current_weight=recovered + blacks + triage,
+            source_location="Repass: " + " + ".join(x.stock_no for x in stocks), readiness="Final / In Inventory", status="Active"
+        )
+        db.session.add(repass_lot); db.session.flush()
+        # Consume selected reject stock proportionally to the actual input. Any unprocessed balance remains in reject inventory.
+        remaining_to_consume = actual_input
+        for stock in stocks:
+            take = min(float(stock.current_weight or 0), remaining_to_consume)
+            stock.current_weight = float(stock.current_weight or 0) - take
+            remaining_to_consume -= take
+            stock.status = "Active" if stock.current_weight > 0.001 else "Consumed in Repass"
+            if remaining_to_consume <= 0.001: break
+        outputs = [("Repassed Coffee", recovered), ("Blacks", blacks), ("Triage", triage)]
+        for product, weight in outputs:
+            if weight <= 0: continue
+            db.session.add(MHSInventoryStock(
+                company_id=company.id, stock_no=_mhs_next_code(MHSInventoryStock, company.id, "stock_no", "MHS-STK", 5),
+                lot_id=repass_lot.id, production_id=None, product=product, current_weight=weight,
+                station=station, warehouse=warehouse, status="Active"
+            ))
+        db.session.commit()
+        log_action("CREATE", "MHS Repass", repass_lot.id, f"{repass_lot.lot_no} / {actual_input:,.2f} kg -> {recovered:,.2f} kg repassed")
+        flash(f"Repass completed. {recovered:,.2f} kg is now Repassed Coffee; remaining Blacks/Triage were returned to reject inventory.")
+        return redirect(url_for("mhs_repass"))
+    return render_template("mhs_repass.html", stocks=eligible, today=datetime.utcnow().date().isoformat())
 
 
 # ---------------------------------------------------------------------------
