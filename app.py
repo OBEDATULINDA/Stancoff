@@ -1188,6 +1188,18 @@ def ensure_multistation_schema():
             db.session.execute(text("ALTER TABLE audit_log ADD COLUMN company_id INTEGER"))
             db.session.commit()
 
+    # Version 8.8.2: combined post-hulling/FAQ production may legitimately use
+    # source lots that do not have a fresh analysis for every intermediate stage.
+    # Earlier deployments could have created mhs_production_lot.analysis_id as
+    # NOT NULL, which causes an Internal Server Error when such lots are combined.
+    # Relax only that legacy constraint; this is additive/safe and preserves data.
+    if "mhs_production_lot" in table_names:
+        production_lot_columns = {c["name"]: c for c in inspector.get_columns("mhs_production_lot")}
+        analysis_col = production_lot_columns.get("analysis_id")
+        if analysis_col and analysis_col.get("nullable") is False and db.engine.dialect.name == "postgresql":
+            db.session.execute(text("ALTER TABLE mhs_production_lot ALTER COLUMN analysis_id DROP NOT NULL"))
+            db.session.commit()
+
     # Version 8.4.1: explicit Mothers Harvest production by-products.
     # Additive only; existing production records and Stancoff tables are untouched.
     if "mhs_production" in table_names:
@@ -6470,7 +6482,7 @@ def _mhs_recalculate_combined_expectations(company_id, row, actual_input, proces
     for item in items:
         lot = MHSLot.query.filter_by(id=item.lot_id, company_id=company_id).first()
         analysis = MHSAnalysis.query.filter_by(id=item.analysis_id, company_id=company_id).first() if item.analysis_id else None
-        if lot and analysis:
+        if lot:
             source_pairs.append((lot, analysis, float(item.source_weight or 0)))
     expectations, allocations = _mhs_combined_expectations(source_pairs, actual_input, process_type)
     allocation_map = dict(allocations)

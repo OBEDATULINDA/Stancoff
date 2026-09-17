@@ -1,0 +1,11 @@
+Version 8.8.2 - MHS Multi-FAQ Database Constraint Fix
+
+Fixes the Internal Server Error when combining hulled/FAQ/intermediate lots that do not have a fresh analysis for every processing stage.
+
+Cause: an earlier deployed mhs_production_lot table can retain a NOT NULL database constraint on analysis_id. Version 8.8/8.8.1 correctly allowed intermediate post-hulling lots without a new analysis in application logic, but PostgreSQL could still reject the source-lot record.
+
+Fix:
+- Safely drops only the legacy NOT NULL constraint from mhs_production_lot.analysis_id on PostgreSQL.
+- Keeps all existing rows and data.
+- Combined expectation recalculation now includes source lots even when analysis_id is empty.
+- No database reset.
