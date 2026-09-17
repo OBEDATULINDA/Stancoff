@@ -9,6 +9,7 @@ from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, session, abort, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, desc, inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import generate_password_hash, check_password_hash
 import xlsxwriter
 from reportlab.lib import colors
@@ -6765,7 +6766,14 @@ def mhs_production():
             )
             db.session.add(row)
             lot.readiness = "In Production"
-            db.session.commit()
+            try:
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                app.logger.exception("MHS single-lot production failed while committing")
+                detail = str(getattr(exc, "orig", exc)).replace("\n", " ")[:500]
+                flash(f"Production could not be opened. Stage: single-lot commit. {type(exc).__name__}: {detail}")
+                return redirect(url_for("mhs_production"))
             log_action("CREATE", "MHS Production", row.id, f"{row.production_no} / {lot.lot_no}")
             flash(f"{row.production_no} opened with confirmed factory input of {actual_input:,.2f} kg.")
             return redirect(url_for("mhs_production_finish", id=row.id))
@@ -6801,12 +6809,19 @@ def mhs_production():
             coffee_state=common_state,
             current_weight=actual_input,
             current_moisture=combined_moisture,
-            source_location=f"Combined production: {source_names}",
+            source_location=f"Combined production: {source_names}"[:160],
             readiness="In Production",
             status="Active",
         )
         db.session.add(combined_lot)
-        db.session.flush()
+        try:
+            db.session.flush()
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("MHS production failed at combined output lot creation")
+            detail = str(getattr(exc, "orig", exc)).replace("\n", " ")[:500]
+            flash(f"Production could not be opened. Stage: combined output lot. {type(exc).__name__}: {detail}")
+            return redirect(url_for("mhs_production"))
 
         expectations, allocations = _mhs_combined_expectations(source_pairs, actual_input, process_type)
         row = MHSProduction(
@@ -6834,7 +6849,14 @@ def mhs_production():
             **expectations,
         )
         db.session.add(row)
-        db.session.flush()
+        try:
+            db.session.flush()
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("MHS production failed at production header creation")
+            detail = str(getattr(exc, "orig", exc)).replace("\n", " ")[:500]
+            flash(f"Production could not be opened. Stage: production header. {type(exc).__name__}: {detail}")
+            return redirect(url_for("mhs_production"))
 
         allocation_map = dict(allocations)
         for lot, analysis, source_weight in source_pairs:
@@ -6853,7 +6875,14 @@ def mhs_production():
             lot.current_weight = 0
             lot.readiness = "In Production"
 
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("MHS production failed while linking source lots / committing")
+            detail = str(getattr(exc, "orig", exc)).replace("\n", " ")[:500]
+            flash(f"Production could not be opened. Stage: source-lot links/commit. {type(exc).__name__}: {detail}")
+            return redirect(url_for("mhs_production"))
         log_action("CREATE", "MHS Combined Production", row.id, f"{row.production_no} / {source_names} -> {combined_lot.lot_no}")
         flash(
             f"{row.production_no} opened from {len(source_lots)} lots. "
