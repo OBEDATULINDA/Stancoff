@@ -6432,7 +6432,24 @@ def _mhs_combined_expectations(source_pairs, actual_input, process_type):
         source_weight = float(source_weight or 0)
         allocated = actual_input * source_weight / total_source
         allocations.append((lot.id, allocated))
-        exp = _mhs_production_expectations(lot, analysis, allocated, process_type)
+
+        # 8.8.1: post-hulling lots are allowed to continue to the next process
+        # without requiring a new analysis at every intermediate stage. Their
+        # latest physical weight is authoritative. If an analysis exists we
+        # still use it; otherwise the allocated physical input is the expected
+        # stage input/output baseline rather than leaving expectation fields null.
+        if analysis is None:
+            exp = {
+                "expected_net_outturn": 100.0,
+                "expected_clean_weight": allocated,
+                "expected_aa_weight": None,
+                "expected_ab_weight": None,
+                "expected_cpb_weight": None,
+                "expected_wugar_weight": None,
+            }
+        else:
+            exp = _mhs_production_expectations(lot, analysis, allocated, process_type)
+
         result["expected_clean_weight"] += float(exp.get("expected_clean_weight") or 0)
         for key in grade_totals:
             if exp.get(key) is not None:
@@ -6719,9 +6736,9 @@ def mhs_production():
                 expected_input_weight=expected,
                 actual_input_weight=actual_input,
                 source_lot_weight=expected,
-                source_coffee_type=lot.coffee_type,
-                source_coffee_state=lot.coffee_state,
-                source_readiness=lot.readiness,
+                source_coffee_type=lot.coffee_type or "FAQ",
+                source_coffee_state=lot.coffee_state or "FAQ / Awaiting Further Processing",
+                source_readiness=lot.readiness or "Ready for Further Processing",
                 input_difference=difference,
                 input_difference_percent=diff_pct,
                 difference_reason=reason,

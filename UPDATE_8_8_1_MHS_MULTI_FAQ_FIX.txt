@@ -1,0 +1,9 @@
+Stancoff Version 8.8.1 - MHS Multi-FAQ / Post-Hulling Production Fix
+
+Fixes the multi-lot production path for hulled FAQ and other intermediate post-hulling lots.
+- Intermediate post-hulling lots may continue without a fresh analysis at every stage.
+- Their latest physical/current weight is the authoritative input baseline.
+- Multiple post-hulling lots can be combined for downstream production.
+- Parchment remains isolated and cannot be mixed with post-hulling states.
+- Hulling Only remains restricted to parchment.
+- No database reset or destructive migration.
