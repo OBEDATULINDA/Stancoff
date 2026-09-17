@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block page_title %}Mothers Harvest Production{% endblock %}
-{% block page_subtitle %}Build a production load from one or more analysed lots · Version 8.7{% endblock %}
+{% block page_subtitle %}Build a production load from one or more analysed lots · Version 8.8{% endblock %}
 {% block content %}
 <div class="mhs-page">
   <div class="mhs-hero">
@@ -9,7 +9,7 @@
       <h2>Build the coffee volume to process</h2>
       <p>Add one analysed lot, then add another if required. The system combines their available weights before you send the total volume for hulling, grading, gravity table, color sorting or full production.</p>
     </div>
-    <span class="mhs-badge">MHS Production · 8.7</span>
+    <span class="mhs-badge">MHS Production · 8.8</span>
   </div>
 
   <div class="mhs-card">
@@ -46,7 +46,7 @@
       </div>
 
       <div class="mhs-span-all" id="compatibilityWarning" style="display:none;padding:12px 14px;border-radius:10px;background:#fff4e5;border:1px solid #e8c38b;color:#7a4d13;font-size:13px">
-        The lots in one production load must have the same coffee type and processing state. Remove the incompatible lot or start a separate production entry.
+        Parchment can only be combined with other parchment. FAQ and other post-hulling coffee states may be combined together for suitable further processing.
       </div>
 
       <div class="mhs-form-section"><h3>2. Send the combined volume for processing</h3><p>Choose what will be done to the coffee you added above.</p></div>
@@ -109,7 +109,10 @@
 
   function compatible(){
     const vals=[...selected.values()];
-    return new Set(vals.map(x=>x.coffee)).size<=1 && new Set(vals.map(x=>x.state)).size<=1;
+    const parchment=new Set(['Parchment Cherries','Wet Parchment','Dry Parchment']);
+    const hasParchment=vals.some(x=>parchment.has(x.coffee));
+    const hasOther=vals.some(x=>!parchment.has(x.coffee));
+    return !(hasParchment && hasOther);
   }
   function total(){ return [...selected.values()].reduce((s,x)=>s+x.weight,0); }
   function render(){
@@ -147,7 +150,7 @@
   actual.addEventListener('input',()=>{ actual.dataset.auto='0'; updateDifference(); });
   form.addEventListener('submit',function(e){
     if(!selected.size){ e.preventDefault(); alert('Add at least one analysed lot before sending coffee for processing.'); return; }
-    if(!compatible()){ e.preventDefault(); alert('The selected lots must have the same coffee type and processing state.'); }
+    if(!compatible()){ e.preventDefault(); alert('Parchment cannot be combined with FAQ or another post-hulling state.'); }
   });
   render();
 })();

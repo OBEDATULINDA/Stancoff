@@ -1,0 +1,13 @@
+STANCOFF VERSION 8.8 — MHS FAQ + FLEXIBLE POST-HULLING COMBINING
+
+- Added FAQ as a Mothers Harvest purchase type.
+- FAQ means coffee already hulled but not yet processed further.
+- Purchased FAQ enters Ready for Analysis and can continue into downstream production.
+- Hulling parchment now creates FAQ as the authoritative hulled output/inventory product.
+- Parchment may only be combined with parchment.
+- Parchment cannot be combined with FAQ or any other post-hulling state.
+- Non-parchment/post-hulling coffee states may be combined for suitable downstream processing.
+- Hulling Only is blocked for non-parchment inputs.
+- Combined post-hulling loads retain each original source lot/state through MHSProductionLot traceability.
+- Full Production and optional Blacks/Triage repass behavior from 8.7 is retained.
+- No database reset required. No destructive schema change.

@@ -457,6 +457,7 @@ MHS_PURCHASE_TYPES = [
     "Wet Parchment",
     "Dry Parchment",
     "DRUGAR FAQ",
+    "FAQ",
     "Processed AA",
     "Processed AB",
     "Processed CPB",
@@ -5111,6 +5112,11 @@ def _mhs_purchase_readiness(company_id, coffee_type, moisture):
             return True, "Needs Drying"
         return False, "Ready for Analysis"
 
+    # FAQ is already hulled coffee. It can be bought directly, analysed, and
+    # sent to grading / gravity / color sorting / full production, but never hulling.
+    if coffee_type == "FAQ":
+        return False, "Ready for Analysis"
+
     return False, "Processed / Ready"
 
 
@@ -6238,7 +6244,7 @@ def _mhs_production_output_map(row):
             outputs.append(("DRUGAR FAQ", float(row.drugar_clean_weight)))
     else:
         if row.process_type == "Hulling Only" and float(row.hulled_output or 0) > 0:
-            outputs.append(("Hulled Green Coffee", float(row.hulled_output)))
+            outputs.append(("FAQ", float(row.hulled_output)))
         elif row.process_type == "Gravity Table Only" and float(row.gravity_clean_weight or 0) > 0:
             outputs.append(("Gravity Clean", float(row.gravity_clean_weight)))
         elif row.process_type == "Color Sorting Only" and float(row.color_sorted_weight or 0) > 0:
@@ -6598,8 +6604,8 @@ def _mhs_apply_completed_production_to_lot(row, lot):
         lot.coffee_type = "DRUGAR FAQ"
         lot.coffee_state = "Processed DRUGAR"
     elif row.process_type == "Hulling Only":
-        lot.coffee_type = "Green Coffee"
-        lot.coffee_state = "Hulled / Awaiting Grading"
+        lot.coffee_type = "FAQ"
+        lot.coffee_state = "FAQ / Awaiting Further Processing"
     elif row.process_type == "Grading Only":
         lot.coffee_type = "Processed Coffee"
         lot.coffee_state = "Graded / Awaiting Further Processing"
@@ -6661,7 +6667,7 @@ def mhs_production():
                 flash(f"{lot.lot_no} is not ready for production.")
                 return redirect(url_for("mhs_production"))
             analysis = _mhs_latest_analysis(company.id, lot.id)
-            intermediate_states = {"Hulled / Awaiting Grading", "Graded / Awaiting Further Processing", "Gravity Tabled / Awaiting Color Sorting"}
+            intermediate_states = {"Hulled / Awaiting Grading", "FAQ / Awaiting Further Processing", "Post-Hulling / Combined for Further Processing", "Graded / Awaiting Further Processing", "Gravity Tabled / Awaiting Color Sorting"}
             if not analysis and lot.coffee_state not in intermediate_states:
                 flash(f"{lot.lot_no} must have an analysis before first production. Intermediate hulled/graded coffee can continue using its latest physical weight.")
                 return redirect(url_for("mhs_production"))
@@ -6678,16 +6684,18 @@ def mhs_production():
             flash("Every selected lot must have an available weight above zero.")
             return redirect(url_for("mhs_production"))
 
-        # Combined processing is only safe when the lots are at the same coffee stage.
-        if len(source_lots) > 1:
-            coffee_types = {lot.coffee_type for lot in source_lots}
-            coffee_states = {lot.coffee_state for lot in source_lots}
-            if len(coffee_types) != 1:
-                flash("Combined production requires all selected lots to have the same coffee type.")
-                return redirect(url_for("mhs_production"))
-            if len(coffee_states) != 1:
-                flash("Combined production requires all selected lots to be at the same processing stage/state.")
-                return redirect(url_for("mhs_production"))
+        # Version 8.8 compatibility rule: parchment is isolated from all post-hulling states.
+        # Parchment lots may be combined with parchment lots. Any non-parchment states may
+        # be combined together for a suitable downstream process.
+        parchment_types = {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}
+        has_parchment = any(lot.coffee_type in parchment_types for lot in source_lots)
+        has_non_parchment = any(lot.coffee_type not in parchment_types for lot in source_lots)
+        if has_parchment and has_non_parchment:
+            flash("Parchment cannot be processed together with FAQ or any other post-hulling coffee state.")
+            return redirect(url_for("mhs_production"))
+        if has_non_parchment and process_type == "Hulling Only":
+            flash("Hulling Only is for parchment. FAQ and other post-hulling coffee must use a downstream process.")
+            return redirect(url_for("mhs_production"))
 
         expected = sum(float(lot.current_weight or 0) for lot in source_lots)
         difference = actual_input - expected
@@ -6734,8 +6742,16 @@ def mhs_production():
             return redirect(url_for("mhs_production_finish", id=row.id))
 
         # Multiple source lots become one traceable combined production lot.
-        common_type = source_lots[0].coffee_type
-        common_state = source_lots[0].coffee_state
+        # Parchment remains parchment; mixed post-hulling inputs are normalised to FAQ/
+        # post-hulling for the production record while every original source state is
+        # retained in MHSProductionLot for traceability.
+        parchment_types = {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}
+        if all(lot.coffee_type in parchment_types for lot in source_lots):
+            common_type = source_lots[0].coffee_type
+            common_state = "Parchment / Combined for Hulling"
+        else:
+            common_type = "FAQ"
+            common_state = "Post-Hulling / Combined for Further Processing"
         total_source_weight = expected
         weighted_moisture_weight = sum(
             float(lot.current_weight or 0)
@@ -6824,7 +6840,7 @@ def mhs_production():
     lots = []
     for lot in MHSLot.query.filter_by(company_id=company.id, status="Active").order_by(MHSLot.lot_no).all():
         if (
-            (_mhs_latest_analysis(company.id, lot.id) or lot.coffee_state in {"Hulled / Awaiting Grading", "Graded / Awaiting Further Processing", "Gravity Tabled / Awaiting Color Sorting"})
+            (_mhs_latest_analysis(company.id, lot.id) or lot.coffee_state in {"Hulled / Awaiting Grading", "FAQ / Awaiting Further Processing", "Post-Hulling / Combined for Further Processing", "Graded / Awaiting Further Processing", "Gravity Tabled / Awaiting Color Sorting"})
             and lot.coffee_state not in {"Fully Processed", "Color Sorted / Final"}
             and lot.readiness not in {"Needs Drying", "Drying", "In Production", "Consumed in Production"}
             and not _mhs_lot_in_open_production(company.id, lot.id)
