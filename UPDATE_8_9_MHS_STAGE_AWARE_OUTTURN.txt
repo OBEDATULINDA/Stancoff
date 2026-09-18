@@ -1,0 +1,12 @@
+STANCOFF VERSION 8.9 — MHS STAGE-AWARE OUTTURN
+
+- Parchment + Hulling Only uses General Outturn.
+- Parchment + Full Production uses Net Outturn.
+- FAQ / hulled / graded / other post-hulling coffee does NOT apply General Outturn again.
+- Post-hulling expected clean yield uses Net Outturn relative to General Outturn (Net ÷ General) where both are available.
+- Purchased FAQ with a direct hulled-coffee analysis and no General OT uses its Net OT directly.
+- Combined post-hulling loads calculate one weighted stage expectation from all source lots.
+- Combined/intermediate lots inherit weighted source analyses from the production that created them, preserving analysis through the production chain without requiring re-analysis at every stage.
+- Production reports show weighted average General OT, weighted average Net OT, current-stage expected outturn, expected clean kg, actual clean kg, and realistic variance.
+- Historical production reports are recalculated for display using their recorded source traceability, so old stored expectation values do not have to be rewritten.
+- No database reset and no schema change.

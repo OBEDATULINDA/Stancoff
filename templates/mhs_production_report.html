@@ -26,8 +26,13 @@ body{font-family:Arial,sans-serif;color:#222;margin:28px}.head{text-align:center
 </div>
 {% if row.difference_reason %}<div class="warn"><b>Input difference reason:</b> {{row.difference_reason}}</div>{% endif %}
 
-<table class="report"><tr><th>Analysis expectation</th><th>Expected kg</th><th>Actual kg</th><th>Variance kg</th></tr>
-<tr><td>Expected clean output</td><td>{{'%.2f'|format(row.expected_clean_weight or 0)}}</td><td>{{'%.2f'|format(row.total_clean_output or 0)}}</td><td>{{'%+.2f'|format((row.total_clean_output or 0)-(row.expected_clean_weight or 0))}}</td></tr>
+<table class="report">
+<tr><th colspan="4">Analysis expectation — {{ analysis_summary.basis }}</th></tr>
+<tr><td>Weighted average General Outturn</td><td colspan="3">{{ ('%.2f%%'|format(analysis_summary.weighted_general)) if analysis_summary.weighted_general is not none else '—' }}</td></tr>
+<tr><td>Weighted average Net Outturn</td><td colspan="3">{{ ('%.2f%%'|format(analysis_summary.weighted_net)) if analysis_summary.weighted_net is not none else '—' }}</td></tr>
+<tr><td>Expected outturn for this production stage</td><td colspan="3"><b>{{'%.2f'|format(analysis_summary.stage_outturn or 0)}}%</b></td></tr>
+<tr><th>Output comparison</th><th>Expected kg</th><th>Actual kg</th><th>Variance kg</th></tr>
+<tr><td>Expected clean output</td><td>{{'%.2f'|format(analysis_summary.expected_clean or 0)}}</td><td>{{'%.2f'|format(row.total_clean_output or 0)}}</td><td>{{'%+.2f'|format((row.total_clean_output or 0)-(analysis_summary.expected_clean or 0))}}</td></tr>
 {% if row.expected_aa_weight is not none %}
 <tr><td>AA</td><td>{{'%.2f'|format(row.expected_aa_weight or 0)}}</td><td>{{'%.2f'|format(row.aa_weight or 0)}}</td><td>{{'%+.2f'|format((row.aa_weight or 0)-(row.expected_aa_weight or 0))}}</td></tr>
 <tr><td>AB</td><td>{{'%.2f'|format(row.expected_ab_weight or 0)}}</td><td>{{'%.2f'|format(row.ab_weight or 0)}}</td><td>{{'%+.2f'|format((row.ab_weight or 0)-(row.expected_ab_weight or 0))}}</td></tr>

@@ -6420,8 +6420,86 @@ def _mhs_production_source_items(company_id, production_id):
     )
 
 
+def _mhs_analysis_profile_for_lot(company_id, lot, analysis=None, _seen=None):
+    """Return effective General/Net OT for a lot, inheriting source analyses for combined outputs."""
+    if not lot:
+        return {"general": 0.0, "net": 0.0, "analysis_no": None}
+    if analysis is None:
+        analysis = _mhs_latest_analysis(company_id, lot.id)
+    if analysis:
+        return {
+            "general": float(analysis.general_outturn or 0),
+            "net": float(analysis.net_outturn or 0),
+            "analysis_no": analysis.analysis_no,
+        }
+
+    # A combined/intermediate lot may not have a new analysis of its own. Inherit the
+    # weighted source analysis from the production record that created this lot.
+    _seen = set(_seen or set())
+    if lot.id in _seen:
+        return {"general": 0.0, "net": 0.0, "analysis_no": None}
+    _seen.add(lot.id)
+    parent = (MHSProduction.query
+              .filter_by(company_id=company_id, lot_id=lot.id)
+              .order_by(MHSProduction.id.desc()).first())
+    if not parent:
+        return {"general": 0.0, "net": 0.0, "analysis_no": None}
+    items = _mhs_production_source_items(company_id, parent.id)
+    if not items:
+        return {"general": 0.0, "net": 0.0, "analysis_no": None}
+
+    total = 0.0
+    general_sum = 0.0
+    net_sum = 0.0
+    general_weight = 0.0
+    net_weight = 0.0
+    for item in items:
+        src = MHSLot.query.filter_by(id=item.lot_id, company_id=company_id).first()
+        if not src:
+            continue
+        src_analysis = (MHSAnalysis.query.filter_by(id=item.analysis_id, company_id=company_id).first()
+                        if item.analysis_id else None)
+        profile = _mhs_analysis_profile_for_lot(company_id, src, src_analysis, _seen.copy())
+        weight = float(item.allocated_input_weight or item.source_weight or 0)
+        if weight <= 0:
+            continue
+        total += weight
+        if profile["general"] > 0:
+            general_sum += profile["general"] * weight
+            general_weight += weight
+        if profile["net"] > 0:
+            net_sum += profile["net"] * weight
+            net_weight += weight
+    return {
+        "general": general_sum / general_weight if general_weight else 0.0,
+        "net": net_sum / net_weight if net_weight else 0.0,
+        "analysis_no": "Inherited weighted analysis" if (general_weight or net_weight) else None,
+    }
+
+
+def _mhs_stage_expected_outturn(lot, profile, process_type):
+    """Expected yield for the CURRENT stage, avoiding a second hulling deduction."""
+    parchment = lot.coffee_type in {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}
+    general = float((profile or {}).get("general") or 0)
+    net = float((profile or {}).get("net") or 0)
+    if parchment:
+        if process_type == "Hulling Only":
+            return general
+        return net
+
+    # FAQ/graded/gravity-table coffee is already hulled. General OT has already
+    # happened, so the remaining clean expectation is Net OT relative to General OT.
+    if general > 0 and net > 0:
+        return (net / general) * 100.0
+    # Purchased FAQ may be analysed directly as hulled coffee and therefore have only
+    # a net percentage. In that case its net percentage is already the stage yield.
+    if net > 0:
+        return net
+    return 100.0
+
+
 def _mhs_combined_expectations(source_pairs, actual_input, process_type):
-    """Weighted expected production result for multiple analysed source lots."""
+    """Weighted expected result for a multi-lot load using each lot's current stage."""
     total_source = sum(float(weight or 0) for _, _, weight in source_pairs)
     result = {
         "expected_net_outturn": None,
@@ -6432,12 +6510,6 @@ def _mhs_combined_expectations(source_pairs, actual_input, process_type):
         "expected_wugar_weight": None,
     }
     allocations = []
-    grade_totals = {k: 0.0 for k in (
-        "expected_aa_weight", "expected_ab_weight",
-        "expected_cpb_weight", "expected_wugar_weight"
-    )}
-    grade_seen = {k: False for k in grade_totals}
-
     if total_source <= 0 or actual_input <= 0:
         return result, allocations
 
@@ -6445,37 +6517,14 @@ def _mhs_combined_expectations(source_pairs, actual_input, process_type):
         source_weight = float(source_weight or 0)
         allocated = actual_input * source_weight / total_source
         allocations.append((lot.id, allocated))
-
-        # 8.8.1: post-hulling lots are allowed to continue to the next process
-        # without requiring a new analysis at every intermediate stage. Their
-        # latest physical weight is authoritative. If an analysis exists we
-        # still use it; otherwise the allocated physical input is the expected
-        # stage input/output baseline rather than leaving expectation fields null.
-        if analysis is None:
-            exp = {
-                "expected_net_outturn": 100.0,
-                "expected_clean_weight": allocated,
-                "expected_aa_weight": None,
-                "expected_ab_weight": None,
-                "expected_cpb_weight": None,
-                "expected_wugar_weight": None,
-            }
-        else:
-            exp = _mhs_production_expectations(lot, analysis, allocated, process_type)
-
-        result["expected_clean_weight"] += float(exp.get("expected_clean_weight") or 0)
-        for key in grade_totals:
-            if exp.get(key) is not None:
-                grade_seen[key] = True
-                grade_totals[key] += float(exp[key] or 0)
+        profile = _mhs_analysis_profile_for_lot(lot.company_id, lot, analysis)
+        stage_ot = _mhs_stage_expected_outturn(lot, profile, process_type)
+        result["expected_clean_weight"] += allocated * stage_ot / 100.0
 
     result["expected_net_outturn"] = (
         result["expected_clean_weight"] / actual_input * 100 if actual_input else None
     )
-    for key in grade_totals:
-        result[key] = grade_totals[key] if grade_seen[key] else None
     return result, allocations
-
 
 def _mhs_recalculate_combined_expectations(company_id, row, actual_input, process_type):
     items = _mhs_production_source_items(company_id, row.id)
@@ -6522,15 +6571,7 @@ def _mhs_production_source_label(company_id, row):
 
 
 def _mhs_production_expectations(lot, analysis, actual_input, process_type=None):
-    """
-    Version 8.4.3 expectation rule:
-    - Parchment + Hulling Only => use General Outturn.
-    - Parchment + Full Production => use Net Outturn.
-    - Other downstream processes use the latest physical input weight and the
-      most relevant available outturn; because the coffee has already been
-      reweighed before the stage, expected clean is based on that actual input.
-    - Non-parchment coffee keeps the previous Net Outturn expectation.
-    """
+    """Expected output based on the coffee's CURRENT production stage."""
     result = {
         "expected_net_outturn": None,
         "expected_clean_weight": None,
@@ -6539,32 +6580,61 @@ def _mhs_production_expectations(lot, analysis, actual_input, process_type=None)
         "expected_cpb_weight": None,
         "expected_wugar_weight": None,
     }
-    if not analysis:
-        return result
-
-    parchment = lot.coffee_type in {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}
-    net = float(analysis.net_outturn or 0)
-    general = float(analysis.general_outturn or 0)
-
-    if parchment and process_type == "Hulling Only":
-        expected_ot = general
-    else:
-        expected_ot = net
-
-    clean = actual_input * expected_ot / 100 if expected_ot else 0
-    result["expected_net_outturn"] = expected_ot
+    profile = _mhs_analysis_profile_for_lot(lot.company_id, lot, analysis)
+    stage_ot = _mhs_stage_expected_outturn(lot, profile, process_type)
+    clean = actual_input * stage_ot / 100 if stage_ot else 0
+    result["expected_net_outturn"] = stage_ot
     result["expected_clean_weight"] = clean
 
-    # Grade expectations only make sense for full parchment production where
-    # net outturn represents final clean coffee.
-    if parchment and process_type == "Full Production" and analysis.aa_percent is not None:
+    # Grade expectations remain available only where the direct analysis contains them.
+    parchment = lot.coffee_type in {"Parchment Cherries", "Wet Parchment", "Dry Parchment"}
+    if parchment and process_type == "Full Production" and analysis and analysis.aa_percent is not None:
         result["expected_aa_weight"] = clean * float(analysis.aa_percent or 0) / 100
         result["expected_ab_weight"] = clean * float(analysis.ab_percent or 0) / 100
         result["expected_cpb_weight"] = clean * float(analysis.cpb_percent or 0) / 100
         result["expected_wugar_weight"] = clean * float(analysis.wugar_percent or 0) / 100
-
     return result
 
+
+def _mhs_production_analysis_summary(company_id, row, source_items):
+    """Weighted General/Net analysis and current-stage expectation for reports."""
+    pairs = []
+    if source_items:
+        for item in source_items:
+            lot = MHSLot.query.filter_by(id=item.lot_id, company_id=company_id).first()
+            if not lot:
+                continue
+            analysis = (MHSAnalysis.query.filter_by(id=item.analysis_id, company_id=company_id).first()
+                        if item.analysis_id else None)
+            weight = float(item.allocated_input_weight or item.source_weight or 0)
+            pairs.append((lot, analysis, weight))
+    elif row.lot:
+        analysis = (MHSAnalysis.query.filter_by(id=row.analysis_id, company_id=company_id).first()
+                    if row.analysis_id else None)
+        pairs.append((row.lot, analysis, float(row.actual_input_weight or 0)))
+
+    total = sum(w for _, _, w in pairs if w > 0)
+    gen_sum = net_sum = gen_w = net_w = 0.0
+    expected_kg = 0.0
+    for lot, analysis, weight in pairs:
+        if weight <= 0:
+            continue
+        profile = _mhs_analysis_profile_for_lot(company_id, lot, analysis)
+        if profile["general"] > 0:
+            gen_sum += profile["general"] * weight; gen_w += weight
+        if profile["net"] > 0:
+            net_sum += profile["net"] * weight; net_w += weight
+        expected_kg += weight * _mhs_stage_expected_outturn(lot, profile, row.process_type) / 100.0
+    # Scale source-weight expectation to the physically confirmed production input.
+    expected_stage_ot = expected_kg / total * 100 if total else float(row.expected_net_outturn or 0)
+    expected_clean = float(row.actual_input_weight or 0) * expected_stage_ot / 100.0
+    return {
+        "weighted_general": gen_sum / gen_w if gen_w else None,
+        "weighted_net": net_sum / net_w if net_w else None,
+        "stage_outturn": expected_stage_ot,
+        "expected_clean": expected_clean,
+        "basis": "General Outturn (hulling)" if row.process_type == "Hulling Only" else "Net / post-hulling expectation",
+    }
 
 def _mhs_read_production_outputs(form):
     fields = [
@@ -7143,12 +7213,14 @@ def mhs_production_report(id):
     company = _require_mhs()
     row = MHSProduction.query.filter_by(id=id, company_id=company.id).first_or_404()
     source_items = _mhs_production_source_items(company.id, row.id)
+    analysis_summary = _mhs_production_analysis_summary(company.id, row, source_items)
     return render_template(
         "mhs_production_report.html",
         row=row,
         company=company,
         source_items=source_items,
         is_combined=bool(source_items),
+        analysis_summary=analysis_summary,
     )
 
 
