@@ -1,0 +1,9 @@
+Stancoff Version 8.9.1 - MHS Analysis Eligibility Cleanup
+
+- New Analysis selector now shows only active purchased coffee with positive available weight that has not entered production.
+- Purchased FAQ and purchased processed coffee remain eligible for first analysis before production.
+- Internally produced FAQ, graded, gravity-cleaned, color-sorted and other intermediate outputs do not return to Analysis; they inherit source analysis through production traceability.
+- Purchased lots disappear from new-analysis selection once used in single-lot or combined production.
+- Existing analysis history and reports are unchanged.
+- Server-side validation enforces the same rule even if a stale page is submitted.
+- No database schema change. No database reset required.

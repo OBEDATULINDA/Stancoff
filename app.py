@@ -6074,6 +6074,42 @@ def _mhs_purchase_volume_for_lot(company_id, lot_id):
     )
 
 
+def _mhs_lot_is_analysis_eligible(company_id, lot):
+    """Return True only for purchased coffee that has not yet entered production.
+
+    Purchased FAQ / processed coffee is intentionally eligible for its first analysis.
+    Internally produced FAQ/graded/intermediate coffee inherits source analysis and is
+    not offered again. Once any purchased lot enters production (single or combined),
+    it is removed from the new-analysis selector.
+    """
+    if not lot or lot.company_id != company_id or lot.status != "Active":
+        return False
+    if float(lot.current_weight or 0) <= 0:
+        return False
+    if lot.readiness in {"Needs Drying", "Drying", "In Production", "Consumed in Production"}:
+        return False
+
+    purchased = MHSPurchase.query.filter_by(
+        company_id=company_id, lot_id=lot.id, status="Active"
+    ).first()
+    if not purchased:
+        return False
+
+    direct_production = MHSProduction.query.filter_by(
+        company_id=company_id, lot_id=lot.id
+    ).first()
+    if direct_production:
+        return False
+
+    combined_source = MHSProductionLot.query.filter_by(
+        company_id=company_id, lot_id=lot.id
+    ).first()
+    if combined_source:
+        return False
+
+    return True
+
+
 @app.route("/mhs/analysis", methods=["GET", "POST"])
 @login_required
 def mhs_analysis():
@@ -6091,8 +6127,8 @@ def mhs_analysis():
         if not lot:
             flash("Select a valid Mothers Harvest lot.")
             return redirect(url_for("mhs_analysis"))
-        if lot.readiness in {"Needs Drying", "Drying"}:
-            flash("This lot must complete drying before analysis.")
+        if not _mhs_lot_is_analysis_eligible(company.id, lot):
+            flash("This lot is not available for a new analysis. Only purchased coffee that has not yet entered production can be selected; purchased FAQ/processed coffee remains eligible before its first production.")
             return redirect(url_for("mhs_analysis"))
         try:
             values = _mhs_analysis_values(request.form, lot)
@@ -6123,11 +6159,12 @@ def mhs_analysis():
     for analysis_row in rows:
         analysis_row.purchase_volume = _mhs_purchase_volume_for_lot(company.id, analysis_row.lot_id)
 
-    lots = MHSLot.query.filter(
+    candidate_lots = MHSLot.query.filter(
         MHSLot.company_id == company.id,
         MHSLot.status == "Active",
-        ~MHSLot.readiness.in_(["Needs Drying", "Drying"]),
+        MHSLot.current_weight > 0,
     ).order_by(MHSLot.lot_no).all()
+    lots = [lot for lot in candidate_lots if _mhs_lot_is_analysis_eligible(company.id, lot)]
     for analysis_lot in lots:
         analysis_lot.purchase_volume = _mhs_purchase_volume_for_lot(company.id, analysis_lot.id)
 
