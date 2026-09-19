@@ -90,7 +90,7 @@
       {% endif %}
 
       {% else %}
-      {% if active_company and active_company.code|lower == 'mhs' %}
+      {% if active_company and not active_company.is_legacy_stancoff and 'coffee_operations' in active_modules %}
       <a href="/mhs" class="{% if request.path=='/mhs' %}active{% endif %}">Dashboard</a>
       {% if current_role=='Admin' or current_is_super_admin %}
       <a href="/mhs/users" class="{% if request.path.startswith('/mhs/users') %}active{% endif %}">Users &amp; Access</a>
@@ -119,7 +119,7 @@
       </details>
       {% if current_role=='Admin' or current_is_super_admin %}
       <details class="nav-group" data-nav-group="mhs-admin" {% if request.path.startswith('/mhs/users') %}open{% endif %}>
-        <summary>Mothers Harvest administration</summary>
+        <summary>{{active_company.name}} administration</summary>
         <div class="nav-group-links">
           <a href="/mhs/users" class="{% if request.path.startswith('/mhs/users') %}active{% endif %}">Users &amp; Access</a>
         </div>

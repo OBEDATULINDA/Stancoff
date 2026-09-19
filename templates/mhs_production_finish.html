@@ -73,7 +73,7 @@
       <label>Triage after production<select name="triage_disposition"><option value="Inventory">Store in Inventory</option><option value="Repass">Send to Repass Queue</option></select></label>
       {% endif %}
 
-      <div class="mhs-form-section"><h3>Storage destination</h3><p>Completed output will enter the live Mothers Harvest inventory ledger at the actual finished weight.</p></div>
+      <div class="mhs-form-section"><h3>Storage destination</h3><p>Completed output will enter the live {{active_company.name}} inventory ledger at the actual finished weight.</p></div>
       <label>Station<input name="destination_station" value="{{row.destination_station or ''}}" placeholder="e.g. Main Factory"></label>
       <label>Warehouse<input name="destination_warehouse" value="{{row.destination_warehouse or ''}}" placeholder="e.g. Warehouse A"></label>
       <label class="mhs-span-2">Notes<textarea name="notes" rows="3">{{row.notes or ''}}</textarea></label>

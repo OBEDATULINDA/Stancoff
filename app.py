@@ -1354,8 +1354,9 @@ def company_dashboard():
         return redirect(url_for("company_select"))
     if company.is_legacy_stancoff:
         return redirect(url_for("dashboard"))
-    mhs_company = _mhs_company()
-    if mhs_company and company.id == mhs_company.id:
+    # Any non-legacy company with Coffee Operations enabled uses the same
+    # company-scoped Commercial Coffee ERP as Mothers Harvest.
+    if _company_has_commercial_coffee(company):
         return redirect(url_for("mhs_dashboard"))
 
     modules = enabled_company_modules(company.id)
@@ -5051,10 +5052,44 @@ def ensure_mhs_foundation():
     return company
 
 
+def _company_has_commercial_coffee(company):
+    """Return True when a non-legacy company uses the shared Commercial Coffee ERP."""
+    if not company or company.is_legacy_stancoff or company.status != "Active":
+        return False
+    return CompanyModule.query.filter_by(
+        company_id=company.id, module_key="coffee_operations", enabled=True
+    ).first() is not None
+
+
+def _ensure_commercial_company_defaults(company):
+    """Add only missing defaults for a commercial-coffee company; never reset data."""
+    defaults = {
+        "dry_parchment_ready_moisture": "13.5",
+        "drugar_ready_moisture": "13.5",
+    }
+    changed = False
+    for key, value in defaults.items():
+        row = MHSSetting.query.filter_by(company_id=company.id, setting_key=key).first()
+        if not row:
+            db.session.add(MHSSetting(
+                company_id=company.id, setting_key=key, setting_value=value
+            ))
+            changed = True
+    if changed:
+        db.session.commit()
+    try:
+        _mhs_seed_existing_completed_production_inventory(company)
+    except NameError:
+        pass
+
+
 def _require_mhs():
+    # Historical function name retained so all existing /mhs routes remain stable.
+    # The workspace is now reusable by any non-legacy company with Coffee Operations enabled.
     company = current_company()
-    if not company or company.is_legacy_stancoff or company.id != (_mhs_company().id if _mhs_company() else None):
+    if not _company_has_commercial_coffee(company):
         abort(403)
+    _ensure_commercial_company_defaults(company)
     return company
 
 
@@ -5093,6 +5128,9 @@ def _mhs_setting_float(company_id, key, default):
 
 
 def _mhs_next_code(model, company_id, field_name, prefix, width=4):
+    company = db.session.get(Company, company_id)
+    if company and (company.code or "").upper() != "MHS" and prefix.startswith("MHS"):
+        prefix = (company.code or "COM").upper() + prefix[3:]
     rows = model.query.filter_by(company_id=company_id).all()
     highest = 0
     pattern = re.compile(r"^" + re.escape(prefix) + r"(\d+)$")
@@ -5560,7 +5598,7 @@ def mhs_purchases():
         ).first()
         coffee_type = (request.form.get("coffee_type") or "").strip()
         if not supplier:
-            flash("Select an active Mothers Harvest supplier.")
+            flash("Select an active supplier for this company.")
             return redirect(url_for("mhs_purchases"))
         if coffee_type not in MHS_PURCHASE_TYPES:
             flash("Select a valid coffee type.")
@@ -5746,7 +5784,7 @@ def mhs_settings():
                 row.setting_value = str(value)
         db.session.commit()
         log_action("EDIT", "MHS Settings", company.id, "Updated moisture thresholds")
-        flash("Mothers Harvest moisture rules updated.")
+        flash("Moisture rules updated.")
         return redirect(url_for("mhs_settings"))
 
     return render_template(
@@ -5799,7 +5837,7 @@ def mhs_drying():
 
         lot = MHSLot.query.filter_by(id=lot_id, company_id=company.id, status="Active").first()
         if not lot:
-            flash("Select a valid Mothers Harvest lot.")
+            flash("Select a valid lot for this company.")
             return redirect(url_for("mhs_drying"))
         if input_weight <= 0 or input_weight > float(lot.current_weight or 0) + 0.0001:
             flash("Drying input must be above zero and cannot exceed the lot's current weight.")
@@ -6125,7 +6163,7 @@ def mhs_analysis():
             return redirect(url_for("mhs_analysis"))
         lot = MHSLot.query.filter_by(id=lot_id, company_id=company.id, status="Active").first()
         if not lot:
-            flash("Select a valid Mothers Harvest lot.")
+            flash("Select a valid lot for this company.")
             return redirect(url_for("mhs_analysis"))
         if not _mhs_lot_is_analysis_eligible(company.id, lot):
             flash("This lot is not available for a new analysis. Only purchased coffee that has not yet entered production can be selected; purchased FAQ/processed coffee remains eligible before its first production.")
@@ -7710,7 +7748,7 @@ def mhs_users():
             flash("Full name, username and password are required.")
             return redirect(url_for("mhs_users"))
         if role not in MHS_USER_ROLES:
-            flash("Select a valid Mothers Harvest role.")
+            flash("Select a valid company role.")
             return redirect(url_for("mhs_users"))
         if User.query.filter(func.lower(User.username) == username.lower()).first():
             flash("That username is already in use.")
@@ -7737,7 +7775,7 @@ def mhs_users():
         db.session.commit()
 
         log_action("CREATE", "MHS Users", user.id, f"{username} as {role}")
-        flash(f"{full_name} created with Mothers Harvest access only.")
+        flash(f"{full_name} created with company access only.")
         return redirect(url_for("mhs_users"))
 
     memberships = (
@@ -7776,7 +7814,7 @@ def mhs_user_edit(user_id):
             flash("Full name and username are required.")
             return redirect(url_for("mhs_user_edit", user_id=user_id))
         if role not in MHS_USER_ROLES:
-            flash("Select a valid Mothers Harvest role.")
+            flash("Select a valid company role.")
             return redirect(url_for("mhs_user_edit", user_id=user_id))
         if status not in {"Active", "Inactive"}:
             status = "Active"
@@ -7814,7 +7852,7 @@ def mhs_user_edit(user_id):
 
         db.session.commit()
         log_action("EDIT", "MHS Users", user.id, f"{user.username} as {role}; {status}")
-        flash("Mothers Harvest user updated.")
+        flash("Company user updated.")
         return redirect(url_for("mhs_users"))
 
     return render_template(
@@ -7841,7 +7879,7 @@ def mhs_user_toggle(user_id):
         flash("You cannot deactivate the account you are currently using.")
         return redirect(url_for("mhs_users"))
     if user_is_super_admin(user.id):
-        flash("System Administrator access cannot be disabled from the Mothers Harvest user screen.")
+        flash("System Administrator access cannot be disabled from this company user screen.")
         return redirect(url_for("mhs_users"))
 
     membership.status = "Inactive" if membership.status == "Active" else "Active"
@@ -7856,7 +7894,7 @@ def mhs_user_toggle(user_id):
 
     db.session.commit()
     log_action("UPDATE", "MHS Users", user.id, f"MHS access -> {membership.status}")
-    flash(f"{user.full_name}: Mothers Harvest access is now {membership.status}.")
+    flash(f"{user.full_name}: company access is now {membership.status}.")
     return redirect(url_for("mhs_users"))
 
 
@@ -7927,7 +7965,7 @@ def mhs_user_delete(user_id):
         db.session.delete(membership)
         db.session.commit()
         log_action("REVOKE", "MHS Users", user.id, f"Removed MHS access for {user.username}")
-        flash("Mothers Harvest access removed. The user still belongs to another company.")
+        flash("Company access removed. The user still belongs to another company.")
         return redirect(url_for("mhs_users"))
 
     username = user.username
@@ -7935,7 +7973,7 @@ def mhs_user_delete(user_id):
     db.session.delete(user)
     db.session.commit()
     log_action("DELETE", "MHS Users", user_id, username)
-    flash("Unused Mothers Harvest user deleted permanently.")
+    flash("Unused company user deleted permanently.")
     return redirect(url_for("mhs_users"))
 
 

@@ -1,0 +1,10 @@
+VERSION 8.10 - SHARED COMMERCIAL COFFEE WORKSPACE
+
+- Reuses the existing company-scoped Mothers Harvest commercial coffee ERP for any active non-legacy company with Coffee Operations enabled.
+- Stancoff Company Limited Commercial can now use the same dashboard, suppliers, purchases, lots, drying, analysis, production, FAQ workflow, inventory/movement, repass, settings, users/access and reports as Mothers Harvest.
+- All operational records remain separated by company_id.
+- Existing Mothers Harvest records are unchanged.
+- Existing legacy Stancoff Company Limited operations remain protected and unchanged.
+- Commercial-company screens display the selected company name instead of hard-coded Mothers Harvest wording.
+- Non-MHS commercial companies use their own company code in new supplier/lot/purchase/inventory identifiers where the old prefix was MHS.
+- No database reset and no destructive schema change.
