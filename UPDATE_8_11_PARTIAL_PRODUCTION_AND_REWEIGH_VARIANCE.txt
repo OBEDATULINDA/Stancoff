@@ -1,0 +1,23 @@
+STANCOFF VERSION 8.11 — PARTIAL PRODUCTION & REWEIGH VARIANCE
+
+Shared Commercial Coffee workspace (Mothers Harvest + Stancoff Commercial)
+
+What changed
+- Production load builder now has Quantity to Process for every selected source lot.
+- Full-lot production remains the default: each newly added lot starts with its full available weight.
+- Entering a smaller quantity creates a partial production run and preserves the unused source balance.
+- Confirmed Factory Input / Reweigh is separate from Quantity Selected.
+- Input variance = factory reweigh - quantity selected, preserving visibility of scale/handling losses or gains.
+- Source inventory is deducted by quantity selected, NOT by the factory reweigh.
+- Partial single-lot runs create a separate traceable production/output lot so the source remainder remains available.
+- Multi-lot runs can select a different partial quantity from each source lot.
+- Stage-aware expected outturn is calculated from the selected quantities and confirmed factory input.
+- Production report shows available-before, selected, allocated factory input, and remaining balance for each linked source.
+- Safe deletion restores linked source lot balances and prior inventory where applicable.
+
+Database
+- Additive only: mhs_production_lot.selected_weight FLOAT.
+- Existing data remains valid; legacy rows fall back to source_weight.
+- No database reset or migration of existing business records is required.
+
+Protected legacy Stancoff processing routes were not intentionally changed by this update.

@@ -35,11 +35,11 @@
 
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Analysed Lot</th><th>Coffee Type</th><th>State</th><th>Available Weight</th><th>Moisture</th><th></th></tr></thead>
+            <thead><tr><th>Analysed Lot</th><th>Coffee Type</th><th>State</th><th>Available Weight</th><th>Quantity to Process</th><th>Remaining</th><th>Moisture</th><th></th></tr></thead>
             <tbody id="selectedLotsBody">
-              <tr id="emptySelection"><td colspan="6" class="empty">No analysed lots added yet.</td></tr>
+              <tr id="emptySelection"><td colspan="8" class="empty">No analysed lots added yet.</td></tr>
             </tbody>
-            <tfoot><tr><th colspan="3">Combined Weight</th><th id="combinedWeightCell">0.00 kg</th><th colspan="2"></th></tr></tfoot>
+            <tfoot><tr><th colspan="3">Selected for Production</th><th></th><th id="combinedWeightCell">0.00 kg</th><th colspan="3"></th></tr></tfoot>
           </table>
         </div>
         <div id="hiddenLotInputs"></div>
@@ -49,21 +49,21 @@
         Parchment can only be combined with other parchment. FAQ and other post-hulling coffee states may be combined together for suitable further processing.
       </div>
 
-      <div class="mhs-form-section"><h3>2. Send the combined volume for processing</h3><p>Choose what will be done to the coffee you added above.</p></div>
+      <div class="mhs-form-section"><h3>2. Confirm the production intake</h3><p>Choose Full Lot or Partial Lot by changing the quantity beside each source. The factory reweigh is compared with the quantity selected, so handling/scale losses remain visible.</p></div>
       <label>Production date<input type="date" name="production_date" value="{{today}}" required></label>
       <label>Process
         <select name="process_type" required>
           {% for p in process_types %}<option value="{{p}}">{{p}}</option>{% endfor %}
         </select>
       </label>
-      <label>Combined available weight<input id="systemWeight" readonly placeholder="Add analysed lot(s)"></label>
-      <label>Actual weight sent for process (kg)<input type="number" step="0.01" min="0.01" name="actual_input_weight" id="actualInput" required></label>
+      <label>Selected quantity (system kg)<input id="systemWeight" readonly placeholder="Add analysed lot(s)"></label>
+      <label>Confirmed factory input / reweigh (kg)<input type="number" step="0.01" min="0.01" name="actual_input_weight" id="actualInput" required></label>
       <label>Weight difference<input id="weightDifference" readonly></label>
       <label>Difference %<input id="weightDifferencePct" readonly></label>
       <div class="mhs-span-all" id="differenceWarning" style="display:none;padding:12px 14px;border-radius:10px;background:#fff4e5;border:1px solid #e8c38b;color:#7a4d13;font-size:13px">
-        Actual weight sent differs from the combined available weight by 1% or more. Enter a reason.
+        Confirmed factory input differs from the quantity selected for production by 1% or more. Enter a reason.
       </div>
-      <label class="mhs-span-2">Reason for difference<textarea name="difference_reason" id="differenceReason" rows="2" placeholder="Scale correction, spillage, rebagging loss, etc."></textarea></label>
+      <label class="mhs-span-2">Reason for difference<textarea name="difference_reason" id="differenceReason" rows="2" placeholder="Scale difference, handling loss, spillage, rebagging, etc."></textarea></label>
       <label>Operator<input name="operator"></label>
       <label>Destination station<input name="destination_station" placeholder="e.g. Main Factory"></label>
       <label>Destination warehouse<input name="destination_warehouse" placeholder="e.g. Warehouse A"></label>
@@ -75,7 +75,7 @@
   <div class="mhs-card">
     <div class="mhs-card-header"><div><h2>Production records</h2><p>Each production record keeps the source analysed lot(s), combined input and selected process.</p></div></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Production</th><th>Actions</th><th>Date</th><th>Analysed source lot(s)</th><th>Production lot</th><th>Process</th><th>Combined kg</th><th>Actual input kg</th><th>Diff.</th><th>Clean output</th><th>Outturn</th><th>Status</th></tr></thead>
+      <thead><tr><th>Production</th><th>Actions</th><th>Date</th><th>Analysed source lot(s)</th><th>Production lot</th><th>Process</th><th>Selected kg</th><th>Factory input kg</th><th>Diff.</th><th>Clean output</th><th>Outturn</th><th>Status</th></tr></thead>
       <tbody>
       {% for r in rows %}
       <tr>
@@ -114,17 +114,24 @@
     const hasOther=vals.some(x=>!parchment.has(x.coffee));
     return !(hasParchment && hasOther);
   }
-  function total(){ return [...selected.values()].reduce((s,x)=>s+x.weight,0); }
+  function total(){ return [...selected.values()].reduce((s,x)=>s+x.quantity,0); }
   function render(){
     body.innerHTML=''; hidden.innerHTML='';
-    if(!selected.size){ body.innerHTML='<tr><td colspan="6" class="empty">No analysed lots added yet.</td></tr>'; }
+    if(!selected.size){ body.innerHTML='<tr><td colspan="8" class="empty">No analysed lots added yet.</td></tr>'; }
     selected.forEach((x,id)=>{
       const tr=document.createElement('tr');
-      tr.innerHTML='<td><strong>'+x.lot+'</strong></td><td>'+x.coffee+'</td><td>'+x.state+'</td><td>'+x.weight.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg</td><td>'+(x.moisture?x.moisture+'%':'—')+'</td><td><button type="button" class="small-button remove-lot" data-id="'+id+'">Remove</button></td>';
+      const remaining=Math.max(0,x.weight-x.quantity);
+      tr.innerHTML='<td><strong>'+x.lot+'</strong></td><td>'+x.coffee+'</td><td>'+x.state+'</td><td>'+x.weight.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg</td><td><input class="lot-quantity" data-id="'+id+'" type="number" min="0.01" max="'+x.weight+'" step="0.01" value="'+x.quantity.toFixed(2)+'" style="min-width:120px"></td><td>'+remaining.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg</td><td>'+(x.moisture?x.moisture+'%':'—')+'</td><td><button type="button" class="small-button remove-lot" data-id="'+id+'">Remove</button></td>';
       body.appendChild(tr);
       const input=document.createElement('input'); input.type='hidden'; input.name='lot_ids'; input.value=id; hidden.appendChild(input);
+      const qty=document.createElement('input'); qty.type='hidden'; qty.name='lot_quantity_'+id; qty.value=x.quantity.toFixed(2); qty.dataset.quantityFor=id; hidden.appendChild(qty);
     });
     body.querySelectorAll('.remove-lot').forEach(b=>b.addEventListener('click',()=>{ selected.delete(b.dataset.id); render(); }));
+    body.querySelectorAll('.lot-quantity').forEach(inp=>inp.addEventListener('input',()=>{
+      const x=selected.get(inp.dataset.id); if(!x) return;
+      let q=parseFloat(inp.value||0); if(q>x.weight) q=x.weight; if(q<0) q=0; x.quantity=q;
+      actual.dataset.auto='1'; render();
+    }));
     const t=total(); combinedCell.textContent=t.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg';
     system.value=selected.size?t.toFixed(2)+' kg':'';
     compat.style.display=compatible()?'none':'block';
@@ -135,7 +142,8 @@
   function addLot(){
     const opt=picker.options[picker.selectedIndex]; if(!opt || !opt.value) return;
     if(selected.has(opt.value)){ picker.value=''; return; }
-    selected.set(opt.value,{lot:opt.dataset.lot,weight:parseFloat(opt.dataset.weight)||0,coffee:opt.dataset.coffee||'',state:opt.dataset.state||'',moisture:opt.dataset.moisture||''});
+    const w=parseFloat(opt.dataset.weight)||0;
+    selected.set(opt.value,{lot:opt.dataset.lot,weight:w,quantity:w,coffee:opt.dataset.coffee||'',state:opt.dataset.state||'',moisture:opt.dataset.moisture||''});
     picker.value=''; render();
   }
   function updateDifference(){

@@ -330,6 +330,9 @@ class MHSProductionLot(db.Model):
     lot_id = db.Column(db.Integer, db.ForeignKey("mhs_lot.id"), nullable=False)
     analysis_id = db.Column(db.Integer, db.ForeignKey("mhs_analysis.id"))
     source_weight = db.Column(db.Float, nullable=False, default=0)
+    # Amount deliberately taken from this source lot for this production run.
+    # source_weight remains the pre-production available balance for audit/restore.
+    selected_weight = db.Column(db.Float)
     allocated_input_weight = db.Column(db.Float, nullable=False, default=0)
     source_moisture = db.Column(db.Float)
     source_coffee_type = db.Column(db.String(50), nullable=False)
@@ -1196,6 +1199,12 @@ def ensure_multistation_schema():
     # Relax only that legacy constraint; this is additive/safe and preserves data.
     if "mhs_production_lot" in table_names:
         production_lot_columns = {c["name"]: c for c in inspector.get_columns("mhs_production_lot")}
+        # Version 8.11: partial production. Keep the original source balance and
+        # separately record the quantity deliberately selected for processing.
+        if "selected_weight" not in production_lot_columns:
+            db.session.execute(text("ALTER TABLE mhs_production_lot ADD COLUMN selected_weight FLOAT"))
+            db.session.commit()
+            production_lot_columns = {c["name"]: c for c in inspector.get_columns("mhs_production_lot")}
         analysis_col = production_lot_columns.get("analysis_id")
         if analysis_col and analysis_col.get("nullable") is False and db.engine.dialect.name == "postgresql":
             db.session.execute(text("ALTER TABLE mhs_production_lot ALTER COLUMN analysis_id DROP NOT NULL"))
@@ -6355,21 +6364,56 @@ def _mhs_production_output_map(row):
 
 
 def _mhs_consume_prior_inventory_for_production(company_id, row, lot, source_items):
-    """Consume intermediate inventory entering a new production stage so only the new physical output remains live."""
-    lot_ids = [item.lot_id for item in source_items] if source_items else [lot.id]
-    for source_lot_id in lot_ids:
+    """Reduce prior live inventory by the quantity deliberately selected for production.
+
+    The factory reweigh is kept separately on row.actual_input_weight, so any scale/handling
+    variance remains visible instead of silently changing the source inventory deduction.
+    """
+    if source_items:
+        requirements = []
+        for item in source_items:
+            selected = float(item.selected_weight if item.selected_weight is not None else item.source_weight or 0)
+            requirements.append((item.lot_id, selected))
+    else:
+        # Legacy/single full-lot records created before partial production support.
+        requirements = [(lot.id, float(row.expected_input_weight or row.source_lot_weight or 0))]
+
+    for source_lot_id, required in requirements:
+        remaining = max(0.0, required)
         stocks = MHSInventoryStock.query.filter(
             MHSInventoryStock.company_id == company_id,
             MHSInventoryStock.lot_id == source_lot_id,
             MHSInventoryStock.current_weight > 0,
             MHSInventoryStock.status.in_(["Active", "Repass Queue"]),
-        ).all()
+        ).order_by(MHSInventoryStock.id).all()
         for stock in stocks:
-            # Reject inventory is never a normal production input; it belongs to Repass.
-            if stock.product in {"Blacks", "Triage"}:
+            if stock.product in {"Blacks", "Triage"} or remaining <= 0:
                 continue
-            stock.current_weight = 0
-            stock.status = "Consumed in Production"
+            available = float(stock.current_weight or 0)
+            take = min(available, remaining)
+            stock.current_weight = max(0.0, available - take)
+            remaining -= take
+            if stock.current_weight <= 0.000001:
+                stock.current_weight = 0
+                stock.status = "Consumed in Production"
+
+
+def _mhs_restore_prior_inventory_after_deleted_production(company_id, row, source_items):
+    """Restore source inventory consumed by a completed linked-source production when safely deleted."""
+    if row.status != "Completed" or not source_items:
+        return
+    for item in source_items:
+        selected = float(item.selected_weight if item.selected_weight is not None else item.source_weight or 0)
+        if selected <= 0:
+            continue
+        stock = (MHSInventoryStock.query
+                 .filter(MHSInventoryStock.company_id == company_id,
+                         MHSInventoryStock.lot_id == item.lot_id,
+                         MHSInventoryStock.production_id != row.id)
+                 .order_by(MHSInventoryStock.id.desc()).first())
+        if stock and stock.product not in {"Blacks", "Triage"}:
+            stock.current_weight = float(stock.current_weight or 0) + selected
+            stock.status = "Active"
 
 
 def _mhs_production_inventory_has_movement(company_id, production_id):
@@ -6608,7 +6652,7 @@ def _mhs_recalculate_combined_expectations(company_id, row, actual_input, proces
         lot = MHSLot.query.filter_by(id=item.lot_id, company_id=company_id).first()
         analysis = MHSAnalysis.query.filter_by(id=item.analysis_id, company_id=company_id).first() if item.analysis_id else None
         if lot:
-            source_pairs.append((lot, analysis, float(item.source_weight or 0)))
+            source_pairs.append((lot, analysis, float(item.selected_weight if item.selected_weight is not None else item.source_weight or 0)))
     expectations, allocations = _mhs_combined_expectations(source_pairs, actual_input, process_type)
     allocation_map = dict(allocations)
     for item in items:
@@ -6630,11 +6674,17 @@ def _mhs_restore_combined_source_lots(company_id, row):
 
 
 def _mhs_mark_combined_sources_consumed(company_id, row):
+    # Source balances are reduced when production is opened. On completion we only
+    # finalise readiness: a partial source remains available; a fully used source is consumed.
     for item in _mhs_production_source_items(company_id, row.id):
         lot = MHSLot.query.filter_by(id=item.lot_id, company_id=company_id).first()
         if lot:
-            lot.current_weight = 0
-            lot.readiness = "Consumed in Production"
+            if float(lot.current_weight or 0) > 0.000001:
+                lot.readiness = item.source_readiness or "Ready for Production"
+                lot.status = "Active"
+            else:
+                lot.current_weight = 0
+                lot.readiness = "Consumed in Production"
 
 
 def _mhs_production_source_label(company_id, row):
@@ -6852,8 +6902,18 @@ def mhs_production():
             if _mhs_lot_in_open_production(company.id, lot.id):
                 flash(f"{lot.lot_no} already belongs to an open production record.")
                 return redirect(url_for("mhs_production"))
+            available_weight = float(lot.current_weight or 0)
+            raw_selected = request.form.get(f"lot_quantity_{lot.id}")
+            try:
+                selected_weight = float(raw_selected) if raw_selected not in (None, "") else available_weight
+            except (TypeError, ValueError):
+                flash(f"Enter a valid quantity to process for {lot.lot_no}.")
+                return redirect(url_for("mhs_production"))
+            if selected_weight <= 0 or selected_weight > available_weight + 0.000001:
+                flash(f"Quantity to process for {lot.lot_no} must be above zero and cannot exceed {available_weight:,.2f} kg available.")
+                return redirect(url_for("mhs_production"))
             source_lots.append(lot)
-            source_pairs.append((lot, analysis, float(lot.current_weight or 0)))
+            source_pairs.append((lot, analysis, selected_weight))
 
         if any(float(lot.current_weight or 0) <= 0 for lot in source_lots):
             flash("Every selected lot must have an available weight above zero.")
@@ -6872,7 +6932,9 @@ def mhs_production():
             flash("Hulling Only is for parchment. FAQ and other post-hulling coffee must use a downstream process.")
             return redirect(url_for("mhs_production"))
 
-        expected = sum(float(lot.current_weight or 0) for lot in source_lots)
+        # Expected intake is the amount deliberately selected from storage, not the
+        # whole available lot. The factory reweigh is compared against this selected amount.
+        expected = sum(float(weight or 0) for _, _, weight in source_pairs)
         difference = actual_input - expected
         diff_pct = (difference / expected * 100) if expected else 0
         reason = (request.form.get("difference_reason") or "").strip() or None
@@ -6880,7 +6942,13 @@ def mhs_production():
             flash("The reweighed input differs from the combined system weight by 1% or more. Enter the reason for the difference.")
             return redirect(url_for("mhs_production"))
 
-        is_combined = len(source_lots) > 1
+        is_partial = any(
+            float(selected or 0) < float(lot.current_weight or 0) - 0.000001
+            for lot, _, selected in source_pairs
+        )
+        # Partial single-lot runs use the traceable output-lot path too, so the unused
+        # source balance remains intact while production output gets its own lot.
+        is_combined = len(source_lots) > 1 or is_partial
         if not is_combined:
             lot = source_lots[0]
             analysis = source_pairs[0][1]
@@ -6935,14 +7003,15 @@ def mhs_production():
             common_type = "FAQ"
             common_state = "Post-Hulling / Combined for Further Processing"
         total_source_weight = expected
+        selected_by_lot = {lot.id: float(weight or 0) for lot, _, weight in source_pairs}
         weighted_moisture_weight = sum(
-            float(lot.current_weight or 0)
+            selected_by_lot.get(lot.id, 0.0)
             for lot in source_lots if lot.current_moisture is not None
         )
         combined_moisture = None
         if weighted_moisture_weight:
             combined_moisture = sum(
-                float(lot.current_weight or 0) * float(lot.current_moisture or 0)
+                selected_by_lot.get(lot.id, 0.0) * float(lot.current_moisture or 0)
                 for lot in source_lots if lot.current_moisture is not None
             ) / weighted_moisture_weight
 
@@ -7004,20 +7073,22 @@ def mhs_production():
             return redirect(url_for("mhs_production"))
 
         allocation_map = dict(allocations)
-        for lot, analysis, source_weight in source_pairs:
+        for lot, analysis, selected_weight in source_pairs:
+            original_available = float(lot.current_weight or 0)
             db.session.add(MHSProductionLot(
                 company_id=company.id,
                 production_id=row.id,
                 lot_id=lot.id,
                 analysis_id=analysis.id if analysis else None,
-                source_weight=float(source_weight or 0),
+                source_weight=original_available,
+                selected_weight=float(selected_weight or 0),
                 allocated_input_weight=float(allocation_map.get(lot.id, 0)),
                 source_moisture=lot.current_moisture,
                 source_coffee_type=lot.coffee_type,
                 source_coffee_state=lot.coffee_state,
                 source_readiness=lot.readiness,
             ))
-            lot.current_weight = 0
+            lot.current_weight = max(0.0, original_available - float(selected_weight or 0))
             lot.readiness = "In Production"
 
         try:
@@ -7031,7 +7102,7 @@ def mhs_production():
         log_action("CREATE", "MHS Combined Production", row.id, f"{row.production_no} / {source_names} -> {combined_lot.lot_no}")
         flash(
             f"{row.production_no} opened from {len(source_lots)} lots. "
-            f"Combined input: {actual_input:,.2f} kg; output lot: {combined_lot.lot_no}."
+            f"Selected for production: {expected:,.2f} kg; factory input: {actual_input:,.2f} kg; output lot: {combined_lot.lot_no}."
         )
         return redirect(url_for("mhs_production_finish", id=row.id))
 
@@ -7253,6 +7324,7 @@ def mhs_production_delete(id):
             flash("This production stock has inventory adjustments and cannot be deleted until they are corrected.")
             return redirect(url_for("mhs_production"))
 
+    _mhs_restore_prior_inventory_after_deleted_production(company.id, row, source_items)
     for stock in MHSInventoryStock.query.filter_by(company_id=company.id, production_id=row.id).all():
         db.session.delete(stock)
 
