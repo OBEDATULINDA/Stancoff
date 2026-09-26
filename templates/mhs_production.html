@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block page_title %}{{active_company.name}} Production{% endblock %}
-{% block page_subtitle %}Build a full-lot or partial production load from one or more analysed lots · Version 8.11.1{% endblock %}
+{% block page_subtitle %}Build a full-lot or partial production load from one or more analysed lots · Version 8.11.2{% endblock %}
 {% block content %}
 <div class="mhs-page">
   <div class="mhs-hero">
@@ -9,7 +9,7 @@
       <h2>Build the coffee volume to process</h2>
       <p>Add one analysed lot, then add another if required. The system combines their available weights before you send the total volume for hulling, grading, gravity table, color sorting or full production.</p>
     </div>
-    <span class="mhs-badge">Commercial Production · 8.11.1</span>
+    <span class="mhs-badge">Commercial Production · 8.11.2</span>
   </div>
 
   <div class="mhs-card">
@@ -136,17 +136,44 @@
     selected.forEach((x,id)=>{
       const tr=document.createElement('tr');
       const remaining=Math.max(0,x.weight-x.quantity);
-      tr.innerHTML='<td><strong>'+x.lot+'</strong></td><td>'+x.coffee+'</td><td>'+x.state+'</td><td>'+x.weight.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg</td><td><input class="lot-quantity" data-id="'+id+'" type="number" min="0.01" max="'+x.weight+'" step="0.01" value="'+x.quantity.toFixed(2)+'" style="min-width:120px" '+(modeFull.checked?'disabled':'')+'></td><td>'+remaining.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg</td><td>'+(x.moisture?x.moisture+'%':'—')+'</td><td><button type="button" class="small-button remove-lot" data-id="'+id+'">Remove</button></td>';
+      tr.innerHTML='<td><strong>'+x.lot+'</strong></td><td>'+x.coffee+'</td><td>'+x.state+'</td><td>'+x.weight.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg</td><td><input class="lot-quantity" data-id="'+id+'" type="number" min="0.01" max="'+x.weight+'" step="0.01" value="'+x.quantity.toFixed(2)+'" style="min-width:120px" '+(modeFull.checked?'disabled':'')+'></td><td class="remaining-weight">'+remaining.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg</td><td>'+(x.moisture?x.moisture+'%':'—')+'</td><td><button type="button" class="small-button remove-lot" data-id="'+id+'">Remove</button></td>';
       body.appendChild(tr);
       const input=document.createElement('input'); input.type='hidden'; input.name='lot_ids'; input.value=id; hidden.appendChild(input);
       const qty=document.createElement('input'); qty.type='hidden'; qty.name='lot_quantity_'+id; qty.value=x.quantity.toFixed(2); qty.dataset.quantityFor=id; hidden.appendChild(qty);
     });
     body.querySelectorAll('.remove-lot').forEach(b=>b.addEventListener('click',()=>{ selected.delete(b.dataset.id); render(); }));
-    body.querySelectorAll('.lot-quantity').forEach(inp=>inp.addEventListener('input',()=>{
-      const x=selected.get(inp.dataset.id); if(!x) return;
-      let q=parseFloat(inp.value||0); if(q>x.weight) q=x.weight; if(q<0) q=0; x.quantity=q;
-      actual.dataset.auto='1'; render();
-    }));
+    body.querySelectorAll('.lot-quantity').forEach(inp=>{
+      // Do not call render() while the operator is typing. Rebuilding the table on
+      // every keystroke replaces the active input element and makes partial weights
+      // effectively impossible to enter. Update the row/totals in place instead.
+      inp.addEventListener('input',()=>{
+        const x=selected.get(inp.dataset.id); if(!x) return;
+        const raw=inp.value;
+        let q=parseFloat(raw);
+        if(Number.isNaN(q)) q=0;
+        if(q>x.weight) q=x.weight;
+        if(q<0) q=0;
+        x.quantity=q;
+
+        const hiddenQty=hidden.querySelector('[data-quantity-for="'+inp.dataset.id+'"]');
+        if(hiddenQty) hiddenQty.value=q ? q.toFixed(2) : '';
+        const remainingCell=inp.closest('tr').querySelector('.remaining-weight');
+        if(remainingCell){
+          const remaining=Math.max(0,x.weight-q);
+          remainingCell.textContent=remaining.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg';
+        }
+        const t=total();
+        combinedCell.textContent=t.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg';
+        system.value=selected.size?t.toFixed(2)+' kg':'';
+        if(actual.dataset.auto==='1'){ actual.value=t ? t.toFixed(2) : ''; }
+        updateDifference();
+      });
+      inp.addEventListener('blur',()=>{
+        const x=selected.get(inp.dataset.id); if(!x) return;
+        if(x.quantity<=0){ inp.value=''; return; }
+        inp.value=x.quantity.toFixed(2);
+      });
+    });
     const t=total(); combinedCell.textContent=t.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' kg';
     system.value=selected.size?t.toFixed(2)+' kg':'';
     compat.style.display=compatible()?'none':'block';

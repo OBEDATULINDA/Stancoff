@@ -1,0 +1,9 @@
+STANCOFF VERSION 8.11.2 — PARTIAL QUANTITY INPUT FIX
+
+- Fixes the Production Entry Quantity to Process field under Partial Production.
+- The table is no longer rebuilt on every keystroke while entering a partial quantity.
+- Remaining weight, selected quantity, factory reweigh variance and variance percentage update live.
+- Full Lot behaviour is unchanged.
+- Backend validation and source-lot balance rules from 8.11/8.11.1 are unchanged.
+- Applies to the shared Commercial Coffee workflow (Mothers Harvest and Stancoff Commercial).
+- No database reset or schema change is required.
