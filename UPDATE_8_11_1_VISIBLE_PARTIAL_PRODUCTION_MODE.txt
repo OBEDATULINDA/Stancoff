@@ -1,0 +1,9 @@
+STANCOFF VERSION 8.11.1 — VISIBLE PARTIAL PRODUCTION MODE
+
+- Adds an explicit Full Lot / Partial Production choice to Commercial Coffee Production Entry.
+- Full Lot locks source quantities to the complete available balance.
+- Partial Production enables Quantity to Process per selected source lot and shows remaining balance.
+- Factory reweigh remains separate from selected quantity so input/reweigh variance remains traceable.
+- Backend treats Full Lot as authoritative even if a stale browser submits a smaller hidden quantity.
+- Applies to the shared Commercial Coffee workspace used by Mothers Harvest and Stancoff Commercial.
+- No database reset or new schema change is required beyond Version 8.11.

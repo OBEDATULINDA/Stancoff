@@ -6903,9 +6903,12 @@ def mhs_production():
                 flash(f"{lot.lot_no} already belongs to an open production record.")
                 return redirect(url_for("mhs_production"))
             available_weight = float(lot.current_weight or 0)
+            production_mode = (request.form.get("production_mode") or "full").strip().lower()
             raw_selected = request.form.get(f"lot_quantity_{lot.id}")
             try:
-                selected_weight = float(raw_selected) if raw_selected not in (None, "") else available_weight
+                # Full Lot is authoritative: use the complete currently available balance.
+                # Partial Production uses the operator-entered quantity for each source lot.
+                selected_weight = available_weight if production_mode != "partial" else (float(raw_selected) if raw_selected not in (None, "") else available_weight)
             except (TypeError, ValueError):
                 flash(f"Enter a valid quantity to process for {lot.lot_no}.")
                 return redirect(url_for("mhs_production"))
