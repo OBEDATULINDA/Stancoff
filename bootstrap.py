@@ -101,7 +101,7 @@ def inventory_reconcile():
 
 
 def fixed_station_transfers():
-    """Use the operator-entered actual loading weight as the dispatch deduction."""
+    """Use actual loading weight, allowing normal scale variance up to 50 kg."""
     if request.method != 'POST':
         return _original_station_transfers()
 
@@ -139,11 +139,17 @@ def fixed_station_transfers():
 
             loading_weight = float(weights[index] or 0)
             system_available = float(source.weight or 0)
-            if loading_weight <= 0 or loading_weight > system_available + 0.0001:
-                raise ValueError(f'Line {index + 1}: actual loading weight must be above zero and cannot exceed {system_available:,.2f} kg available.')
+            variance = loading_weight - system_available
+            if loading_weight <= 0:
+                raise ValueError(f'Line {index + 1}: actual loading weight must be above zero.')
+            if variance > 50.0001:
+                raise ValueError(
+                    f'Line {index + 1}: actual loading weight is {variance:,.2f} kg above the system balance. '
+                    'Differences above 50 kg are flagged and cannot be dispatched until inventory is checked.'
+                )
             moisture = float(moistures[index]) if moistures[index] else source.moisture
             bag_count = int(bags[index]) if bags[index] else None
-            prepared.append((source, destination, loading_weight, system_available, moisture, bag_count))
+            prepared.append((source, destination, loading_weight, system_available, moisture, bag_count, variance))
 
         document = stancoff.StationTransferDocument(
             transfer_no=stancoff.next_code(stancoff.StationTransferDocument, 'transfer_no', 'TRF', 6),
@@ -158,8 +164,10 @@ def fixed_station_transfers():
         stancoff.db.session.flush()
 
         total_weight = 0
-        for source, destination, loading_weight, system_available, moisture, bag_count in prepared:
-            # Actual scale/loading weight is what physically leaves inventory.
+        variance_notes = []
+        for source, destination, loading_weight, system_available, moisture, bag_count, variance in prepared:
+            # Actual scale/loading weight is authoritative. If it is up to 50 kg above
+            # the recorded balance, consume the full system balance and record the variance.
             source.weight = max(0, system_available - loading_weight)
             movement = stancoff.CoffeeMovement(
                 movement_no=stancoff.next_code(stancoff.CoffeeMovement, 'movement_no', 'MOV', 6),
@@ -177,11 +185,18 @@ def fixed_station_transfers():
             if batch:
                 batch.status = 'Transferred to ' + destination.station.name
             total_weight += loading_weight
+            if variance > 0.0001:
+                variance_notes.append(f'{source.batch.batch_no if source.batch else source.batch_id} {source.grade}: +{variance:,.2f} kg')
 
         stancoff.db.session.commit()
-        stancoff.log_action('CREATE', 'Station Transfer', document.id,
-                            f'{document.transfer_no}: {len(prepared)} lines, actual loaded {total_weight:,.2f} kg')
-        flash(f'{document.transfer_no} dispatched. Actual loading weight {total_weight:,.2f} kg was deducted from source inventory.')
+        detail = f'{document.transfer_no}: {len(prepared)} lines, actual loaded {total_weight:,.2f} kg'
+        if variance_notes:
+            detail += '; accepted scale variance ' + ', '.join(variance_notes)
+        stancoff.log_action('CREATE', 'Station Transfer', document.id, detail)
+        if variance_notes:
+            flash(f'{document.transfer_no} dispatched. Actual loading weight {total_weight:,.2f} kg recorded. Accepted warehouse variance: ' + ', '.join(variance_notes) + '.')
+        else:
+            flash(f'{document.transfer_no} dispatched. Actual loading weight {total_weight:,.2f} kg was deducted from source inventory.')
         return redirect(url_for('station_transfer_document_print', id=document.id))
     except (ValueError, TypeError) as exc:
         stancoff.db.session.rollback()
