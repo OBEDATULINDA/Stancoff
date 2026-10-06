@@ -10,7 +10,7 @@
 <label>Supplier<select name="supplier_id"><option value="">All suppliers</option>{% for s in suppliers %}<option value="{{s.id}}" {% if filters.get('supplier_id')==s.id|string %}selected{% endif %}>{{s.code}} · {{s.name}}</option>{% endfor %}</select></label>
 <label>Batch<select name="batch_id"><option value="">All batches</option>{% for b in batches %}<option value="{{b.id}}" {% if filters.get('batch_id')==b.id|string %}selected{% endif %}>{{b.batch_no}}</option>{% endfor %}</select></label>
 <label>Process<select name="process_type"><option value="">All processes</option>{% for p in ['Natural','Washed'] %}<option value="{{p}}" {% if filters.get('process_type')==p %}selected{% endif %}>{{p}}</option>{% endfor %}</select></label>
-<div class="form-wide"><button class="primary-button">Apply filters</button> <a class="secondary-button" href="/reports/purchases">Clear</a> <a class="secondary-button" href="/reports/purchases/download.csv?{{request.query_string.decode()}}">Download CSV</a></div>
+<div class="form-wide"><button class="primary-button">Apply filters</button> <a class="secondary-button" href="/reports/purchases">Clear</a> <a class="secondary-button" href="/reports/purchases/download.xlsx?{{request.query_string.decode()}}">Download Excel</a></div>
 </form>
 <section class="mhs-kpis" style="margin-top:18px">
 <div class="mhs-kpi"><small>Purchases</small><strong>{{rows|length}}</strong></div>
@@ -20,7 +20,7 @@
 </section>
 <section class="panel" style="margin-top:18px"><div class="table-scroll"><table>
 <thead><tr><th>Date</th><th>Batch</th><th>Supplier</th><th>Process</th><th>Good kg</th><th>Floaters kg</th><th>Total kg</th><th>Cherry price/kg</th><th>Floater price/kg</th><th>Amount paid</th></tr></thead><tbody>
-{% for r in rows %}{% set qty=(r.good_weight or 0)+(r.floaters_weight or 0) %}<tr><td>{{r.purchase_date}}</td><td><strong>{{r.batch.batch_no}}</strong></td><td>{{r.supplier.code}} · {{r.supplier.name}}</td><td>{{r.batch.process_type}}</td><td>{{'{:,.2f}'.format(r.good_weight or 0)}}</td><td>{{'{:,.2f}'.format(r.floaters_weight or 0)}}</td><td>{{'{:,.2f}'.format(qty)}}</td><td>UGX {{'{:,.0f}'.format(r.cherry_price or 0)}}</td><td>UGX {{'{:,.0f}'.format(r.floaters_price or 0)}}</td><td><strong>UGX {{'{:,.0f}'.format(r.total_amount or 0)}}</strong></td></tr>
+{% for r in rows %}{% set qty=(r.good_weight or 0)+(r.floaters_weight or 0) %}<tr><td>{{r.purchase_date}}</td><td><strong>{{r.batch.batch_no}}</strong></td><td>{{r.supplier.code}} · {{r.supplier.name}}</td><td>{{r.batch.process_type}}</td><td>{{'{:,.2f}'.format(r.good_weight or 0)}}</td><td>{{'{:,.2f}'.format(r.floaters_weight or 0)}}</td><td>{{'{:,.2f}'.format(qty)}}</td><td>UGX {{'{:,.0f}'.format(r.cherry_price or 0)}}</td><td>UGX {{'{:,.0f}'.format(r.floater_price or 0)}}</td><td><strong>UGX {{'{:,.0f}'.format(r.total_amount or 0)}}</strong></td></tr>
 {% else %}<tr><td colspan="10" class="empty">No purchases match the selected filters.</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endblock %}
