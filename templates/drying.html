@@ -79,7 +79,14 @@
           <form method="post" action="{{ url_for('drying_void', id=r.id) }}" class="inline-void" onsubmit="return confirm('Void this drying record?')">
             <input name="void_reason" placeholder="Reason" required><button class="small-button danger">Void</button>
           </form>
-          {% else %}<small>{{ r.void_reason }}</small>{% endif %}
+          {% else %}
+          <small>{{ r.void_reason }}</small>
+          {% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
+          <form method="post" action="{{ url_for('drying_unvoid', id=r.id) }}" style="display:inline" onsubmit="return confirm('Restore this voided drying record? Existing inventory and movement history will be preserved.')">
+            <button class="small-button">Unvoid</button>
+          </form>
+          {% endif %}
+          {% endif %}
         </td>
       </tr>
       {% else %}<tr><td colspan="12" class="empty">No drying records yet.</td></tr>{% endfor %}
