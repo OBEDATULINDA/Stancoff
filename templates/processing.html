@@ -73,7 +73,14 @@
           <form method="post" action="{{ url_for('processing_void', id=r.id) }}" class="inline-void" onsubmit="return confirm('Void this processing record?')">
             <input name="void_reason" placeholder="Reason" required><button class="small-button danger">Void</button>
           </form>
-          {% else %}<small>{{ r.void_reason }}</small>{% endif %}
+          {% else %}
+          <small>{{ r.void_reason }}</small>
+          {% if current_role in ['Admin','Manager','Processing Supervisor'] %}
+          <form method="post" action="{{ url_for('processing_unvoid', id=r.id) }}" style="display:inline" onsubmit="return confirm('Restore this voided processing record?')">
+            <button class="small-button">Unvoid</button>
+          </form>
+          {% endif %}
+          {% endif %}
         </td>
       </tr>
       {% else %}<tr><td colspan="12" class="empty">No processing records yet.</td></tr>{% endfor %}
