@@ -280,3 +280,46 @@ def processing_unvoid(id):
     stancoff.log_action('UNVOID', 'Processing', record.id, record.processing_no)
     flash(f'{record.processing_no} restored successfully. You can now open Edit if any processing details need changing.')
     return redirect(url_for('processing'))
+
+
+@app.route('/drying/<int:id>/unvoid', methods=['POST'])
+@stancoff.permission_required('drying')
+def drying_unvoid(id):
+    row = stancoff.Drying.query.get_or_404(id)
+    if row.status != 'Voided':
+        flash('This drying record is already active.')
+        return redirect(url_for('drying'))
+
+    if not row.processing or row.processing.status != 'Active':
+        flash('Restore the linked processing record first before restoring this drying record.')
+        return redirect(url_for('drying'))
+
+    conflict = stancoff.Drying.query.filter(
+        stancoff.Drying.processing_id == row.processing_id,
+        stancoff.Drying.grade == row.grade,
+        stancoff.Drying.status == 'Active',
+        stancoff.Drying.id != row.id,
+    ).first()
+    if conflict:
+        flash(f'Cannot restore {row.drying_no}: {row.grade} already has active drying record {conflict.drying_no}.')
+        return redirect(url_for('drying'))
+
+    # Voiding drying does not remove its stock/movement history, so restoring
+    # must reactivate the same record only. Never recreate inventory here.
+    row.status = 'Active'
+    row.void_reason = None
+    stancoff.refresh_drying_completion(row)
+    if row.batch:
+        if row.drying_status == 'Completed':
+            has_final = stancoff.CoffeeStock.query.join(stancoff.Location).filter(
+                stancoff.CoffeeStock.drying_id == row.id,
+                stancoff.CoffeeStock.weight > 0.0001,
+                stancoff.Location.location_type == 'Final Warehouse',
+            ).first()
+            row.batch.status = 'Stored' if has_final else 'Temporary Storage'
+        else:
+            row.batch.status = 'Drying'
+    stancoff.db.session.commit()
+    stancoff.log_action('UNVOID', 'Drying', row.id, row.drying_no)
+    flash(f'{row.drying_no} restored successfully. Existing inventory and movement history were preserved.')
+    return redirect(url_for('drying'))
