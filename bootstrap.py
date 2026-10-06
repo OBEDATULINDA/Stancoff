@@ -243,3 +243,40 @@ def station_transfer_actual_loading_dispatch():
         app.logger.exception('Station transfer actual-loading dispatch failed')
         flash('The station transfer could not be saved. No inventory was changed.')
         return redirect(url_for('station_transfers'))
+
+
+@app.route('/processing/<int:id>/unvoid', methods=['POST'])
+@stancoff.permission_required('processing')
+def processing_unvoid(id):
+    record = stancoff.Processing.query.get_or_404(id)
+    if record.status != 'Voided':
+        flash('This processing record is already active.')
+        return redirect(url_for('processing'))
+
+    # A restored processing record must not conflict with another active
+    # processing record for the same batch.
+    other = stancoff.Processing.query.filter(
+        stancoff.Processing.batch_id == record.batch_id,
+        stancoff.Processing.status == 'Active',
+        stancoff.Processing.id != record.id,
+    ).first()
+    if other:
+        flash(f'Cannot restore {record.processing_no}: this batch already has active processing record {other.processing_no}.')
+        return redirect(url_for('processing'))
+
+    # Normally drying has to be voided before processing can be voided, but
+    # retain this guard for older records/data corrections.
+    active_drying = stancoff.Drying.query.filter_by(processing_id=record.id, status='Active').first()
+    if active_drying:
+        flash('Cannot restore this processing record while an active drying record is linked to it.')
+        return redirect(url_for('processing'))
+
+    record.status = 'Active'
+    record.void_reason = None
+    batch = stancoff.db.session.get(stancoff.Batch, record.batch_id)
+    if batch and batch.status == 'Open':
+        batch.status = 'Processing'
+    stancoff.db.session.commit()
+    stancoff.log_action('UNVOID', 'Processing', record.id, record.processing_no)
+    flash(f'{record.processing_no} restored successfully. You can now open Edit if any processing details need changing.')
+    return redirect(url_for('processing'))
