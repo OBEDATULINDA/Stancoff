@@ -215,7 +215,7 @@ def station_transfer_actual_loading_dispatch():
             ))
             batch = stancoff.db.session.get(stancoff.Batch, source.batch_id)
             if batch:
-                batch.status = 'Transferred to ' + destination.station.name
+                batch.status = 'Transferred'  # Full destination is recorded on the transfer document.
             total_weight += actual_weight
             variances.append(variance)
             if abs(variance) > 50.0001:
