@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Reports · Stancoff{% endblock %}
+{% block page_title %}Reports{% endblock %}
+{% block page_subtitle %}Select a report, apply filters, and download Excel{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-heading"><div><span class="eyebrow">Reporting centre</span><h2>Download an Excel report</h2></div></div>
+  <form method="get" action="{{ url_for('report_center_excel') }}" class="processing-form" id="reportForm">
+    <label>Report type
+      <select name="report_type" id="reportType" required>
+        {% for kind in kinds %}<option value="{{kind}}" {% if kind == selected %}selected{% endif %}>{{ {'purchase':'Purchase report','processing':'Processing report','production':'Production report (drying output)'}[kind] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>From date<input type="date" name="from_date" value="{{filters.get('from_date','')}}"></label>
+    <label>To date<input type="date" name="to_date" value="{{filters.get('to_date','')}}"></label>
+    <label>Batch
+      <select name="batch_id"><option value="">All batches</option>
+        {% for b in batches %}<option value="{{b.id}}" {% if filters.get('batch_id') == b.id|string %}selected{% endif %}>{{b.batch_no}}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Process type
+      <select name="process_type"><option value="">All process types</option>
+        {% for p in process_types %}<option value="{{p}}" {% if filters.get('process_type') == p %}selected{% endif %}>{{p}}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="purchase-only">Supplier
+      <select name="supplier_id"><option value="">All suppliers</option>
+        {% for supplier in suppliers %}<option value="{{supplier.id}}" {% if filters.get('supplier_id') == supplier.id|string %}selected{% endif %}>{{supplier.name}}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="nonpurchase-only">Station
+      <select name="station_id"><option value="">All stations</option>
+        {% for station in stations %}<option value="{{station.id}}" {% if filters.get('station_id') == station.id|string %}selected{% endif %}>{{station.name}}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="production-only">Grade
+      <select name="grade"><option value="">All grades</option><option>Grade A</option><option>Grade B</option><option>Grade C</option></select>
+    </label>
+    <div class="form-wide"><button class="primary-button" type="submit">Download Excel</button></div>
+  </form>
+  <p><small>Only active records are included. Production refers to drying output by grade. Processing uses the existing detailed processed-coffee Excel report.</small></p>
+</section>
+<script>
+(function(){
+ const select=document.getElementById('reportType');
+ function update(){
+  const kind=select.value;
+  document.querySelectorAll('.purchase-only').forEach(e=>{e.style.display=kind==='purchase'?'':'none';e.querySelector('select').disabled=kind!=='purchase'});
+  document.querySelectorAll('.nonpurchase-only').forEach(e=>{e.style.display=kind==='purchase'?'none':'';e.querySelector('select').disabled=kind==='purchase'});
+  document.querySelectorAll('.production-only').forEach(e=>{e.style.display=kind==='production'?'':'none';e.querySelector('select').disabled=kind!=='production'});
+ }
+ select.addEventListener('change',update);update();
+})();
+</script>
+{% endblock %}
