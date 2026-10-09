@@ -42,7 +42,6 @@
           <a href="/suppliers" class="{% if request.path.startswith('/suppliers') %}active{% endif %}">Suppliers</a>
           <a href="/batches" class="{% if request.path.startswith('/batches') %}active{% endif %}">Batches</a>
           <a href="/purchases" class="{% if request.path.startswith('/purchases') %}active{% endif %}">Purchases</a>
-          <a href="/reports/purchases" class="{% if request.path.startswith('/reports/purchases') %}active{% endif %}">Purchase Reports</a>
           {% endif %}
           {% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
           <a href="/processing" class="{% if request.path.startswith('/processing') %}active{% endif %}">Processing</a>
@@ -58,13 +57,11 @@
           {% if current_role in ['Admin','Manager'] %}
           <a href="/prices" class="{% if request.path.startswith('/prices') %}active{% endif %}">Price history</a>
           {% endif %}
-          {% if 'reports' in active_modules and current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
-          <a href="/reports/processing" class="{% if request.path.startswith('/reports/processing') %}active{% endif %}">Processing Reports</a>
-          {% endif %}
         </div>
       </details>
       {% endif %}
 
+      <a href="/reports" class="{% if request.path.startswith('/reports') %}active{% endif %}">Reports</a>
       {% set workforce_open = request.path.startswith('/casuals') or request.path.startswith('/casual-rates') or request.path.startswith('/attendance') or request.path.startswith('/payments') or request.path.startswith('/advances') %}
       {% if 'workforce' in active_modules and current_role in ['Admin','Manager','Payroll Officer'] %}
       <details class="nav-group" data-nav-group="workforce" {% if workforce_open %}open{% endif %}>
