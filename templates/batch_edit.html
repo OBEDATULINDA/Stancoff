@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block content %}
+<h2>Edit Batch {{ batch.batch_no }}</h2>
+<p><a href="{{ url_for('batch_detail', batch_id=batch.id) }}">← Back to batch details</a></p>
+<p>The batch number is retained to keep all linked purchases and production records connected.</p>
+<form method="post" class="form">
+<label>Batch number <input value="{{ batch.batch_no }}" disabled></label>
+<label>Batch date <input type="date" name="batch_date" value="{{ batch.batch_date.isoformat() }}" required></label>
+<label>Processing method <select name="process_type">
+{% for option in ['Natural','Washed','Other'] %}<option value="{{ option }}" {% if batch.process_type == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+</select></label>
+<label>Status <select name="status">
+{% for option in ['Open','Processing','Drying','Closed'] %}<option value="{{ option }}" {% if batch.status == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+</select></label>
+<label>Notes <textarea name="notes" rows="3">{{ batch.notes or '' }}</textarea></label>
+<button type="submit">Save Changes</button>
+</form>
+{% endblock %}
