@@ -2058,6 +2058,53 @@ def batches():
     return render_template("batches.html", rows=Batch.query.order_by(Batch.id.desc()).all(),
                            next_batch=next_code(Batch,"batch_no","STA",3))
 
+@app.route("/batches/<int:batch_id>")
+@permission_required("batches")
+def batch_detail(batch_id):
+    batch = db.get_or_404(Batch, batch_id)
+    purchases = Purchase.query.filter_by(batch_id=batch.id).order_by(Purchase.purchase_date.desc(), Purchase.id.desc()).all()
+    processing = Processing.query.filter_by(batch_id=batch.id).order_by(Processing.processing_date.desc()).all()
+    drying = Drying.query.filter_by(batch_id=batch.id).order_by(Drying.start_date.desc()).all()
+    stocks = CoffeeStock.query.filter_by(batch_id=batch.id).order_by(CoffeeStock.id.desc()).all()
+    movements = CoffeeMovement.query.filter_by(batch_id=batch.id).order_by(CoffeeMovement.movement_date.desc()).all()
+    active_purchases = [p for p in purchases if p.status != "Voided"]
+    return render_template(
+        "batch_detail.html", batch=batch, purchases=purchases, processing=processing,
+        drying=drying, stocks=stocks, movements=movements,
+        gross_weight=sum(p.gross_weight or 0 for p in active_purchases),
+        good_weight=sum(p.good_weight or 0 for p in active_purchases),
+        floaters_weight=sum(p.floaters_weight or 0 for p in active_purchases),
+        purchase_total=sum(p.total_amount or 0 for p in active_purchases),
+    )
+
+
+@app.route("/batches/<int:batch_id>/edit", methods=["GET", "POST"])
+@permission_required("batches")
+def batch_edit(batch_id):
+    batch = db.get_or_404(Batch, batch_id)
+    if request.method == "POST":
+        try:
+            date = datetime.strptime(request.form.get("batch_date", ""), "%Y-%m-%d").date()
+        except ValueError:
+            flash("Enter a valid batch date.")
+            return redirect(url_for("batch_edit", batch_id=batch.id))
+        process_type = request.form.get("process_type", "").strip()
+        status = request.form.get("status", "").strip()
+        if process_type not in {"Natural", "Washed", "Other"} or status not in {"Open", "Processing", "Drying", "Closed"}:
+            flash("Choose a valid process type and status.")
+            return redirect(url_for("batch_edit", batch_id=batch.id))
+        previous = f"date={batch.batch_date}, process={batch.process_type}, status={batch.status}, notes={batch.notes or ''}"
+        batch.batch_date = date
+        batch.process_type = process_type
+        batch.status = status
+        batch.notes = request.form.get("notes", "").strip()
+        db.session.commit()
+        log_action("UPDATE", "Batches", batch.id, details=f"Before: {previous}; after: date={date}, process={process_type}, status={status}")
+        flash("Batch updated successfully. Related records have been preserved.")
+        return redirect(url_for("batch_detail", batch_id=batch.id))
+    return render_template("batch_edit.html", batch=batch)
+
+
 @app.route("/purchases", methods=["GET","POST"])
 @permission_required("purchases")
 def purchases():
