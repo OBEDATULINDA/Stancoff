@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block content %}
+<h2>Batch {{ batch.batch_no }}</h2>
+<p><a href="{{ url_for('batches') }}">← All batches</a> | <a href="{{ url_for('batch_edit', batch_id=batch.id) }}">Edit batch</a></p>
+<h3>Batch information</h3>
+<table><tr><th>Date</th><th>Process</th><th>Status</th><th>Notes</th></tr>
+<tr><td>{{ batch.batch_date }}</td><td>{{ batch.process_type }}</td><td>{{ batch.status }}</td><td>{{ batch.notes or '—' }}</td></tr></table>
+<h3>Purchase summary (excluding voided purchases)</h3>
+<table><tr><th>Suppliers</th><th>Gross kg</th><th>Good kg</th><th>Floaters kg</th><th>Purchase value (UGX)</th></tr>
+<tr><td>{{ purchases | selectattr('status', 'ne', 'Voided') | map(attribute='supplier_id') | unique | list | length }}</td><td>{{ '%.2f'|format(gross_weight) }}</td><td>{{ '%.2f'|format(good_weight) }}</td><td>{{ '%.2f'|format(floaters_weight) }}</td><td>{{ '{:,.0f}'.format(purchase_total) }}</td></tr></table>
+<h3>Supplier purchases</h3>
+<table><tr><th>Receipt</th><th>Date</th><th>Supplier</th><th>Gross kg</th><th>Floaters kg</th><th>Good kg</th><th>Price/kg</th><th>Total UGX</th><th>Status</th></tr>
+{% for p in purchases %}<tr><td>{{ p.receipt_no }}</td><td>{{ p.purchase_date }}</td><td>{{ p.supplier.name if p.supplier else p.supplier_id }}</td><td>{{ p.gross_weight }}</td><td>{{ p.floaters_weight }}</td><td>{{ p.good_weight }}</td><td>{{ p.cherry_price }}</td><td>{{ '{:,.0f}'.format(p.total_amount or 0) }}</td><td>{{ p.status }}</td></tr>
+{% else %}<tr><td colspan="9">No purchases recorded for this batch.</td></tr>{% endfor %}</table>
+<h3>Processing</h3>
+<table><tr><th>Production #</th><th>Date</th><th>Input kg</th><th>Grade A kg</th><th>Grade B kg</th><th>Grade C kg</th><th>Loss kg</th><th>Out-turn %</th><th>Status</th></tr>
+{% for p in processing %}<tr><td>{{ p.processing_no }}</td><td>{{ p.processing_date }}</td><td>{{ p.input_weight }}</td><td>{{ p.grade_a_weight }}</td><td>{{ p.grade_b_weight }}</td><td>{{ p.grade_c_weight }}</td><td>{{ p.processing_loss }}</td><td>{{ p.outturn_percent }}</td><td>{{ p.status }}</td></tr>
+{% else %}<tr><td colspan="9">No processing recorded.</td></tr>{% endfor %}</table>
+<h3>Drying records</h3>
+<table><tr><th>Drying #</th><th>Grade</th><th>Start</th><th>End</th><th>Input kg</th><th>Dry kg</th><th>Moisture %</th><th>Out-turn %</th><th>Status</th></tr>
+{% for d in drying %}<tr><td>{{ d.drying_no }}</td><td>{{ d.grade }}</td><td>{{ d.start_date }}</td><td>{{ d.end_date or '—' }}</td><td>{{ d.input_weight }}</td><td>{{ d.dry_weight if d.dry_weight is not none else '—' }}</td><td>{{ d.moisture if d.moisture is not none else '—' }}</td><td>{{ d.outturn_percent }}</td><td>{{ d.status }}</td></tr>
+{% else %}<tr><td colspan="9">No drying records.</td></tr>{% endfor %}</table>
+<h3>Current inventory</h3>
+<table><tr><th>Grade</th><th>Location</th><th>Weight kg</th><th>Moisture %</th><th>Status</th></tr>
+{% for st in stocks %}<tr><td>{{ st.grade }}</td><td>{{ st.location.name if st.location else '—' }}</td><td>{{ st.weight }}</td><td>{{ st.moisture if st.moisture is not none else '—' }}</td><td>{{ st.stock_status }}</td></tr>
+{% else %}<tr><td colspan="5">No inventory recorded.</td></tr>{% endfor %}</table>
+<h3>Inventory movements</h3>
+<table><tr><th>Movement #</th><th>Date</th><th>Grade</th><th>Weight kg</th><th>From</th><th>To</th><th>Type</th><th>Status</th></tr>
+{% for m in movements %}<tr><td>{{ m.movement_no }}</td><td>{{ m.movement_date }}</td><td>{{ m.grade }}</td><td>{{ m.weight }}</td><td>{{ m.from_location.name if m.from_location else '—' }}</td><td>{{ m.to_location.name if m.to_location else '—' }}</td><td>{{ m.movement_type }}</td><td>{{ m.status }}</td></tr>
+{% else %}<tr><td colspan="8">No inventory movements recorded.</td></tr>{% endfor %}</table>
+{% endblock %}
