@@ -1,3 +1,19 @@
-{% extends "base.html" %}{% block content %}<h2>Batches</h2><form method=post class=form><input name=batch_no value="{{next_batch}}" required><input type=date name=batch_date required>
-<select name=process_type><option>Natural</option><option>Washed</option><option>Other</option></select><select name=status><option>Open</option><option>Processing</option><option>Drying</option><option>Closed</option></select><input name=notes placeholder=Notes><button>Save</button></form>
-<table><tr><th>Batch</th><th>Date</th><th>Process</th><th>Status</th></tr>{% for r in rows %}<tr><td>{{r.batch_no}}</td><td>{{r.batch_date}}</td><td>{{r.process_type}}</td><td>{{r.status}}</td></tr>{% endfor %}</table>{% endblock %}
+{% extends "base.html" %}{% block content %}
+<h2>Batches</h2>
+<form method="post" class="form">
+  <input name="batch_no" value="{{ next_batch }}" required aria-label="Batch number">
+  <input type="date" name="batch_date" required aria-label="Batch date">
+  <select name="process_type"><option>Natural</option><option>Washed</option><option>Other</option></select>
+  <select name="status"><option>Open</option><option>Processing</option><option>Drying</option><option>Closed</option></select>
+  <input name="notes" placeholder="Notes">
+  <button>Save</button>
+</form>
+<p>Click any batch number to view all its records or correct its details.</p>
+<table>
+<tr><th>Batch</th><th>Date</th><th>Process</th><th>Status</th><th>Actions</th></tr>
+{% for r in rows %}
+<tr><td><a href="{{ url_for('batch_detail', batch_id=r.id) }}"><strong>{{ r.batch_no }}</strong></a></td><td>{{ r.batch_date }}</td><td>{{ r.process_type }}</td><td>{{ r.status }}</td>
+<td><a href="{{ url_for('batch_detail', batch_id=r.id) }}">View</a> | <a href="{{ url_for('batch_edit', batch_id=r.id) }}">Edit</a></td></tr>
+{% endfor %}
+</table>
+{% endblock %}
