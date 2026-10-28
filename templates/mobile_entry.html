@@ -2,9 +2,17 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#173f35"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="manifest" href="/static/manifest.json"><title>Stancoff Mobile Entry</title>
 <style>
 :root{font-family:Inter,system-ui,-apple-system,Arial,sans-serif;color:#17372e;background:#f5f7f5}*{box-sizing:border-box}body{margin:0;font-size:15px}a{text-decoration:none}header{background:linear-gradient(145deg,#12382f,#1c6650);color:white;padding:20px 20px 42px;border-radius:0 0 26px 26px}header a{color:#d9f3e6;font-size:13px;font-weight:600}header h1{font-size:28px;letter-spacing:-.8px;margin:22px 0 5px}header div{color:#cbe4d7;font-size:14px}main{max-width:640px;margin:-22px auto 0;position:relative;padding:0 14px 90px}.card{background:white;border:1px solid #e3eae6;border-radius:19px;padding:19px;margin-bottom:14px;box-shadow:0 8px 26px #143e3010}h2{font-size:18px;margin:0 0 15px;letter-spacing:-.3px}label{display:block;font-size:13px;font-weight:700;margin:15px 0 6px;color:#31564a}input,select,textarea{display:block;width:100%;min-height:50px;border:1px solid #d2dfd7;border-radius:11px;padding:11px 13px;font:inherit;background:#fbfcfb;color:#17372e;outline:none}input:focus,select:focus,textarea:focus{border-color:#167758;box-shadow:0 0 0 3px #17785820}button,.link{display:block;text-align:center;width:100%;background:#176b50;color:white;border:0;border-radius:12px;padding:15px 12px;font:inherit;font-weight:700;text-decoration:none;margin-top:16px;cursor:pointer}.link{background:#f1f6f3;color:#235d49;border:1px solid #e1ebe4;font-size:13px;padding:17px 6px;min-height:64px;display:flex;align-items:center;justify-content:center}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.grid a{margin:0}.muted{color:#6b8277;font-size:13px;line-height:1.5}.calc{background:#ecf7f0;color:#165b43;padding:16px;border-radius:12px;margin-top:17px;font-weight:750;line-height:1.5}details summary{cursor:pointer;font-weight:750;font-size:18px;list-style:none;letter-spacing:-.3px}details summary::-webkit-details-marker{display:none}details summary::after{content:'＋';float:right;color:#176b50}details[open] summary::after{content:'−'}details summary{margin-bottom:10px}small{font-weight:400}.card:first-child{border:1px solid #d8e7df}button:active,.link:active{transform:scale(.99)}a:focus-visible,button:focus-visible{outline:3px solid #e7bd63;outline-offset:2px}@media(min-width:700px){header{text-align:center}main{padding-top:6px}}
-</style></head><body>
+ .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{background:#f4f8f5;border-radius:12px;padding:13px;min-width:0}.stat span{display:block;color:#698074;font-size:12px;margin-bottom:7px}.stat strong{font-size:19px;letter-spacing:-.5px;overflow-wrap:anywhere}.stat small{font-size:11px}.section-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.eyebrow{font-size:11px;color:#668476}h3{font-size:14px;margin:20px 0 8px}.activity{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid #edf0ee;padding:11px 0;font-size:13px}.activity small{display:block;color:#71887c;margin-top:4px}.activity b{white-space:nowrap}.secondary{background:#eaf3ed;color:#236448}.transfer-row{padding:10px 0 18px;border-bottom:1px solid #e3ebe6}.transfer-row+.transfer-row{margin-top:12px} </style></head><body>
 <header><a href="/">← Full ERP</a><h1>Good day, welcome back.</h1><div>Stancoff · Coffee operations workspace</div></header>
 <main>
+<div class="card"><div class="section-head"><h2>Operations overview</h2><span class="eyebrow">Live ERP figures</span></div><div class="stats">
+<div class="stat"><span>Purchased today</span><strong>{{ "{:,.0f}".format(today_kg) }} <small>kg</small></strong></div>
+<div class="stat"><span>Purchase value today</span><strong>UGX {{ "{:,.0f}".format(today_spend) }}</strong></div>
+<div class="stat"><span>Current stock</span><strong>{{ "{:,.0f}".format(stock_kg) }} <small>kg</small></strong></div>
+<div class="stat"><span>Open batches</span><strong>{{open_batches}}</strong></div>
+<div class="stat"><span>Active drying</span><strong>{{active_drying}}</strong></div>
+<div class="stat"><span>Transfers in transit</span><strong>{{pending_transfers}}</strong></div></div>
+<h3>Recent purchases</h3>{% for p in recent_purchases %}<div class="activity"><span><strong>{{p.batch.batch_no}}</strong><small>{{p.supplier.name}} · {{p.purchase_date}}</small></span><b>{{"{:,.1f}".format(p.good_weight)}} kg</b></div>{% else %}<p class="muted">No recent purchases.</p>{% endfor %}</div>
 <div class="card"><h2>Quick access</h2><div class="grid">
 {% if can_batch %}<a class="link" href="/batches">All batches</a>{% endif %}
 {% if can_purchase %}<a class="link" href="/purchases">Purchases history</a>{% endif %}
@@ -40,10 +48,64 @@
 <button type="submit">Create batch in ERP</button>
 </form></details></div>
 {% endif %}
+{% if can_processing %}
+<div class="card"><details><summary>Record processing</summary><p class="muted">Sort cherries into Grade A (red), B (yellow) and C (green).</p>
+<form method="post" action="/processing" id="mobileProcessing">
+<label>Processing date<input type="date" name="processing_date" value="{{today}}" required></label>
+<label>Station<select name="station_id" required><option value="">Select station</option>{% for s in stations %}<option value="{{s.id}}">{{s.name}}</option>{% endfor %}</select></label>
+<label>Batch<select name="batch_id" required><option value="">Select batch</option>{% for b in batches %}<option value="{{b.id}}">{{b.batch_no}}</option>{% endfor %}</select></label>
+<label>Weight entering sorting (kg)<input type="number" name="input_weight" step=".01" min=".01" inputmode="decimal" required></label>
+<label>Grade A — Red (kg)<input type="number" name="grade_a_weight" step=".01" min="0" value="0" required></label>
+<label>Grade B — Yellow (kg)<input type="number" name="grade_b_weight" step=".01" min="0" value="0" required></label>
+<label>Grade C — Green (kg)<input type="number" name="grade_c_weight" step=".01" min="0" value="0" required></label>
+<label>Moisture (%)<input type="number" name="moisture" step=".01" min="0" max="100"></label>
+<label>Processed by<input name="processed_by"></label><label>Notes<textarea name="notes" rows="2"></textarea></label>
+<div class="calc" id="processingCalc">Total sorted: 0 kg · Loss: 0 kg</div><button>Save processing record</button></form></details></div>
+{% endif %}
+{% if can_drying %}
+<div class="card"><details><summary>Record drying</summary><p class="muted">Start drying a processed grade. To finish drying and move stock, use the existing finish-drying workflow.</p>
+<form method="post" action="/drying" id="mobileDrying">
+<label>Processed batch<select name="processing_id" required><option value="">Select processed batch</option>{% for p in processes %}<option value="{{p.id}}" data-station="{{p.station_id or ''}}">{{p.batch.batch_no}} · {{p.processing_no}}</option>{% endfor %}</select></label>
+<label>Grade<select name="grade" required><option value="">Select grade</option><option>Grade A</option><option>Grade B</option><option>Grade C</option></select></label>
+<div class="muted" id="gradeAvailable">Choose a processed batch and grade to see available weight.</div>
+<label>Start date<input type="date" name="start_date" value="{{today}}" required></label>
+<label>End date (optional)<input type="date" name="end_date"></label>
+<label>Weight entering drying (kg)<input type="number" name="input_weight" step=".01" min=".01" required></label>
+<label>Dry weight (kg, if measured)<input type="number" name="dry_weight" step=".01" min="0"></label>
+<label>Moisture (%)<input type="number" name="moisture" step=".01" min="0" max="100"></label>
+<label>Drying area<select name="drying_location_id" required><option value="">Select drying area</option>{% for l in drying_locations %}<option value="{{l.id}}" data-station="{{l.station_id}}">{{l.station.name}} / {{l.name}}</option>{% endfor %}</select></label>
+<label>Dried by<input name="dried_by"></label><label>Notes<textarea name="notes" rows="2"></textarea></label>
+<div class="calc" id="dryingCalc">Enter weights to see drying loss.</div><button>Save drying record</button></form></details></div>
+{% endif %}
+{% if can_transfers %}
+<div class="card"><details><summary>Station transfer</summary><p class="muted">Dispatch coffee using the actual loading weight. Add multiple coffee lines for one vehicle.</p>
+<form method="post" action="/station-transfers" id="mobileTransfer">
+<div id="transferRows"><div class="transfer-row">
+<label>Coffee balance<select name="source_stock_id[]" class="source-stock" required><option value="">Choose coffee</option>{% for s in stocks %}<option value="{{s.id}}" data-station="{{s.location.station_id}}" data-weight="{{s.weight}}">{{s.batch.batch_no}} · {{s.grade}} · {{s.location.station.name}} / {{s.location.name}} · {{"{:,.2f}".format(s.weight)}} kg</option>{% endfor %}</select></label>
+<label>Receiving location<select name="to_location_id[]" class="destination" required><option value="">Choose destination</option>{% for l in destinations %}<option value="{{l.id}}" data-station="{{l.station_id}}">{{l.station.name}} / {{l.name}}</option>{% endfor %}</select></label>
+<label>Actual loading weight (kg)<input name="weight[]" class="transfer-weight" type="number" min=".01" step=".01" required></label>
+<label>Moisture (%)<input name="moisture[]" type="number" min="0" max="100" step=".01"></label>
+<label>Bags<input name="number_of_bags[]" type="number" min="0" step="1"></label>
+<button type="button" class="remove-transfer secondary">Remove this line</button></div></div>
+<button type="button" class="secondary" id="addTransferLine">+ Add coffee line</button>
+<label>Transfer date<input name="transfer_date" type="date" value="{{today}}" required></label>
+<label>Vehicle registration<input name="vehicle_no"></label>
+<label>Driver name<input name="driver_name"></label>
+<label>Driver phone<input name="driver_phone" type="tel"></label>
+<label>Dispatch time<input name="dispatch_time" type="time"></label>
+<label>Expected arrival<input name="arrival_time" type="time"></label>
+<label>Dispatched by<input name="dispatched_by"></label>
+<label>Authorized by<input name="authorized_by"></label>
+<label>Remarks<textarea name="remarks" rows="2"></textarea></label>
+<div class="calc" id="transferCalc">Total loading: 0 kg</div><button>Save transfer and open document</button></form></details></div>
+{% endif %}
 <div class="card"><h2>Use on your Android phone</h2><p class="muted">In Chrome, open the browser menu and select “Add to Home screen” or “Install app”. Internet is required to save records.</p></div>
 </main>
 <script>
 const form=document.getElementById('purchase');
 if(form){const update=()=>{const get=n=>Number(form.elements[n].value||0),gross=get('gross_weight'),floats=get('floaters_weight'),good=Math.max(0,gross-floats),bought=form.elements.floaters_bought.value==='Yes',total=good*get('cherry_price')+(bought?floats*get('floater_price'):0);document.getElementById('estimate').textContent='Good cherry: '+good.toFixed(2)+' kg · Total: UGX '+Math.round(total).toLocaleString();form.elements.floater_price.disabled=!bought};form.addEventListener('input',update);form.addEventListener('change',update);form.addEventListener('submit',e=>{if(getComputedStyle(form).display==='none')return;const gross=Number(form.elements.gross_weight.value),floats=Number(form.elements.floaters_weight.value);if(floats>gross){e.preventDefault();alert('Floaters cannot exceed gross weight.');return}if(!confirm('Save this purchase to Stancoff ERP?'))e.preventDefault()});update()}
+const proc=document.getElementById('mobileProcessing');if(proc){const calculate=()=>{const n=x=>Number(proc.elements[x].value||0),total=n('grade_a_weight')+n('grade_b_weight')+n('grade_c_weight'),loss=n('input_weight')-total;document.getElementById('processingCalc').textContent='Total sorted: '+total.toFixed(2)+' kg · Loss: '+loss.toFixed(2)+' kg'};proc.addEventListener('input',calculate);proc.addEventListener('submit',e=>{const n=x=>Number(proc.elements[x].value||0);if(n('grade_a_weight')+n('grade_b_weight')+n('grade_c_weight')>n('input_weight')){e.preventDefault();alert('Grade weights cannot exceed the input weight.')}else if(!confirm('Save processing to ERP?'))e.preventDefault()});calculate()}
+const drying=document.getElementById('mobileDrying');if(drying){const weights={{grade_weights|tojson}},process=drying.elements.processing_id,grade=drying.elements.grade,area=drying.elements.drying_location_id,options=Array.from(area.options);const refresh=()=>{const max=Number((weights[process.value]||{})[grade.value]||0),station=process.selectedOptions[0]?.dataset.station;document.getElementById('gradeAvailable').textContent='Available sorted weight: '+max.toFixed(2)+' kg';Array.from(area.options).forEach(o=>{if(o.value)o.hidden=!!station&&o.dataset.station!==station});if(area.selectedOptions[0]?.hidden)area.value='';const wet=Number(drying.elements.input_weight.value||0),dry=drying.elements.dry_weight.value;document.getElementById('dryingCalc').textContent=dry===''?'Drying in progress':'Drying loss: '+(wet-Number(dry)).toFixed(2)+' kg'};drying.addEventListener('change',refresh);drying.addEventListener('input',refresh);drying.addEventListener('submit',e=>{const max=Number((weights[process.value]||{})[grade.value]||0),wet=Number(drying.elements.input_weight.value||0),dry=drying.elements.dry_weight.value;if(wet>max||wet<=0||(dry!==''&&Number(dry)>wet)){e.preventDefault();alert('Check drying weights against available grade weight.')}else if(!confirm('Save drying record to ERP?'))e.preventDefault()});refresh()}
+const transfer=document.getElementById('mobileTransfer');if(transfer){const rows=document.getElementById('transferRows'),first=rows.querySelector('.transfer-row');const refresh=()=>{let total=0;rows.querySelectorAll('.transfer-weight').forEach(x=>total+=Number(x.value||0));document.getElementById('transferCalc').textContent='Total loading: '+total.toFixed(2)+' kg'};const bind=row=>{const source=row.querySelector('.source-stock'),destination=row.querySelector('.destination'),weight=row.querySelector('.transfer-weight');source.addEventListener('change',()=>{const option=source.selectedOptions[0];if(option?.dataset.weight)weight.value=Number(option.dataset.weight).toFixed(2);Array.from(destination.options).forEach(o=>{if(o.value)o.hidden=o.dataset.station===option?.dataset.station});if(destination.selectedOptions[0]?.hidden)destination.value='';refresh()});row.querySelector('.remove-transfer').addEventListener('click',()=>{if(rows.children.length>1){row.remove();refresh()}});weight.addEventListener('input',refresh)};bind(first);document.getElementById('addTransferLine').addEventListener('click',()=>{const row=first.cloneNode(true);row.querySelectorAll('input,select').forEach(x=>x.value='');row.querySelectorAll('option').forEach(x=>x.hidden=false);rows.appendChild(row);bind(row)});transfer.addEventListener('submit',e=>{const seen=new Set();let from=null,to=null;for(const row of rows.children){const s=row.querySelector('.source-stock'),d=row.querySelector('.destination'),source=s.selectedOptions[0],dest=d.selectedOptions[0];if(!s.value||!d.value||seen.has(s.value)||source.dataset.station===dest.dataset.station||(from!==null&&(from!==source.dataset.station||to!==dest.dataset.station))){e.preventDefault();alert('Each coffee balance must be unique, and all lines must go between the same two different stations.');return}seen.add(s.value);from=source.dataset.station;to=dest.dataset.station}if(!confirm('Dispatch this coffee and create the transfer document?'))e.preventDefault()});refresh()}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script></body></html>
