@@ -39,7 +39,7 @@ def register_mobile_entry(app):
             can_purchase=can("purchases"), can_batch=can("batches"),
             can_processing=can("processing"), can_drying=can("drying"),
             can_inventory=can("inventory"), can_transfers=can("transfers"),
-            batches=erp.Batch.query.order_by(erp.Batch.id.desc()).limit(100).all() if can("purchases") else [],
+            batches=erp.Batch.query.order_by(erp.Batch.id.desc()).limit(100).all() if (can("purchases") or can("processing") or can("batches")) else [],
             suppliers=erp.Supplier.query.order_by(erp.Supplier.name).all() if can("purchases") else [],
             next_batch=erp.next_code(erp.Batch,"batch_no","STA",3) if can("batches") else "",
         )
