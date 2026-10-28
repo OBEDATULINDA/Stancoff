@@ -20,9 +20,19 @@ def register_mobile_entry(app):
         processes = erp.Processing.query.filter_by(status="Active").order_by(erp.Processing.id.desc()).limit(200).all() if can("drying") else []
         today_purchases = erp.Purchase.query.filter(erp.Purchase.status=="Active", erp.Purchase.purchase_date==date.today()).all()
         active_stocks = erp.CoffeeStock.query.filter(erp.CoffeeStock.weight>0).all()
+        year = date.today().year
+        yearly_purchases = erp.Purchase.query.filter(erp.Purchase.status=="Active", erp.Purchase.purchase_date>=date(year,1,1), erp.Purchase.purchase_date<date(year+1,1,1)).all()
+        monthly_kg = [0.0] * 12
+        for purchase in yearly_purchases:
+            monthly_kg[purchase.purchase_date.month-1] += float(purchase.good_weight or 0)
+        total_purchased_kg = erp.db.session.query(func.coalesce(func.sum(erp.Purchase.good_weight),0)).filter(erp.Purchase.status=="Active").scalar() or 0
+        warehouse_dried_kg = sum(float(s.weight or 0) for s in active_stocks if s.location and s.location.location_type=="Final Warehouse")
         return render_template(
             "mobile_entry.html", today=date.today().isoformat(),
             username=session.get("username","User"),
+            purchase_year=year, purchase_monthly_kg=[round(v,2) for v in monthly_kg],
+            purchased_year_kg=sum(monthly_kg), total_purchased_kg=float(total_purchased_kg),
+            warehouse_dried_kg=warehouse_dried_kg,
             today_kg=sum(float(p.good_weight or 0) for p in today_purchases),
             today_spend=sum(float(p.total_amount or 0) for p in today_purchases),
             stock_kg=sum(float(s.weight or 0) for s in active_stocks),
