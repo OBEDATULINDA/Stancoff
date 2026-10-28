@@ -53,3 +53,47 @@ def register_mobile_entry(app):
             suppliers=erp.Supplier.query.order_by(erp.Supplier.name).all() if can("purchases") else [],
             next_batch=erp.next_code(erp.Batch,"batch_no","STA",3) if can("batches") else "",
         )
+
+    @app.route("/mobile/batches")
+    @erp.permission_required("batches")
+    def mobile_batches():
+        return render_template("mobile_records.html", title="Coffee batches", kind="batches",
+            rows=erp.Batch.query.order_by(erp.Batch.id.desc()).limit(300).all())
+
+    @app.route("/mobile/batches/<int:batch_id>")
+    @erp.permission_required("batches")
+    def mobile_batch_detail(batch_id):
+        batch=erp.db.get_or_404(erp.Batch,batch_id)
+        purchases=erp.Purchase.query.filter_by(batch_id=batch_id).order_by(erp.Purchase.id.desc()).all()
+        processing=erp.Processing.query.filter_by(batch_id=batch_id).order_by(erp.Processing.id.desc()).all()
+        drying=erp.Drying.query.filter_by(batch_id=batch_id).order_by(erp.Drying.id.desc()).all()
+        stocks=erp.CoffeeStock.query.filter_by(batch_id=batch_id).order_by(erp.CoffeeStock.id.desc()).all()
+        movements=erp.CoffeeMovement.query.filter_by(batch_id=batch_id).order_by(erp.CoffeeMovement.id.desc()).all()
+        active=[p for p in purchases if p.status!="Voided"]
+        return render_template("mobile_batch_detail.html",batch=batch,purchases=purchases,processing=processing,
+            drying=drying,stocks=stocks,movements=movements,
+            gross_weight=sum(float(p.gross_weight or 0) for p in active),
+            good_weight=sum(float(p.good_weight or 0) for p in active),
+            purchase_total=sum(float(p.total_amount or 0) for p in active))
+
+    @app.route("/mobile/records/<kind>")
+    @erp.login_required
+    def mobile_records(kind):
+        configs={
+            "purchases":("purchases",erp.Purchase,"Coffee purchases"),
+            "processing":("processing",erp.Processing,"Processing records"),
+            "drying":("drying",erp.Drying,"Drying records"),
+            "inventory":("inventory",erp.CoffeeStock,"Coffee inventory"),
+            "transfers":("transfers",erp.StationTransferDocument,"Station transfers"),
+        }
+        if kind not in configs:
+            abort(404)
+        permission,model,title=configs[kind]
+        role=session.get("role","Viewer")
+        allowed=erp.ROLE_PERMISSIONS.get(role,set())
+        if "*" not in allowed and permission not in allowed:
+            abort(403)
+        if kind=="inventory":
+            erp.ensure_initial_stock()
+        return render_template("mobile_records.html",title=title,kind=kind,
+            rows=model.query.order_by(model.id.desc()).limit(250).all())
