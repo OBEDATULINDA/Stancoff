@@ -3018,7 +3018,7 @@ def station_transfers():
             for source, destination, weight, moisture, bag_count in prepared:
                 # At dispatch, remove coffee from the sending location. The receiving
                 # station adds the actual received weight only when it confirms receipt.
-                source.weight = max(0, float(source.weight or 0) - source_weight)
+                source.weight = max(0, float(source.weight or 0) - weight)
 
                 movement = CoffeeMovement(
                     movement_no=next_code(CoffeeMovement, "movement_no", "MOV", 6),
