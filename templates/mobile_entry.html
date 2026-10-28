@@ -15,12 +15,12 @@
 <h3>Recent purchases</h3>{% for p in recent_purchases %}<div class="activity"><span><strong>{{p.batch.batch_no}}</strong><small>{{p.supplier.name}} · {{p.purchase_date}}</small></span><b>{{"{:,.1f}".format(p.good_weight)}} kg</b></div>{% else %}<p class="muted">No recent purchases.</p>{% endfor %}</div>
 <div class="card"><div class="section-head"><h2>Purchases throughout {{purchase_year}}</h2><span class="eyebrow">Monthly volume</span></div><p class="muted">Good coffee purchased each month (kg). Compare monthly activity at a glance.</p><div class="chart-wrap"><canvas id="purchasesChart" width="580" height="240" role="img" aria-label="Monthly purchased coffee weight in kilograms"></canvas></div><div class="calc">Total purchased in {{purchase_year}}: {{"{:,.0f}".format(purchased_year_kg)}} kg</div><div class="month-list">{% set months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}{% for v in purchase_monthly_kg %}<span>{{months[loop.index0]}} <strong>{{"{:,.0f}".format(v)}}</strong></span>{% endfor %}</div></div>
 <div class="card"><h2>Quick access</h2><div class="grid">
-{% if can_batch %}<a class="link" href="/batches">All batches</a>{% endif %}
-{% if can_purchase %}<a class="link" href="/purchases">Purchases history</a>{% endif %}
-{% if can_processing %}<a class="link" href="/processing">Processing</a>{% endif %}
-{% if can_drying %}<a class="link" href="/drying">Drying</a>{% endif %}
-{% if can_inventory %}<a class="link" href="/inventory">Inventory</a>{% endif %}
-{% if can_transfers %}<a class="link" href="/station-transfers">Transfers</a>{% endif %}
+{% if can_batch %}<a class="link" href="/mobile/batches">All batches</a>{% endif %}
+{% if can_purchase %}<a class="link" href="/mobile/records/purchases">Purchases history</a>{% endif %}
+{% if can_processing %}<a class="link" href="/mobile/records/processing">Processing</a>{% endif %}
+{% if can_drying %}<a class="link" href="/mobile/records/drying">Drying</a>{% endif %}
+{% if can_inventory %}<a class="link" href="/mobile/records/inventory">Inventory</a>{% endif %}
+{% if can_transfers %}<a class="link" href="/mobile/records/transfers">Transfers</a>{% endif %}
 </div></div>
 {% if can_purchase %}
 <div class="card"><details open><summary>Record coffee purchase</summary>
