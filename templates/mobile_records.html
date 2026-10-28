@@ -1,0 +1,18 @@
+{% extends "mobile_shell.html" %}{% block body %}
+<div class="card"><h2>{{title}}</h2><p class="muted">Showing the latest records from your Stancoff ERP.</p>
+{% for r in rows %}
+{% if kind=="batches" %}
+<a class="record" href="{{url_for('mobile_batch_detail',batch_id=r.id)}}"><span><b>{{r.batch_no}}</b><small>{{r.batch_date}} · {{r.process_type}}</small></span><span class="pill">{{r.status}} ›</span></a>
+{% elif kind=="purchases" %}
+<div class="record"><span><b>{{r.receipt_no}}</b><small>{{r.purchase_date}} · {{r.supplier.name}} · {{r.batch.batch_no}}</small></span><span><b>{{"{:,.1f}".format(r.good_weight)}} kg</b><small>{{r.status}}</small></span></div>
+{% elif kind=="processing" %}
+<div class="record"><span><b>{{r.processing_no}}</b><small>{{r.processing_date}} · {{r.batch.batch_no}}</small></span><span><b>{{"{:,.1f}".format(r.total_sorted_weight)}} kg</b><small>{{r.status}}</small></span></div>
+{% elif kind=="drying" %}
+<div class="record"><span><b>{{r.drying_no}}</b><small>{{r.batch.batch_no}} · {{r.grade}} · {{r.start_date}}</small></span><span><b>{{"{:,.1f}".format(r.input_weight)}} kg</b><small>{{r.drying_status}}</small></span></div>
+{% elif kind=="inventory" %}
+<div class="record"><span><b>{{r.batch.batch_no}} · {{r.grade}}</b><small>{{r.location.station.name if r.location and r.location.station else ''}} / {{r.location.name if r.location else 'Unknown'}}</small></span><span><b>{{"{:,.1f}".format(r.weight)}} kg</b><small>{{r.stock_status}}</small></span></div>
+{% elif kind=="transfers" %}
+<div class="record"><span><b>{{r.transfer_no}}</b><small>{{r.transfer_date}} · {{r.from_station.name}} → {{r.to_station.name}}</small></span><span class="pill">{{r.status}}</span></div>
+{% endif %}
+{% else %}<p class="muted">No records found.</p>{% endfor %}
+</div>{% endblock %}
