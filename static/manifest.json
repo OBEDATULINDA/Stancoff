@@ -1,10 +1,11 @@
 {
-  "name": "Business ERP",
-  "short_name": "ERP",
-  "start_url": "/",
+  "name": "Stancoff Mobile ERP",
+  "short_name": "Stancoff",
+  "start_url": "/mobile",
   "display": "standalone",
   "background_color": "#f4f7f5",
   "theme_color": "#173f35",
-  "description": "Coffee operations and workforce management for Stancoff Company Limited",
-  "icons": []
+  "description": "Mobile data entry for Stancoff coffee operations",
+  "icons": [],
+  "scope": "/"
 }
