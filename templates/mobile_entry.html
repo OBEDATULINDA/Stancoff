@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#173f35"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="manifest" href="/static/manifest.json"><title>Stancoff Mobile Entry</title>
+<style>
+:root{font-family:system-ui,-apple-system,Arial,sans-serif;color:#17352d;background:#f3f7f4}*{box-sizing:border-box}body{margin:0}header{background:#173f35;color:white;padding:22px 18px 26px}header a{color:#d8eee3}h1{font-size:24px;margin:7px 0}main{max-width:620px;margin:auto;padding:16px 14px 80px}.card{background:white;border:1px solid #dce7df;border-radius:17px;padding:18px;margin-bottom:14px;box-shadow:0 3px 12px #102a2010}h2{font-size:19px;margin:0 0 14px}label{display:block;font-size:14px;font-weight:650;margin:12px 0 5px}input,select,textarea{display:block;width:100%;min-height:46px;border:1px solid #b8cbc0;border-radius:9px;padding:10px;font:inherit;background:#fff;color:#172d25}button,.link{display:block;text-align:center;width:100%;background:#176a4d;color:#fff;border:0;border-radius:10px;padding:13px 10px;font:inherit;font-weight:700;text-decoration:none;margin-top:14px}.link{background:#e9f2ec;color:#164c37}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.grid a{margin:0}.muted{color:#597366;font-size:13px}.calc{background:#eaf5ed;padding:12px;border-radius:9px;margin-top:12px;font-weight:700}details summary{cursor:pointer;font-weight:700;font-size:18px;list-style:none}details summary::after{content:' + ';float:right}details[open] summary::after{content:'−'}details summary{margin-bottom:8px}small{font-weight:400}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #edb943;outline-offset:2px}
+</style></head><body>
+<header><a href="/">← Full ERP</a><h1>Stancoff Mobile</h1><div>Quick coffee data entry</div></header>
+<main>
+<div class="card"><h2>Operations</h2><div class="grid">
+{% if can_batch %}<a class="link" href="/batches">All batches</a>{% endif %}
+{% if can_purchase %}<a class="link" href="/purchases">Purchases history</a>{% endif %}
+{% if can_processing %}<a class="link" href="/processing">Processing</a>{% endif %}
+{% if can_drying %}<a class="link" href="/drying">Drying</a>{% endif %}
+{% if can_inventory %}<a class="link" href="/inventory">Inventory</a>{% endif %}
+{% if can_transfers %}<a class="link" href="/station-transfers">Transfers</a>{% endif %}
+</div></div>
+{% if can_purchase %}
+<div class="card"><details open><summary>Record coffee purchase</summary>
+<p class="muted">Saves directly into your existing Stancoff ERP.</p>
+<form action="/purchases" method="post" id="purchase">
+<label for="purchase_date">Purchase date</label><input id="purchase_date" name="purchase_date" type="date" value="{{today}}" required>
+<label for="batch_id">Batch</label><select id="batch_id" name="batch_id" required><option value="">Choose batch</option>{% for b in batches %}<option value="{{b.id}}">{{b.batch_no}} — {{b.batch_date}}</option>{% endfor %}</select>
+<label for="supplier_id">Supplier</label><select id="supplier_id" name="supplier_id" required><option value="">Choose supplier</option>{% for s in suppliers %}<option value="{{s.id}}">{{s.code}} — {{s.name}}</option>{% endfor %}</select>
+<label for="gross_weight">Gross weight (kg)</label><input id="gross_weight" name="gross_weight" type="number" min=".01" step=".01" inputmode="decimal" required>
+<label for="floaters_weight">Floaters weight (kg)</label><input id="floaters_weight" name="floaters_weight" type="number" min="0" step=".01" inputmode="decimal" value="0" required>
+<label for="floaters_bought">Floaters bought?</label><select id="floaters_bought" name="floaters_bought"><option>Yes</option><option>No</option></select>
+<label for="cherry_price">Cherry price per kg (UGX)</label><input id="cherry_price" name="cherry_price" type="number" min="1" step="1" inputmode="numeric" required>
+<label for="floater_price">Floater price per kg (UGX)</label><input id="floater_price" name="floater_price" type="number" min="0" step="1" inputmode="numeric" value="0">
+<div class="calc" aria-live="polite" id="estimate">Good cherry: 0.00 kg · Total: UGX 0</div>
+<button type="submit">Save purchase to ERP</button>
+</form></details></div>
+{% endif %}
+{% if can_batch %}
+<div class="card"><details><summary>Create batch</summary>
+<form method="post" action="/batches">
+<label>Batch number</label><input name="batch_no" value="{{next_batch}}" required>
+<label>Batch date</label><input name="batch_date" type="date" value="{{today}}" required>
+<label>Process</label><select name="process_type"><option>Natural</option><option>Washed</option><option>Other</option></select>
+<input type="hidden" name="status" value="Open">
+<label>Notes</label><textarea name="notes" rows="2"></textarea>
+<button type="submit">Create batch in ERP</button>
+</form></details></div>
+{% endif %}
+<div class="card"><h2>Install on Android</h2><p class="muted">In Chrome, open the browser menu and select “Add to Home screen” or “Install app”. Internet is required to save records.</p></div>
+</main>
+<script>
+const form=document.getElementById('purchase');
+if(form){const update=()=>{const get=n=>Number(form.elements[n].value||0),gross=get('gross_weight'),floats=get('floaters_weight'),good=Math.max(0,gross-floats),bought=form.elements.floaters_bought.value==='Yes',total=good*get('cherry_price')+(bought?floats*get('floater_price'):0);document.getElementById('estimate').textContent='Good cherry: '+good.toFixed(2)+' kg · Total: UGX '+Math.round(total).toLocaleString();form.elements.floater_price.disabled=!bought};form.addEventListener('input',update);form.addEventListener('change',update);form.addEventListener('submit',e=>{if(getComputedStyle(form).display==='none')return;const gross=Number(form.elements.gross_weight.value),floats=Number(form.elements.floaters_weight.value);if(floats>gross){e.preventDefault();alert('Floaters cannot exceed gross weight.');return}if(!confirm('Save this purchase to Stancoff ERP?'))e.preventDefault()});update()}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+</script></body></html>
