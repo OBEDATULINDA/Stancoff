@@ -1,7 +1,7 @@
 """Mobile-first Stancoff data entry, using existing authenticated ERP workflows."""
 from datetime import date, timedelta
 from sqlalchemy import func
-from flask import abort, redirect, render_template, session, url_for
+from flask import abort, redirect, render_template, session, url_for, request, flash
 import app as erp
 
 def register_mobile_entry(app):
@@ -9,8 +9,10 @@ def register_mobile_entry(app):
     @erp.login_required
     def mobile_home():
         company = erp.current_company()
-        if not company or not company.is_legacy_stancoff:
-            return redirect(url_for("company_dashboard"))
+        if not company:
+            return redirect(url_for("mobile_company_select"))
+        if not company.is_legacy_stancoff:
+            return redirect(url_for("mobile_company_workspace"))
         role = session.get("role", "Viewer")
         allowed = erp.ROLE_PERMISSIONS.get(role, set())
         def can(permission):
@@ -97,3 +99,40 @@ def register_mobile_entry(app):
             erp.ensure_initial_stock()
         return render_template("mobile_records.html",title=title,kind=kind,
             rows=model.query.order_by(model.id.desc()).limit(250).all())
+
+    @app.route("/mobile/companies")
+    @erp.login_required
+    def mobile_company_select():
+        companies=erp.available_companies_for_user(session["user_id"])
+        return render_template("mobile_companies.html",companies=companies)
+
+    @app.route("/mobile/companies/<int:company_id>/select",methods=["POST"])
+    @erp.login_required
+    def mobile_select_company(company_id):
+        company=erp.db.session.get(erp.Company,company_id)
+        if not company or company.status!="Active":
+            flash("That company is not available.")
+            return redirect(url_for("mobile_company_select"))
+        membership=erp.company_membership(session["user_id"],company.id)
+        if not membership and not erp.user_is_super_admin():
+            abort(403)
+        user=erp.db.session.get(erp.User,session["user_id"])
+        session["company_id"]=company.id
+        session["company_name"]=company.name
+        session["company_slug"]=company.slug
+        session["role"]=membership.role if membership else "Admin"
+        session["system_role"]=user.role if user else "Viewer"
+        erp.log_action("SELECT","Company",company.id,f"Opened {company.name} on mobile")
+        return redirect(url_for("mobile_home") if company.is_legacy_stancoff else url_for("mobile_company_workspace"))
+
+    @app.route("/mobile/company")
+    @erp.login_required
+    def mobile_company_workspace():
+        company=erp.current_company()
+        if not company:
+            return redirect(url_for("mobile_company_select"))
+        if company.is_legacy_stancoff:
+            return redirect(url_for("mobile_home"))
+        modules=erp.enabled_company_modules(company.id)
+        return render_template("mobile_company_workspace.html",company=company,modules=modules,
+            commercial_coffee=erp._company_has_commercial_coffee(company))
