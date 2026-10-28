@@ -10,3 +10,6 @@ register_purchase_reports(app, stancoff)
 
 from report_center_patch import register_report_center
 register_report_center(app, stancoff)
+
+from mobile_entry_patch import register_mobile_entry
+register_mobile_entry(app)
