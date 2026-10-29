@@ -6,8 +6,9 @@ import app as erp
 
 def register_mobile_entry(app):
     @app.route("/mobile")
-    @erp.login_required
     def mobile_home():
+        if "user_id" not in session:
+            return redirect(url_for("mobile_login"))
         company = erp.current_company()
         if not company:
             return redirect(url_for("mobile_company_select"))
@@ -101,14 +102,16 @@ def register_mobile_entry(app):
             rows=model.query.order_by(model.id.desc()).limit(250).all())
 
     @app.route("/mobile/companies")
-    @erp.login_required
     def mobile_company_select():
+        if "user_id" not in session:
+            return redirect(url_for("mobile_login"))
         companies=erp.available_companies_for_user(session["user_id"])
         return render_template("mobile_companies.html",companies=companies)
 
     @app.route("/mobile/companies/<int:company_id>/select",methods=["POST"])
-    @erp.login_required
     def mobile_select_company(company_id):
+        if "user_id" not in session:
+            return redirect(url_for("mobile_login"))
         company=erp.db.session.get(erp.Company,company_id)
         if not company or company.status!="Active":
             flash("That company is not available.")
@@ -126,8 +129,9 @@ def register_mobile_entry(app):
         return redirect(url_for("mobile_home") if company.is_legacy_stancoff else url_for("mobile_company_workspace"))
 
     @app.route("/mobile/company")
-    @erp.login_required
     def mobile_company_workspace():
+        if "user_id" not in session:
+            return redirect(url_for("mobile_login"))
         company=erp.current_company()
         if not company:
             return redirect(url_for("mobile_company_select"))
@@ -136,3 +140,20 @@ def register_mobile_entry(app):
         modules=erp.enabled_company_modules(company.id)
         return render_template("mobile_company_workspace.html",company=company,modules=modules,
             commercial_coffee=erp._company_has_commercial_coffee(company))
+
+    @app.route("/mobile/login", methods=["GET","POST"])
+    def mobile_login():
+        if request.method=="GET":
+            if "user_id" in session:
+                return redirect(url_for("mobile_company_select"))
+            return render_template("login.html",mobile_login_action=True)
+        response=erp.login()
+        if "user_id" in session:
+            return redirect(url_for("mobile_company_select"))
+        return response
+
+    @app.route("/mobile/logout")
+    def mobile_logout():
+        erp.log_action("LOGOUT","Authentication")
+        session.clear()
+        return redirect(url_for("mobile_login"))
