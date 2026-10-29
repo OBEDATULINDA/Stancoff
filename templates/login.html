@@ -11,7 +11,7 @@
     <span class="eyebrow">Secure access</span>
     <h2>Welcome back</h2>
     <p>Sign in to continue to the operations dashboard.</p>
-    <form method="post" class="stack-form">
+    <form method="post" class="stack-form" {% if mobile_login_action %}action="{{ url_for('mobile_login') }}"{% endif %}>
       <label>Username<input name="username" autocomplete="username" required></label>
       <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
       <button class="primary-button">Sign in</button>
