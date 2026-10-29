@@ -2357,13 +2357,59 @@ def processing():
             notes=request.form.get("notes"),
             created_by=session.get("username")
         )
+        # Every sorted grade enters drying immediately at the processing station.
+        # Use a deterministic station-specific area so stock is never placed at
+        # a different station, and keep all records in one database transaction.
+        drying_area = Location.query.filter_by(
+            station_id=station.id, location_type="Drying Area", status="Active"
+        ).order_by(Location.id).first()
+        if not drying_area:
+            flash("Set up an active Drying Area at this processing station before saving processing.")
+            return redirect(url_for("processing"))
+
         db.session.add(record)
+        db.session.flush()
+        created_drying = []
+        for grade_name, grade_weight in (
+            ("Grade A", grade_a), ("Grade B", grade_b), ("Grade C", grade_c)
+        ):
+            if grade_weight <= 0:
+                continue
+            drying_row = Drying(
+                drying_no=next_code(Drying, "drying_no", "DRY", 6),
+                processing_id=record.id,
+                batch_id=batch_id,
+                grade=grade_name,
+                start_date=record.processing_date,
+                input_weight=grade_weight,
+                dry_weight=None,
+                drying_loss=0,
+                outturn_percent=0,
+                moisture=record.moisture,
+                drying_location=drying_area.name,
+                dried_by=None,
+                drying_status="Drying",
+                notes="Automatically created from processing " + record.processing_no,
+                created_by=session.get("username"),
+            )
+            db.session.add(drying_row)
+            db.session.flush()
+            db.session.add(CoffeeStock(
+                drying_id=drying_row.id,
+                batch_id=batch_id,
+                grade=grade_name,
+                location_id=drying_area.id,
+                weight=grade_weight,
+                moisture=record.moisture,
+                stock_status="Drying",
+            ))
+            created_drying.append(drying_row.drying_no)
         batch = db.session.get(Batch, batch_id)
-        if batch and batch.status == "Open":
-            batch.status = "Processing"
+        if batch:
+            batch.status = "Drying" if created_drying else "Processing"
         db.session.commit()
         log_action("CREATE", "Processing", record.id, record.processing_no)
-        flash("Processing record saved successfully.")
+        flash(f"Processing saved. {len(created_drying)} drying record(s) and their drying-area stock were created automatically.")
         return redirect(url_for("processing"))
 
     batches = Batch.query.order_by(Batch.batch_date.desc(), Batch.id.desc()).all()
