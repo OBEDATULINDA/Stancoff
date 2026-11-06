@@ -109,14 +109,14 @@ def register_dashboard_filter(app, s):
         areas = sorted(area_totals.values(), key=lambda r:r['weight'], reverse=True)[:8]
         months = sorted(monthly_totals.values(), key=lambda r:r['month'])[-12:]
         locations = sorted(location_inventory.items(), key=lambda r:r[1], reverse=True)[:10]
-        outturn = sorted([{'batch':r.batch.batch_no,'outturn':float(r.outturn_percent or 0)} for r in processing], key=lambda r:r['batch'])[-10:]
+        drying_duration = s.batch_drying_duration_chart(drying)
         charts = {
             'monthly': {'labels':[r['month'] for r in months], 'weights':[round(r['weight'],2) for r in months], 'values':[round(r['value'],2) for r in months]},
             'areas': {'labels':[r['area'] for r in areas], 'weights':[round(r['weight'],2) for r in areas]},
             'processes': {'labels':list(process_totals.keys()), 'weights':[round(v,2) for v in process_totals.values()]},
             'grades': {'labels':list(grade_inventory.keys()), 'weights':[round(v,2) for v in grade_inventory.values()]},
             'locations': {'labels':[r[0] for r in locations], 'weights':[round(r[1],2) for r in locations]},
-            'outturn': {'labels':[r['batch'] for r in outturn], 'values':[round(r['outturn'],2) for r in outturn]},
+            'drying_duration': drying_duration,
         }
         return render_template(
             'dashboard.html', period='custom', from_date=from_date, to_date=to_date,
