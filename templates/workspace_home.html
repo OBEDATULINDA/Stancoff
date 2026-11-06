@@ -12,19 +12,23 @@
 <div class="workspace-metric"><small>Total coffee purchased · all time</small><strong>{{ "{:,.1f}".format(total_purchased) }} kg</strong></div>
 <div class="workspace-metric"><small>Total purchase spending · UGX</small><strong>{{ "{:,.0f}".format(total_spent) }}</strong></div>
 <div class="workspace-metric"><small>Coffee currently drying · input weight</small><strong>{{ "{:,.1f}".format(drying_weight) }} kg</strong></div>
-<div class="workspace-metric"><small>Drying records requiring review</small><strong>{{ alert_count }}</strong><small>7 days or longer</small></div>
+<div class="workspace-metric"><small>Drying records requiring review</small><strong>{{ alert_count }}</strong><small>{{drying_alert_days}} days or longer</small></div>
 </div>
 <h2>Modules</h2>
 <div class="workspace-grid">
 <a class="workspace-module" href="{{url_for('dashboard')}}"><span class="symbol">📊</span><h3>Dashboard</h3><p>Performance, trends and detailed reports</p></a>
 {% if 'coffee_operations' in active_modules %}
 {% if current_role in ['Admin','Manager','Receiving Clerk'] %}
+<a class="workspace-module" href="/suppliers"><span class="symbol">🤝</span><h3>Suppliers</h3><p>Manage suppliers</p></a>
 <a class="workspace-module" href="/purchases"><span class="symbol">🛒</span><h3>Purchases</h3><p>Record cherry purchases and supplier deliveries</p></a>
 <a class="workspace-module" href="/batches"><span class="symbol">📦</span><h3>Batches</h3><p>Track batches from receiving to processing</p></a>
 {% endif %}
 {% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
 <a class="workspace-module" href="/processing"><span class="symbol">⚙️</span><h3>Processing</h3><p>Record sorting and grade yields</p></a>
 <a class="workspace-module" href="/drying"><span class="symbol">☀️</span><h3>Drying</h3><p>Monitor drying progress and completion</p></a>
+<a class="workspace-module" href="/stations"><span class="symbol">🏭</span><h3>Stations</h3><p>Processing stations</p></a>
+<a class="workspace-module" href="/locations"><span class="symbol">📍</span><h3>Locations</h3><p>Drying and storage areas</p></a>
+<a class="workspace-module" href="/station-transfers"><span class="symbol">🔄</span><h3>Transfers</h3><p>Between stations</p></a>
 <a class="workspace-module" href="/inventory"><span class="symbol">🏬</span><h3>Inventory</h3><p>Manage coffee stock and movements</p></a>
 {% endif %}
 {% if current_role in ['Admin','Manager','Storekeeper'] %}
@@ -34,6 +38,8 @@
 {% if 'workforce' in active_modules and current_role in ['Admin','Manager','Payroll Officer'] %}
 <a class="workspace-module" href="/attendance"><span class="symbol">👥</span><h3>Workforce</h3><p>Attendance, casuals and payments</p></a>
 {% endif %}
+{% if current_role == "Admin" %}<a class="workspace-module" href="/users"><span class="symbol">👤</span><h3>Users</h3><p>User management</p></a><a class="workspace-module" href="/audit"><span class="symbol">📋</span><h3>Audit log</h3><p>Activity history</p></a>{% endif %}
+{% if current_is_super_admin %}<a class="workspace-module" href="/system/companies"><span class="symbol">🏢</span><h3>Companies & Modules</h3><p>ERP administration</p></a>{% endif %}
 <a class="workspace-module" href="/reports"><span class="symbol">📑</span><h3>Reports</h3><p>Operational and management reporting</p></a>
 </div>
 <div class="workspace-alerts"><h2>⚠ Drying notifications</h2><p>Coffee still marked as drying for {{drying_alert_days}} days or more. These are review reminders, not confirmation of a quality issue.</p>
