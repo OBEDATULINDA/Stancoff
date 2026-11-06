@@ -277,3 +277,6 @@ button,.primary-button{border:0;border-radius:8px;padding:10px 15px;background:v
   .mhs-bar-track{grid-column:1/-1;grid-row:2}
   .mhs-metric-value{grid-column:2;grid-row:1}
 }
+
+/* Tile-first Windows ERP layout: sidebar-free Stancoff workspace */
+.app-shell.tiles-shell{display:block;min-height:100vh}.tiles-shell .main-panel{width:100%;min-width:0}.tiles-shell .topbar{height:auto;min-height:88px;flex-wrap:wrap}.tiles-top-links{margin-left:auto;display:flex;gap:16px;align-items:center;flex-wrap:wrap}.tiles-top-links a{font-weight:650;font-size:13px}.tiles-shell .topbar-company{margin-left:0}.tiles-shell main{max-width:1500px;margin:0 auto}@media(max-width:820px){.tiles-top-links{order:3;width:100%;padding-bottom:12px}.tiles-shell .topbar{padding-top:12px}.tiles-shell .topbar-company{margin-left:auto}} 
