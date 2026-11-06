@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block page_title %}Workspace{% endblock %}
+{% block page_subtitle %}Choose a module or review today's operations{% endblock %}
+{% block content %}
+<style>
+.workspace-intro{padding:24px 28px;border-radius:18px;background:linear-gradient(120deg,#123e35,#246d5c);color:white;margin-bottom:20px}.workspace-intro h2{margin:5px 0 8px;color:white}.workspace-intro p{margin:0;color:#d6ece5}
+.workspace-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}.workspace-metric{padding:20px;border:1px solid #dce8e2;border-radius:16px;background:white}.workspace-metric small{display:block;color:#5a7069;margin-bottom:9px}.workspace-metric strong{font-size:clamp(22px,2.5vw,30px);color:#153d33}
+.workspace-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:15px;margin:15px 0 28px}.workspace-module{display:block;background:white;border:1px solid #dce8e2;border-radius:16px;padding:22px;text-decoration:none;color:#173d35;transition:transform .15s,box-shadow .15s}.workspace-module:hover{transform:translateY(-3px);box-shadow:0 9px 24px #173d3518}.workspace-module .symbol{font-size:27px;display:block;margin-bottom:12px}.workspace-module h3{margin:0 0 7px}.workspace-module p{margin:0;color:#64776f;font-size:14px}.workspace-alerts{border:1px solid #e6d7b9;background:#fffdf8;border-radius:16px;padding:22px;margin-bottom:24px}.workspace-alert{padding:13px 0;border-top:1px solid #eae1d1;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.workspace-alert a{font-weight:600}.workspace-alerts h2{margin-top:0}
+</style>
+<div class="workspace-intro"><small>STANCOFF OPERATIONS</small><h2>Welcome to your workspace</h2><p>Access modules, monitor coffee volumes and act on drying alerts.</p></div>
+<div class="workspace-metrics">
+<div class="workspace-metric"><small>Total coffee purchased · all time</small><strong>{{ "{:,.1f}".format(total_purchased) }} kg</strong></div>
+<div class="workspace-metric"><small>Total purchase spending · UGX</small><strong>{{ "{:,.0f}".format(total_spent) }}</strong></div>
+<div class="workspace-metric"><small>Coffee currently drying · input weight</small><strong>{{ "{:,.1f}".format(drying_weight) }} kg</strong></div>
+<div class="workspace-metric"><small>Drying records requiring review</small><strong>{{ alert_count }}</strong><small>7 days or longer</small></div>
+</div>
+<h2>Modules</h2>
+<div class="workspace-grid">
+<a class="workspace-module" href="{{url_for('dashboard')}}"><span class="symbol">📊</span><h3>Dashboard</h3><p>Performance, trends and detailed reports</p></a>
+{% if 'coffee_operations' in active_modules %}
+{% if current_role in ['Admin','Manager','Receiving Clerk'] %}
+<a class="workspace-module" href="/purchases"><span class="symbol">🛒</span><h3>Purchases</h3><p>Record cherry purchases and supplier deliveries</p></a>
+<a class="workspace-module" href="/batches"><span class="symbol">📦</span><h3>Batches</h3><p>Track batches from receiving to processing</p></a>
+{% endif %}
+{% if current_role in ['Admin','Manager','Processing Supervisor','Storekeeper'] %}
+<a class="workspace-module" href="/processing"><span class="symbol">⚙️</span><h3>Processing</h3><p>Record sorting and grade yields</p></a>
+<a class="workspace-module" href="/drying"><span class="symbol">☀️</span><h3>Drying</h3><p>Monitor drying progress and completion</p></a>
+<a class="workspace-module" href="/inventory"><span class="symbol">🏬</span><h3>Inventory</h3><p>Manage coffee stock and movements</p></a>
+{% endif %}
+{% if current_role in ['Admin','Manager','Storekeeper'] %}
+<a class="workspace-module" href="/sales"><span class="symbol">🚚</span><h3>Sales & Dispatch</h3><p>Sales, deliveries and dispatch records</p></a>
+{% endif %}
+{% endif %}
+{% if 'workforce' in active_modules and current_role in ['Admin','Manager','Payroll Officer'] %}
+<a class="workspace-module" href="/attendance"><span class="symbol">👥</span><h3>Workforce</h3><p>Attendance, casuals and payments</p></a>
+{% endif %}
+<a class="workspace-module" href="/reports"><span class="symbol">📑</span><h3>Reports</h3><p>Operational and management reporting</p></a>
+</div>
+<div class="workspace-alerts"><h2>⚠ Drying notifications</h2><p>Coffee still marked as drying for {{drying_alert_days}} days or more. These are review reminders, not confirmation of a quality issue.</p>
+{% for alert in alerts %}<div class="workspace-alert"><div><strong>Batch {{alert.batch}} · {{alert.grade}}</strong><div>{{ "{:,.1f}".format(alert.weight) }} kg · {{alert.location}} · {{alert.days}} days</div></div><a href="/drying/{{alert.id}}">Review record →</a></div>{% else %}<p>No long-running drying records currently flagged.</p>{% endfor %}
+{% if alert_count > 12 %}<p>Showing 12 of {{alert_count}} alerts. <a href="/drying">View all drying records</a>.</p>{% endif %}
+</div>
+{% endblock %}
