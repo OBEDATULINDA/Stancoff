@@ -1351,9 +1351,28 @@ def select_company(id):
     log_action("SELECT", "Company", company.id, f"Opened {company.name}")
 
     if company.is_legacy_stancoff:
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("workspace_home"))
     return redirect(url_for("company_dashboard"))
 
+
+
+@app.route("/workspace")
+@login_required
+def workspace_home():
+    company = current_company()
+    if not company:
+        return redirect(url_for("company_select"))
+    if not company.is_legacy_stancoff:
+        return redirect(url_for("company_dashboard"))
+    today = datetime.utcnow().date()
+    totals = db.session.query(func.coalesce(func.sum(Purchase.good_weight), 0), func.coalesce(func.sum(Purchase.total_amount), 0)).filter(Purchase.status == "Active").one()
+    active_drying = Drying.query.filter(Drying.status == "Active", Drying.drying_status != "Completed", Drying.input_weight > 0).order_by(Drying.start_date.asc()).all()
+    alerts = []
+    for row in active_drying:
+        age = max(0, (today - row.start_date).days)
+        if age >= 7:
+            alerts.append({"batch": row.batch.batch_no if row.batch else str(row.batch_id), "grade": row.grade, "days": age, "weight": float(row.input_weight or 0), "location": row.drying_location or "Unassigned", "id": row.id})
+    return render_template("workspace_home.html", total_purchased=float(totals[0] or 0), total_spent=float(totals[1] or 0), drying_count=len(active_drying), drying_weight=sum(float(r.input_weight or 0) for r in active_drying), alerts=alerts[:12], alert_count=len(alerts), drying_alert_days=7)
 
 @app.route("/company-dashboard")
 @login_required
