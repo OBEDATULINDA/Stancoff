@@ -17,7 +17,7 @@
 </div>
 <h2>Modules</h2>
 <div class="workspace-grid">
-<a class="workspace-module" href="{{url_for('dashboard')}}"><span class="symbol">📊</span><h3>Dashboard</h3><p>Performance, trends and detailed reports</p></a>
+<a class="workspace-module" href="/"><span class="symbol">📊</span><h3>Dashboard</h3><p>Performance, trends and detailed reports</p></a>
 {% if 'coffee_operations' in active_modules %}
 {% if current_role in ['Admin','Manager','Receiving Clerk'] %}
 <a class="workspace-module" href="/suppliers"><span class="symbol">🤝</span><h3>Suppliers</h3><p>Manage suppliers</p></a>
