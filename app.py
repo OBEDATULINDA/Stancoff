@@ -1370,9 +1370,9 @@ def workspace_home():
     alerts = []
     for row in active_drying:
         age = max(0, (today - row.start_date).days)
-        if age >= 7:
+        if age >= 14:
             alerts.append({"batch": row.batch.batch_no if row.batch else str(row.batch_id), "grade": row.grade, "days": age, "weight": float(row.input_weight or 0), "location": row.drying_location or "Unassigned", "id": row.id})
-    return render_template("workspace_home.html", total_purchased=float(totals[0] or 0), total_spent=float(totals[1] or 0), drying_count=len(active_drying), drying_weight=sum(float(r.input_weight or 0) for r in active_drying), alerts=alerts[:12], alert_count=len(alerts), drying_alert_days=7)
+    return render_template("workspace_home.html", total_purchased=float(totals[0] or 0), total_spent=float(totals[1] or 0), drying_count=len(active_drying), drying_weight=sum(float(r.input_weight or 0) for r in active_drying), alerts=alerts[:12], alert_count=len(alerts), drying_alert_days=14)
 
 @app.route("/company-dashboard")
 @login_required
