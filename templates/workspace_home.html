@@ -11,6 +11,7 @@
 <div class="workspace-metrics">
 <div class="workspace-metric"><small>Total coffee purchased · all time</small><strong>{{ "{:,.1f}".format(total_purchased) }} kg</strong></div>
 <div class="workspace-metric"><small>Total purchase spending · UGX</small><strong>{{ "{:,.0f}".format(total_spent) }}</strong></div>
+<div class="workspace-metric"><small>Dry coffee in stock · kg</small><strong>{{ "{:,.1f}".format(dry_coffee_kg) }} kg</strong></div>
 <div class="workspace-metric"><small>Coffee currently drying · input weight</small><strong>{{ "{:,.1f}".format(drying_weight) }} kg</strong></div>
 <div class="workspace-metric"><small>Drying records requiring review</small><strong>{{ alert_count }}</strong><small>{{drying_alert_days}} days or longer</small></div>
 </div>
