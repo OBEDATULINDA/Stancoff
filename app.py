@@ -1644,6 +1644,27 @@ def system_company_user_remove(company_id, user_id):
 
 @app.route("/")
 @login_required
+def batch_drying_duration_chart(drying_records):
+    """Average completed grade drying durations, grouped by batch."""
+    grouped = {}
+    for row in drying_records:
+        if row.status != "Active" or row.drying_status != "Completed" or not row.start_date or not row.end_date:
+            continue
+        days = (row.end_date - row.start_date).days
+        if days < 0:
+            continue
+        batch_no = row.batch.batch_no if row.batch else str(row.batch_id)
+        entry = grouped.setdefault(row.batch_id, {"batch": batch_no, "days": [], "last_date": row.end_date})
+        entry["days"].append(days)
+        if row.end_date > entry["last_date"]:
+            entry["last_date"] = row.end_date
+    recent = sorted(grouped.values(), key=lambda item: (item["last_date"], item["batch"]))[-12:]
+    return {
+        "labels": [item["batch"] for item in recent],
+        "values": [round(sum(item["days"]) / len(item["days"]), 1) for item in recent],
+    }
+
+
 def dashboard():
     """Operations dashboard using Python aggregation for PostgreSQL/SQLite compatibility."""
     company = current_company()
@@ -1778,6 +1799,8 @@ def dashboard():
             })
     alerts = alerts[:8]
 
+    drying_duration_chart = batch_drying_duration_chart(drying_rows)
+
     processing_batch_rows = sorted(
         [{"batch": r.batch.batch_no, "outturn": float(r.outturn_percent or 0)} for r in processing_rows],
         key=lambda r: r["batch"],
@@ -1809,10 +1832,7 @@ def dashboard():
             "labels": list(status_inventory.keys()),
             "weights": [round(v, 2) for v in status_inventory.values()],
         },
-        "outturn": {
-            "labels": [r["batch"] for r in processing_batch_rows],
-            "values": [round(r["outturn"], 2) for r in processing_batch_rows],
-        },
+        "drying_duration": drying_duration_chart,
     }
 
     workforce_notices = []
