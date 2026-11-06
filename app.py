@@ -1367,12 +1367,20 @@ def workspace_home():
     today = datetime.utcnow().date()
     totals = db.session.query(func.coalesce(func.sum(Purchase.good_weight), 0), func.coalesce(func.sum(Purchase.total_amount), 0)).filter(Purchase.status == "Active").one()
     active_drying = Drying.query.filter(Drying.status == "Active", Drying.drying_status != "Completed", Drying.input_weight > 0).order_by(Drying.start_date.asc()).all()
+    # Current dry coffee physically held in temporary storage or final warehouses.
+    # Excludes wet coffee on drying areas and avoids counting historical output twice.
+    dry_coffee_kg = db.session.query(
+        func.coalesce(func.sum(CoffeeStock.weight), 0)
+    ).join(Location, CoffeeStock.location_id == Location.id).filter(
+        CoffeeStock.weight > 0,
+        Location.location_type.in_(["Temporary Storage", "Final Warehouse"])
+    ).scalar()
     alerts = []
     for row in active_drying:
         age = max(0, (today - row.start_date).days)
         if age >= 14:
             alerts.append({"batch": row.batch.batch_no if row.batch else str(row.batch_id), "grade": row.grade, "days": age, "weight": float(row.input_weight or 0), "location": row.drying_location or "Unassigned", "id": row.id})
-    return render_template("workspace_home.html", total_purchased=float(totals[0] or 0), total_spent=float(totals[1] or 0), drying_count=len(active_drying), drying_weight=sum(float(r.input_weight or 0) for r in active_drying), alerts=alerts[:12], alert_count=len(alerts), drying_alert_days=14)
+    return render_template("workspace_home.html", total_purchased=float(totals[0] or 0), total_spent=float(totals[1] or 0), dry_coffee_kg=float(dry_coffee_kg or 0), drying_count=len(active_drying), drying_weight=sum(float(r.input_weight or 0) for r in active_drying), alerts=alerts[:12], alert_count=len(alerts), drying_alert_days=14)
 
 @app.route("/company-dashboard")
 @login_required
