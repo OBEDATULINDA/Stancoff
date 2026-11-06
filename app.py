@@ -1642,8 +1642,6 @@ def system_company_user_remove(company_id, user_id):
     return redirect(url_for("system_company_detail", id=company_id))
 
 
-@app.route("/")
-@login_required
 def batch_drying_duration_chart(drying_records):
     """Average completed grade drying durations, grouped by batch."""
     grouped = {}
@@ -1665,6 +1663,8 @@ def batch_drying_duration_chart(drying_records):
     }
 
 
+@app.route("/")
+@login_required
 def dashboard():
     """Operations dashboard using Python aggregation for PostgreSQL/SQLite compatibility."""
     company = current_company()
