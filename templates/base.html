@@ -13,7 +13,7 @@
 {% if session.get('user_id') %}
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
-    <a class="brand" href="{{ '/' if active_company and active_company.is_legacy_stancoff else '/company-dashboard' }}">
+    <a class="brand" href="{{ '/workspace' if active_company and active_company.is_legacy_stancoff else '/company-dashboard' }}">
       <span class="brand-mark">{{ (active_company.code[0] if active_company else 'E') }}</span>
       <span>
         <strong>{{ active_company.name if active_company else 'Business ERP' }}</strong>
@@ -31,7 +31,7 @@
 
     <nav class="side-nav">
       {% if active_company and active_company.is_legacy_stancoff %}
-      <a href="/" class="{% if request.path=='/' %}active{% endif %}">Dashboard</a>
+      <a href="/workspace" class="{% if request.path=='/workspace' %}active{% endif %}">Home</a>\n      <a href="/" class="{% if request.path=='/' %}active{% endif %}">Dashboard</a>
 
       {% set coffee_open = request.path.startswith('/suppliers') or request.path.startswith('/batches') or request.path.startswith('/purchases') or request.path.startswith('/processing') or request.path.startswith('/drying') or request.path.startswith('/inventory') or request.path.startswith('/locations') or request.path.startswith('/stations') or request.path.startswith('/station-transfers') or request.path.startswith('/sales') or request.path.startswith('/dispatch') or request.path.startswith('/prices') or request.path.startswith('/reports/processing') %}
       {% if 'coffee_operations' in active_modules and current_role in ['Admin','Manager','Receiving Clerk','Processing Supervisor','Storekeeper'] %}
