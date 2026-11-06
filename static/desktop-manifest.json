@@ -3,7 +3,7 @@
   "short_name": "Stancoff ERP",
   "description": "Stancoff multi-company business operations workspace for Windows and desktop browsers",
   "id": "/desktop",
-  "start_url": "/login?app=desktop",
+  "start_url": "/workspace",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f4f7f5",
