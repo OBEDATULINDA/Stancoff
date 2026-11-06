@@ -11,7 +11,8 @@
 </head>
 <body>
 {% if session.get('user_id') %}
-<div class="app-shell">
+<div class="app-shell{% if active_company and active_company.is_legacy_stancoff %} tiles-shell{% endif %}">
+  {% if not (active_company and active_company.is_legacy_stancoff) %}
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="{{ '/workspace' if active_company and active_company.is_legacy_stancoff else '/company-dashboard' }}">
       <span class="brand-mark">{{ (active_company.code[0] if active_company else 'E') }}</span>
@@ -150,14 +151,16 @@
       <a class="logout" href="/logout">Log out</a>
     </div>
   </aside>
+  {% endif %}
 
   <section class="main-panel">
     <header class="topbar">
-      <button class="menu-button" type="button" onclick="document.body.classList.toggle('menu-open')">☰</button>
+      {% if not (active_company and active_company.is_legacy_stancoff) %}<button class="menu-button" type="button" onclick="document.body.classList.toggle('menu-open')">☰</button>{% endif %}
       <div>
         <h1>{% block page_title %}Dashboard{% endblock %}</h1>
         <p>{% block page_subtitle %}{{active_company.name if active_company else 'Business ERP'}}{% endblock %}</p>
       </div>
+      {% if active_company and active_company.is_legacy_stancoff %}<nav class="tiles-top-links"><a href="/workspace">Home</a><a href="/companies/select">Switch company</a><a href="/logout">Log out</a></nav>{% endif %}
       <div class="topbar-company">
         {% if active_company %}<span>{{active_company.name}}</span>{% endif %}
         <div class="topbar-date" id="today"></div>
