@@ -1,0 +1,21 @@
+{% extends "mobile_shell.html" %}
+{% block body %}
+<section class="card"><div class="eyebrow">LIVE COFFEE REPORTS</div><h2>Operations summary</h2>
+<div class="stats">
+<div class="stat"><span>Coffee purchased</span><strong>{{"{:,.1f}".format(purchase_kg)}} kg</strong></div>
+<div class="stat"><span>Purchase expenditure</span><strong>UGX {{"{:,.0f}".format(purchase_value)}}</strong></div>
+<div class="stat"><span>Processed coffee</span><strong>{{"{:,.1f}".format(processed_kg)}} kg</strong></div>
+<div class="stat"><span>Coffee currently drying</span><strong>{{"{:,.1f}".format(drying_kg)}} kg</strong></div>
+<div class="stat"><span>Dry coffee in storage</span><strong>{{"{:,.1f}".format(dry_stock_kg)}} kg</strong></div>
+<div class="stat"><span>Average completed drying</span><strong>{% if average_days is not none %}{{average_days}} days{% else %}No data{% endif %}</strong></div>
+</div></section>
+<section class="card"><h2>Drying time by batch</h2><p class="muted">Average number of days from drying start to completion. Latest 12 batches with completed drying records.</p>
+{% for batch in drying_chart.labels %}<div class="record"><span><b>{{batch}}</b></span><span class="pill">{{drying_chart.values[loop.index0]}} days</span></div>{% else %}<p class="muted">No completed drying records yet.</p>{% endfor %}
+</section>
+<section class="card"><h2>Detailed records</h2>
+<a class="record" href="/mobile/records/purchases"><span><b>Purchases report</b><small>All recorded purchases</small></span><span class="pill">›</span></a>
+<a class="record" href="/mobile/records/processing"><span><b>Processing report</b><small>Processing and outturn</small></span><span class="pill">›</span></a>
+<a class="record" href="/mobile/records/drying"><span><b>Drying report</b><small>Drying progress by grade</small></span><span class="pill">›</span></a>
+<a class="record" href="/mobile/records/inventory"><span><b>Inventory report</b><small>Current coffee stock</small></span><span class="pill">›</span></a>
+</section>
+{% endblock %}
