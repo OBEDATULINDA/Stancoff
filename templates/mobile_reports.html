@@ -13,9 +13,9 @@
 {% for batch in drying_chart.labels %}<div class="record"><span><b>{{batch}}</b></span><span class="pill">{{drying_chart.values[loop.index0]}} days</span></div>{% else %}<p class="muted">No completed drying records yet.</p>{% endfor %}
 </section>
 <section class="card"><h2>Detailed records</h2>
-<a class="record" href="/mobile/records/purchases"><span><b>Purchases report</b><small>All recorded purchases</small></span><span class="pill">›</span></a>
-<a class="record" href="/mobile/records/processing"><span><b>Processing report</b><small>Processing and outturn</small></span><span class="pill">›</span></a>
-<a class="record" href="/mobile/records/drying"><span><b>Drying report</b><small>Drying progress by grade</small></span><span class="pill">›</span></a>
-<a class="record" href="/mobile/records/inventory"><span><b>Inventory report</b><small>Current coffee stock</small></span><span class="pill">›</span></a>
+{% if "*" in allowed_permissions or "purchases" in allowed_permissions %}<a class="record" href="/mobile/records/purchases"><span><b>Purchases report</b><small>All recorded purchases</small></span><span class="pill">›</span></a>{% endif %}
+{% if "*" in allowed_permissions or "processing" in allowed_permissions %}<a class="record" href="/mobile/records/processing"><span><b>Processing report</b><small>Processing and outturn</small></span><span class="pill">›</span></a>{% endif %}
+{% if "*" in allowed_permissions or "drying" in allowed_permissions %}<a class="record" href="/mobile/records/drying"><span><b>Drying report</b><small>Drying progress by grade</small></span><span class="pill">›</span></a>{% endif %}
+{% if "*" in allowed_permissions or "inventory" in allowed_permissions %}<a class="record" href="/mobile/records/inventory"><span><b>Inventory report</b><small>Current coffee stock</small></span><span class="pill">›</span></a>{% endif %}
 </section>
 {% endblock %}
