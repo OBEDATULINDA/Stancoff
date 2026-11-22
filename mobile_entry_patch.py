@@ -29,7 +29,7 @@ def register_mobile_entry(app):
             dry_stock_kg=sum(float(st.weight or 0) for st in stocks if st.location and st.location.location_type in ("Temporary Storage", "Final Warehouse")),
             completed_count=len(completed),
             average_days=round(sum((d.end_date-d.start_date).days for d in completed)/len(completed),1) if completed else None,
-            drying_chart=by_batch)
+            drying_chart=by_batch, allowed_permissions=erp.ROLE_PERMISSIONS.get(session.get("role", "Viewer"), set()))
 
     @app.route("/mobile")
     @app.route("/mobile/module/<module>")
@@ -88,7 +88,7 @@ def register_mobile_entry(app):
             destinations=erp.Location.query.join(erp.Station).filter(erp.Location.status=="Active",erp.Station.status=="Active").order_by(erp.Station.name,erp.Location.name).all() if can("transfers") else [],
             can_purchase=can("purchases"), can_batch=can("batches"),
             can_processing=can("processing"), can_drying=can("drying"),
-            can_inventory=can("inventory"), can_transfers=can("transfers"),
+            can_inventory=can("inventory"), can_transfers=can("transfers"), can_reports=can("reports"),
             batches=erp.Batch.query.order_by(erp.Batch.id.desc()).limit(100).all() if (can("purchases") or can("processing") or can("batches")) else [],
             suppliers=erp.Supplier.query.order_by(erp.Supplier.name).all() if can("purchases") else [],
             next_batch=erp.next_code(erp.Batch,"batch_no","STA",3) if can("batches") else "",
