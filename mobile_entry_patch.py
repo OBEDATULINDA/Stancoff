@@ -6,7 +6,8 @@ import app as erp
 
 def register_mobile_entry(app):
     @app.route("/mobile")
-    def mobile_home():
+    @app.route("/mobile/module/<module>")
+    def mobile_home(module="home"):
         if "user_id" not in session:
             return redirect(url_for("mobile_login"))
         company = erp.current_company()
@@ -18,6 +19,16 @@ def register_mobile_entry(app):
         allowed = erp.ROLE_PERMISSIONS.get(role, set())
         def can(permission):
             return "*" in allowed or permission in allowed
+        module_permissions = {
+            "dashboard": None, "purchases": "purchases", "batches": "batches",
+            "processing": "processing", "drying": "drying",
+            "inventory": "inventory", "transfers": "transfers",
+        }
+        if module not in {"home", *module_permissions}:
+            abort(404)
+        required = module_permissions.get(module)
+        if required and not can(required):
+            abort(403)
         erp.ensure_initial_stock()
         stocks = erp.CoffeeStock.query.join(erp.Location).filter(erp.CoffeeStock.weight > 0.0001, erp.Location.station_id.isnot(None)).order_by(erp.CoffeeStock.updated_at.desc()).all() if can("transfers") else []
         processes = erp.Processing.query.filter_by(status="Active").order_by(erp.Processing.id.desc()).limit(200).all() if can("drying") else []
@@ -31,7 +42,7 @@ def register_mobile_entry(app):
         total_purchased_kg = erp.db.session.query(func.coalesce(func.sum(erp.Purchase.good_weight),0)).filter(erp.Purchase.status=="Active").scalar() or 0
         warehouse_dried_kg = sum(float(s.weight or 0) for s in active_stocks if s.location and s.location.location_type=="Final Warehouse")
         return render_template(
-            "mobile_entry.html", today=date.today().isoformat(),
+            "mobile_entry.html", module=module, today=date.today().isoformat(),
             username=session.get("username","User"),
             purchase_year=year, purchase_monthly_kg=[round(v,2) for v in monthly_kg],
             purchased_year_kg=sum(monthly_kg), total_purchased_kg=float(total_purchased_kg),
