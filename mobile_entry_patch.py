@@ -5,6 +5,32 @@ from flask import abort, redirect, render_template, session, url_for, request, f
 import app as erp
 
 def register_mobile_entry(app):
+    @app.after_request
+    def keep_mobile_form_submissions_in_mobile(response):
+        module = request.form.get("mobile_return", "")
+        if request.method == "POST" and module in {"purchases", "batches", "processing", "drying", "transfers"} and 300 <= response.status_code < 400:
+            return redirect(url_for("mobile_home", module=module))
+        return response
+
+    @app.route("/mobile/reports")
+    @erp.permission_required("reports")
+    def mobile_reports():
+        purchases = erp.Purchase.query.filter_by(status="Active").all()
+        processing = erp.Processing.query.filter_by(status="Active").all()
+        drying = erp.Drying.query.filter_by(status="Active").all()
+        stocks = erp.CoffeeStock.query.filter(erp.CoffeeStock.weight > 0).all()
+        completed = [d for d in drying if d.drying_status == "Completed" and d.end_date and d.start_date and d.end_date >= d.start_date]
+        by_batch = erp.batch_drying_duration_chart(drying)
+        return render_template("mobile_reports.html",
+            purchase_kg=sum(float(p.good_weight or 0) for p in purchases),
+            purchase_value=sum(float(p.total_amount or 0) for p in purchases),
+            processed_kg=sum(float(p.total_sorted_weight or 0) for p in processing),
+            drying_kg=sum(float(d.input_weight or 0) for d in drying if d.drying_status != "Completed"),
+            dry_stock_kg=sum(float(st.weight or 0) for st in stocks if st.location and st.location.location_type in ("Temporary Storage", "Final Warehouse")),
+            completed_count=len(completed),
+            average_days=round(sum((d.end_date-d.start_date).days for d in completed)/len(completed),1) if completed else None,
+            drying_chart=by_batch)
+
     @app.route("/mobile")
     @app.route("/mobile/module/<module>")
     def mobile_home(module="home"):
