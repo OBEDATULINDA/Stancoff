@@ -57,6 +57,12 @@ def register_mobile_entry(app):
             next_batch=erp.next_code(erp.Batch,"batch_no","STA",3) if can("batches") else "",
         )
 
+    @app.route("/mobile/suppliers")
+    @erp.permission_required("purchases")
+    def mobile_suppliers():
+        suppliers = erp.Supplier.query.order_by(erp.Supplier.name).all()
+        return render_template("mobile_suppliers.html", suppliers=suppliers)
+
     @app.route("/mobile/batches")
     @erp.permission_required("batches")
     def mobile_batches():
