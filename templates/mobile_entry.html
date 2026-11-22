@@ -3,19 +3,22 @@
 <style>
 :root{font-family:Inter,system-ui,-apple-system,Arial,sans-serif;color:#17372e;background:#f5f7f5}*{box-sizing:border-box}body{margin:0;font-size:15px}a{text-decoration:none}header{background:linear-gradient(145deg,#12382f,#1c6650);color:white;padding:20px 20px 42px;border-radius:0 0 26px 26px}header a{color:#d9f3e6;font-size:13px;font-weight:600}header h1{font-size:28px;letter-spacing:-.8px;margin:22px 0 5px}header div{color:#cbe4d7;font-size:14px}main{max-width:640px;margin:-22px auto 0;position:relative;padding:0 14px 90px}.card{background:white;border:1px solid #e3eae6;border-radius:19px;padding:19px;margin-bottom:14px;box-shadow:0 8px 26px #143e3010}h2{font-size:18px;margin:0 0 15px;letter-spacing:-.3px}label{display:block;font-size:13px;font-weight:700;margin:15px 0 6px;color:#31564a}input,select,textarea{display:block;width:100%;min-height:50px;border:1px solid #d2dfd7;border-radius:11px;padding:11px 13px;font:inherit;background:#fbfcfb;color:#17372e;outline:none}input:focus,select:focus,textarea:focus{border-color:#167758;box-shadow:0 0 0 3px #17785820}button,.link{display:block;text-align:center;width:100%;background:#176b50;color:white;border:0;border-radius:12px;padding:15px 12px;font:inherit;font-weight:700;text-decoration:none;margin-top:16px;cursor:pointer}.link{background:#f1f6f3;color:#235d49;border:1px solid #e1ebe4;font-size:13px;padding:17px 6px;min-height:64px;display:flex;align-items:center;justify-content:center}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.grid a{margin:0}.muted{color:#6b8277;font-size:13px;line-height:1.5}.calc{background:#ecf7f0;color:#165b43;padding:16px;border-radius:12px;margin-top:17px;font-weight:750;line-height:1.5}details summary{cursor:pointer;font-weight:750;font-size:18px;list-style:none;letter-spacing:-.3px}details summary::-webkit-details-marker{display:none}details summary::after{content:'＋';float:right;color:#176b50}details[open] summary::after{content:'−'}details summary{margin-bottom:10px}small{font-weight:400}.card:first-child{border:1px solid #d8e7df}button:active,.link:active{transform:scale(.99)}a:focus-visible,button:focus-visible{outline:3px solid #e7bd63;outline-offset:2px}@media(min-width:700px){header{text-align:center}main{padding-top:6px}}
  .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{background:#f4f8f5;border-radius:12px;padding:13px;min-width:0}.stat span{display:block;color:#698074;font-size:12px;margin-bottom:7px}.stat strong{font-size:19px;letter-spacing:-.5px;overflow-wrap:anywhere}.stat small{font-size:11px}.section-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.eyebrow{font-size:11px;color:#668476}h3{font-size:14px;margin:20px 0 8px}.activity{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid #edf0ee;padding:11px 0;font-size:13px}.activity small{display:block;color:#71887c;margin-top:4px}.activity b{white-space:nowrap}.secondary{background:#eaf3ed;color:#236448}.transfer-row{padding:10px 0 18px;border-bottom:1px solid #e3ebe6}.transfer-row+.transfer-row{margin-top:12px} .chart-wrap{width:100%;overflow:hidden}.chart-wrap canvas{width:100%;height:auto;display:block}.month-list{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:13px}.month-list span{font-size:11px;color:#72877a;background:#f6f8f6;border-radius:7px;padding:7px 5px;text-align:center}.month-list strong{display:block;color:#1b5140;margin-top:3px;font-size:12px}@media(max-width:350px){.month-list{grid-template-columns:repeat(3,1fr)}}.module-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.module-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:98px;border:1px solid #e1eae4;border-radius:15px;background:#f7faf8;color:#184936;text-align:center;padding:12px 5px;font-weight:700;font-size:12px}.module-tile .tile-icon{font-size:29px;line-height:1.1}.module-tile:active{background:#e4f1e9}.module-tiles a{margin:0}.jump-target{scroll-margin-top:15px}@media(max-width:340px){.module-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}</style></head><body>
-<header><a href="/">← Full ERP</a><h1>Good day, welcome back.</h1><div>Stancoff · Coffee operations workspace · <a href="/mobile/companies" style="color:#e5f7e9">Switch company</a></div></header>
+<header><a href="/mobile">← Modules</a><h1>{% if module == "home" %}Good day, welcome back.{% else %}{{ module|title }}{% endif %}</h1><div>Stancoff · Coffee operations workspace · <a href="/mobile/companies" style="color:#e5f7e9">Switch company</a></div></header>
 <main>
+{% if module == "home" %}
 <section class="card" aria-label="Mobile ERP modules"><div class="section-head"><h2>Modules</h2><span class="eyebrow">Tap to open</span></div>
 <div class="module-tiles">
-<a class="module-tile" href="#operations"><span class="tile-icon">📊</span>Dashboard</a>
-{% if can_purchase %}<a class="module-tile" href="/mobile/suppliers"><span class="tile-icon">🤝</span>Suppliers</a><a class="module-tile" href="#purchase-entry"><span class="tile-icon">🛒</span>Purchases</a>{% endif %}
-{% if can_batch %}<a class="module-tile" href="/mobile/batches"><span class="tile-icon">📦</span>Batches</a>{% endif %}
-{% if can_processing %}<a class="module-tile" href="#processing-entry"><span class="tile-icon">⚙️</span>Processing</a>{% endif %}
-{% if can_drying %}<a class="module-tile" href="/mobile/records/drying"><span class="tile-icon">☀️</span>Drying</a>{% endif %}
-{% if can_inventory %}<a class="module-tile" href="/mobile/records/inventory"><span class="tile-icon">🏬</span>Inventory</a>{% endif %}
-{% if can_transfers %}<a class="module-tile" href="#transfer-entry"><span class="tile-icon">🔄</span>Transfers</a>{% endif %}
+<a class="module-tile" href="/mobile/module/dashboard"><span class="tile-icon">📊</span>Dashboard</a>
+{% if can_purchase %}<a class="module-tile" href="/mobile/suppliers"><span class="tile-icon">🤝</span>Suppliers</a><a class="module-tile" href="/mobile/module/purchases"><span class="tile-icon">🛒</span>Purchases</a>{% endif %}
+{% if can_batch %}<a class="module-tile" href="/mobile/module/batches"><span class="tile-icon">📦</span>Batches</a>{% endif %}
+{% if can_processing %}<a class="module-tile" href="/mobile/module/processing"><span class="tile-icon">⚙️</span>Processing</a>{% endif %}
+{% if can_drying %}<a class="module-tile" href="/mobile/module/drying"><span class="tile-icon">☀️</span>Drying</a>{% endif %}
+{% if can_inventory %}<a class="module-tile" href="/mobile/module/inventory"><span class="tile-icon">🏬</span>Inventory</a>{% endif %}
+{% if can_transfers %}<a class="module-tile" href="/mobile/module/transfers"><span class="tile-icon">🔄</span>Transfers</a>{% endif %}
 <a class="module-tile" href="/"><span class="tile-icon">📈</span>Full reports</a>
 </div></section>
+{% endif %}
+{% if module == "dashboard" %}
 <div class="card jump-target" id="operations"><div class="section-head"><h2>Operations overview</h2><span class="eyebrow">Live ERP figures</span></div><div class="stats"><div class="stat"><span>Total coffee purchased · All time</span><strong>{{"{:,.0f}".format(total_purchased_kg)}} <small>kg</small></strong></div><div class="stat"><span>Dried coffee · Final warehouse</span><strong>{{"{:,.0f}".format(warehouse_dried_kg)}} <small>kg</small></strong></div>
 <div class="stat"><span>Purchased today</span><strong>{{ "{:,.0f}".format(today_kg) }} <small>kg</small></strong></div>
 <div class="stat"><span>Purchase value today</span><strong>UGX {{ "{:,.0f}".format(today_spend) }}</strong></div>
@@ -25,15 +28,13 @@
 <div class="stat"><span>Transfers in transit</span><strong>{{pending_transfers}}</strong></div></div>
 <h3>Recent purchases</h3>{% for p in recent_purchases %}<div class="activity"><span><strong>{{p.batch.batch_no}}</strong><small>{{p.supplier.name}} · {{p.purchase_date}}</small></span><b>{{"{:,.1f}".format(p.good_weight)}} kg</b></div>{% else %}<p class="muted">No recent purchases.</p>{% endfor %}</div>
 <div class="card"><div class="section-head"><h2>Purchases throughout {{purchase_year}}</h2><span class="eyebrow">Monthly volume</span></div><p class="muted">Good coffee purchased each month (kg). Compare monthly activity at a glance.</p><div class="chart-wrap"><canvas id="purchasesChart" width="580" height="240" role="img" aria-label="Monthly purchased coffee weight in kilograms"></canvas></div><div class="calc">Total purchased in {{purchase_year}}: {{"{:,.0f}".format(purchased_year_kg)}} kg</div><div class="month-list">{% set months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}{% for v in purchase_monthly_kg %}<span>{{months[loop.index0]}} <strong>{{"{:,.0f}".format(v)}}</strong></span>{% endfor %}</div></div>
-<div class="card"><h2>Record histories</h2><div class="grid">
-{% if can_batch %}<a class="link" href="/mobile/batches">All batches</a>{% endif %}
-{% if can_purchase %}<a class="link" href="/mobile/records/purchases">Purchases history</a>{% endif %}
-{% if can_processing %}<a class="link" href="/mobile/records/processing">Processing</a>{% endif %}
-{% if can_drying %}<a class="link" href="/mobile/records/drying">Drying</a>{% endif %}
-{% if can_inventory %}<a class="link" href="/mobile/records/inventory">Inventory</a>{% endif %}
-{% if can_transfers %}<a class="link" href="/mobile/records/transfers">Transfers</a>{% endif %}
+{% endif %}
+{% if module in ["purchases", "batches", "processing", "drying", "inventory", "transfers"] %}
+<div class="card"><h2>{{ module|title }} records</h2><div class="grid">
+{% if module == "batches" %}<a class="link" href="/mobile/batches">View all batches</a>{% else %}<a class="link" href="/mobile/records/{{ module }}">View {{ module }} history</a>{% endif %}
 </div></div>
-{% if can_purchase %}
+{% endif %}
+{% if module == "purchases" and can_purchase %}
 <div class="card jump-target" id="purchase-entry"><details><summary>Record coffee purchase</summary>
 <p class="muted">Saves directly into your existing Stancoff ERP.</p>
 <form action="/purchases" method="post" id="purchase">
@@ -49,8 +50,8 @@
 <button type="submit">Save purchase to ERP</button>
 </form></details></div>
 {% endif %}
-{% if can_batch %}
-<div class="card"><details><summary>Create batch</summary>
+{% if module == "batches" and can_batch %}
+<div class="card"><details open><summary>Create batch</summary>
 <form method="post" action="/batches">
 <label>Batch number</label><input name="batch_no" value="{{next_batch}}" required>
 <label>Batch date</label><input name="batch_date" type="date" value="{{today}}" required>
@@ -60,7 +61,7 @@
 <button type="submit">Create batch in ERP</button>
 </form></details></div>
 {% endif %}
-{% if can_processing %}
+{% if module == "processing" and can_processing %}
 <div class="card jump-target" id="processing-entry"><details><summary>Record processing</summary><p class="muted">Sort cherries into Grade A (red), B (yellow) and C (green).</p>
 <form method="post" action="/processing" id="mobileProcessing">
 <label>Processing date<input type="date" name="processing_date" value="{{today}}" required></label>
@@ -74,8 +75,8 @@
 <label>Processed by<input name="processed_by"></label><label>Notes<textarea name="notes" rows="2"></textarea></label>
 <div class="calc" id="processingCalc">Total sorted: 0 kg · Loss: 0 kg</div><button>Save processing record</button></form></details></div>
 {% endif %}
-{% if can_drying %}
-<div class="card"><details><summary>Record drying</summary><p class="muted">Start drying a processed grade. To finish drying and move stock, use the existing finish-drying workflow.</p>
+{% if module == "drying" and can_drying %}
+<div class="card"><details open><summary>Record drying</summary><p class="muted">Start drying a processed grade. To finish drying and move stock, use the existing finish-drying workflow.</p>
 <form method="post" action="/drying" id="mobileDrying">
 <label>Processed batch<select name="processing_id" required><option value="">Select processed batch</option>{% for p in processes %}<option value="{{p.id}}" data-station="{{p.station_id or ''}}">{{p.batch.batch_no}} · {{p.processing_no}}</option>{% endfor %}</select></label>
 <label>Grade<select name="grade" required><option value="">Select grade</option><option>Grade A</option><option>Grade B</option><option>Grade C</option></select></label>
@@ -89,7 +90,7 @@
 <label>Dried by<input name="dried_by"></label><label>Notes<textarea name="notes" rows="2"></textarea></label>
 <div class="calc" id="dryingCalc">Enter weights to see drying loss.</div><button>Save drying record</button></form></details></div>
 {% endif %}
-{% if can_transfers %}
+{% if module == "transfers" and can_transfers %}
 <div class="card jump-target" id="transfer-entry"><details><summary>Station transfer</summary><p class="muted">Dispatch coffee using the actual loading weight. Add multiple coffee lines for one vehicle.</p>
 <form method="post" action="/station-transfers" id="mobileTransfer">
 <div id="transferRows"><div class="transfer-row">
@@ -111,7 +112,7 @@
 <label>Remarks<textarea name="remarks" rows="2"></textarea></label>
 <div class="calc" id="transferCalc">Total loading: 0 kg</div><button>Save transfer and open document</button></form></details></div>
 {% endif %}
-<div class="card"><h2>Use on your Android phone</h2><p class="muted">In Chrome, open the browser menu and select “Add to Home screen” or “Install app”. Internet is required to save records.</p></div>
+{% if module == "home" %}<div class="card"><h2>Use on your Android phone</h2><p class="muted">In Chrome, open the browser menu and select “Add to Home screen” or “Install app”. Internet is required to save records.</p></div>{% endif %}
 </main>
 <script>
 const trendCanvas=document.getElementById('purchasesChart');if(trendCanvas){const values={{purchase_monthly_kg|tojson}},labels=['J','F','M','A','M','J','J','A','S','O','N','D'],ctx=trendCanvas.getContext('2d'),w=580,h=240,pad={l:49,r:12,t:20,b:35},max=Math.max(1,...values),top=Math.ceil(max/100)*100||1,plotH=h-pad.t-pad.b,plotW=w-pad.l-pad.r;ctx.font='12px system-ui';ctx.textAlign='right';ctx.fillStyle='#72877a';ctx.strokeStyle='#e6eee8';for(let i=0;i<=4;i++){const y=pad.t+plotH*i/4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();ctx.fillText(Math.round(top*(1-i/4)).toLocaleString(),pad.l-7,y+4)}const bw=plotW/12*.62;values.forEach((v,i)=>{const x=pad.l+plotW*(i+.5)/12,y=pad.t+plotH*(1-v/top);ctx.fillStyle='#1c7959';ctx.fillRect(x-bw/2,y,bw,pad.t+plotH-y);ctx.fillStyle='#61796c';ctx.textAlign='center';ctx.fillText(labels[i],x,h-13)})}
