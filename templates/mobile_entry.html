@@ -15,7 +15,7 @@
 {% if can_drying %}<a class="module-tile" href="/mobile/module/drying"><span class="tile-icon">☀️</span>Drying</a>{% endif %}
 {% if can_inventory %}<a class="module-tile" href="/mobile/module/inventory"><span class="tile-icon">🏬</span>Inventory</a>{% endif %}
 {% if can_transfers %}<a class="module-tile" href="/mobile/module/transfers"><span class="tile-icon">🔄</span>Transfers</a>{% endif %}
-<a class="module-tile" href="/"><span class="tile-icon">📈</span>Full reports</a>
+{% if can_reports %}<a class="module-tile" href="/mobile/reports"><span class="tile-icon">📈</span>Reports</a>{% endif %}
 </div></section>
 {% endif %}
 {% if module == "dashboard" %}
@@ -37,7 +37,7 @@
 {% if module == "purchases" and can_purchase %}
 <div class="card jump-target" id="purchase-entry"><details open><summary>Record coffee purchase</summary>
 <p class="muted">Saves directly into your existing Stancoff ERP.</p>
-<form action="/purchases" method="post" id="purchase">
+<form action="/purchases" method="post" id="purchase"><input type="hidden" name="mobile_return" value="purchases">
 <label for="purchase_date">Purchase date</label><input id="purchase_date" name="purchase_date" type="date" value="{{today}}" required>
 <label for="batch_id">Batch</label><select id="batch_id" name="batch_id" required><option value="">Choose batch</option>{% for b in batches %}<option value="{{b.id}}">{{b.batch_no}} — {{b.batch_date}}</option>{% endfor %}</select>
 <label for="supplier_id">Supplier</label><select id="supplier_id" name="supplier_id" required><option value="">Choose supplier</option>{% for s in suppliers %}<option value="{{s.id}}">{{s.code}} — {{s.name}}</option>{% endfor %}</select>
@@ -52,7 +52,7 @@
 {% endif %}
 {% if module == "batches" and can_batch %}
 <div class="card"><details open><summary>Create batch</summary>
-<form method="post" action="/batches">
+<form method="post" action="/batches"><input type="hidden" name="mobile_return" value="batches">
 <label>Batch number</label><input name="batch_no" value="{{next_batch}}" required>
 <label>Batch date</label><input name="batch_date" type="date" value="{{today}}" required>
 <label>Process</label><select name="process_type"><option>Natural</option><option>Washed</option><option>Other</option></select>
@@ -63,7 +63,7 @@
 {% endif %}
 {% if module == "processing" and can_processing %}
 <div class="card jump-target" id="processing-entry"><details open><summary>Record processing</summary><p class="muted">Sort cherries into Grade A (red), B (yellow) and C (green).</p>
-<form method="post" action="/processing" id="mobileProcessing">
+<form method="post" action="/processing" id="mobileProcessing"><input type="hidden" name="mobile_return" value="processing">
 <label>Processing date<input type="date" name="processing_date" value="{{today}}" required></label>
 <label>Station<select name="station_id" required><option value="">Select station</option>{% for s in stations %}<option value="{{s.id}}">{{s.name}}</option>{% endfor %}</select></label>
 <label>Batch<select name="batch_id" required><option value="">Select batch</option>{% for b in batches %}<option value="{{b.id}}">{{b.batch_no}}</option>{% endfor %}</select></label>
@@ -77,7 +77,7 @@
 {% endif %}
 {% if module == "drying" and can_drying %}
 <div class="card"><details open><summary>Record drying</summary><p class="muted">Start drying a processed grade. To finish drying and move stock, use the existing finish-drying workflow.</p>
-<form method="post" action="/drying" id="mobileDrying">
+<form method="post" action="/drying" id="mobileDrying"><input type="hidden" name="mobile_return" value="drying">
 <label>Processed batch<select name="processing_id" required><option value="">Select processed batch</option>{% for p in processes %}<option value="{{p.id}}" data-station="{{p.station_id or ''}}">{{p.batch.batch_no}} · {{p.processing_no}}</option>{% endfor %}</select></label>
 <label>Grade<select name="grade" required><option value="">Select grade</option><option>Grade A</option><option>Grade B</option><option>Grade C</option></select></label>
 <div class="muted" id="gradeAvailable">Choose a processed batch and grade to see available weight.</div>
@@ -92,7 +92,7 @@
 {% endif %}
 {% if module == "transfers" and can_transfers %}
 <div class="card jump-target" id="transfer-entry"><details open><summary>Station transfer</summary><p class="muted">Dispatch coffee using the actual loading weight. Add multiple coffee lines for one vehicle.</p>
-<form method="post" action="/station-transfers" id="mobileTransfer">
+<form method="post" action="/station-transfers" id="mobileTransfer"><input type="hidden" name="mobile_return" value="transfers">
 <div id="transferRows"><div class="transfer-row">
 <label>Coffee balance<select name="source_stock_id[]" class="source-stock" required><option value="">Choose coffee</option>{% for s in stocks %}<option value="{{s.id}}" data-station="{{s.location.station_id}}" data-weight="{{s.weight}}">{{s.batch.batch_no}} · {{s.grade}} · {{s.location.station.name}} / {{s.location.name}} · {{"{:,.2f}".format(s.weight)}} kg</option>{% endfor %}</select></label>
 <label>Receiving location<select name="to_location_id[]" class="destination" required><option value="">Choose destination</option>{% for l in destinations %}<option value="{{l.id}}" data-station="{{l.station_id}}">{{l.station.name}} / {{l.name}}</option>{% endfor %}</select></label>
