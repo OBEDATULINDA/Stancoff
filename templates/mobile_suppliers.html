@@ -1,0 +1,8 @@
+{% extends "mobile_shell.html" %}
+{% block body %}
+<section class="card"><h2>Suppliers</h2><p class="muted">Coffee suppliers registered in Stancoff.</p>
+{% for supplier in suppliers %}
+<div class="record"><span><b>{{ supplier.name }}</b><small>{{ supplier.code }}{% if supplier.location %} · {{ supplier.location }}{% endif %}</small></span></div>
+{% else %}<p class="muted">No suppliers recorded yet.</p>{% endfor %}
+</section>
+{% endblock %}
